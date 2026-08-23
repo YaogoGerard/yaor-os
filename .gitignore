@@ -1,0 +1,7 @@
+# Archives téléchargées (~512 Mo) — seul le manifeste est versionné
+sources/*
+!sources/manifest.tsv
+
+# Artefacts de build
+build/
+out/
