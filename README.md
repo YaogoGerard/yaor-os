@@ -37,4 +37,6 @@ Prérequis et mode d'emploi : [docs/GUIDE.md](docs/GUIDE.md).
 
 ## Statut
 
-Documentation prête ; les scripts du pipeline sont en cours d'écriture.
+- [x] Étape 1 — sources téléchargées et vérifiées (manifeste : 12 paquets épinglés SHA-256)
+- [ ] Étape 2 — toolchain croisée (`02_toolchain.sh`), en conception
+- [ ] Étapes 3–5 — chroot, initramfs, ISO
