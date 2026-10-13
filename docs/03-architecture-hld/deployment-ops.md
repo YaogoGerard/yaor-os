@@ -53,6 +53,24 @@ la même méthode, en documentant chaque cas :
 
 Tout cas de ce type doit être signalé et documenté ici au fur et à mesure.
 
+### Contraintes du système de base (étape 04)
+
+Le défconfig x86_64 active plusieurs fonctions qui tirent des dépendances de
+compilation ; on les traite explicitement pour garder le lot minimal :
+
+- `CONFIG_OBJTOOL` (tiré par le dérouleur ORC, l'IBT et les thunks de retour)
+  se lie à **libelf** : `libelf` (Elfutils 0.193) est donc construit juste avant
+  le noyau (cf. LFS 12.4, section 8.49).
+- `CONFIG_CFG80211_REQUIRE_SIGNED_REGDB` (actif par défaut, sans invite de
+  configuration) sélectionne `SYSTEM_TRUSTED_KEYRING`, ce qui ferait construire
+  les certificats du noyau avec **OpenSSL**. OpenSSL étant écarté du lot
+  minimal, tout le WiFi (`CFG80211`) est désactivé au jalon 0.1 ; le réseau
+  filaire (virtio-net) reste disponible. Le WiFi reviendra avec OpenSSL.
+- `CONFIG_WERROR` (avertissements = erreurs) est désactivé : un compilateur plus
+  récent que celui des développeurs du noyau peut introduire de nouveaux
+  avertissements, ce qui casserait la compilation — recommandation explicite de
+  LFS.
+
 ## Répartition des répertoires de construction
 
 ```text
