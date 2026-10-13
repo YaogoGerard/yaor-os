@@ -3,7 +3,7 @@
 **Statut :** Brouillon
 **Version :** 0.2
 **Dernière mise à jour :** 2026-10-13
-**Décisions liées :** ADR-000 à ADR-007
+**Décisions liées :** ADR-000 à ADR-010
 
 > Les anciennes règles métier (`01-product/rules.md`) sont destinées à être fusionnées
 > dans ce document (décision 8 du registre ADR-000).

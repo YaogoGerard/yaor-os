@@ -1,9 +1,9 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.2
+**Version :** 0.3
 **Dernière mise à jour :** 2026-10-13
-**Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007
+**Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-010
 
 ## Modèle de construction
 
