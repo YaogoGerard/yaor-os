@@ -70,7 +70,7 @@ stamp_exists() { [[ -f "$STAMP_DIR/$1" ]]; }
 extract_tarball() {
     local tarball="$1" dest="${2:-${WORK:-$BUILD_DIR/work}}" base dir
     base="$(basename "$tarball")"
-    dir="${base%.tar.xz}"; dir="${dir%.tar.gz}"; dir="${dir%.tgz}"
+    dir="${base%.tar.xz}"; dir="${dir%.tar.gz}"; dir="${dir%.tgz}"; dir="${dir%.tar.bz2}"
     if [[ ! -d "$dest/$dir" ]]; then
         log "extraction : $base"
         mkdir -p "$dest"

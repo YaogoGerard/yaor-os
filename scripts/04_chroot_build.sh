@@ -14,7 +14,7 @@
 #   - toolchain finale autoporteuse : glibc (final) puis gcc (final) ;
 #   - outils de build exigés par systemd : perl, python3, ninja, meson, pkgconf ;
 #   - bibliothèques requises : zlib, libcap, libxcrypt, util-linux, kmod, pcre2 ;
-#   - systemd (PID 1) et le noyau Linux.
+#   - libelf (Elfutils) pour objtool, puis systemd (PID 1) et le noyau Linux.
 #
 # Usage :
 #   sudo ./scripts/04_chroot_build.sh                 # enchaîne toutes les phases
@@ -53,6 +53,7 @@ ALL_PHASES=(
     libcap libxcrypt util-linux kmod pcre2
     bc
     systemd
+    libelf
     kernel
 )
 
@@ -381,6 +382,18 @@ ExecStart=-/usr/sbin/agetty --autologin root --noclear %I $TERM
 EOF
     ln -sf /usr/lib/systemd/systemd "$LFS/usr/sbin/init"
     run chroot_run "systemd-machine-id-setup"
+}
+
+# --- Phase : libelf (Elfutils, requis par objtool du noyau) -----------------
+phase_libelf() {
+    require_archive libelf
+    local d; d="$(ci_work libelf)"
+    log "configure libelf (Elfutils, requis par objtool)"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --disable-nls --disable-debuginfod --enable-libdebuginfod=dummy"
+    log "compilation libelf"
+    run chroot_run "cd '$d' && make"
+    log "installation de libelf seul"
+    run chroot_run "cd '$d' && make -C libelf install && install -vDm644 config/libelf.pc /usr/lib/pkgconfig/libelf.pc && rm -fv /usr/lib/libelf.a"
 }
 
 # --- Phase : noyau ----------------------------------------------------------

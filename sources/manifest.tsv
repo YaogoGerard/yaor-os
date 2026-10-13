@@ -34,3 +34,4 @@ base	pcre2	10.49	https://github.com/PCRE2Project/pcre2/releases/download/pcre2-1
 base	systemd	262	https://github.com/systemd/systemd/archive/v262/systemd-262.tar.gz	6aa77506c0644aa67f940a48e3d3a7368601f787e4f249139516d353f107bcab
 base	bc	1.08.2	https://ftp.gnu.org/gnu/bc/bc-1.08.2.tar.gz	ae470fec429775653e042015edc928d07c8c3b2fc59765172a330d3d87785f86
 base	perl	5.44.0	https://www.cpan.org/src/5.0/perl-5.44.0.tar.gz	3b855066b92491cb40e86affb1ca57d1a388aa43e51b91c7806a32c2f65f96c3
+base	libelf	0.193	https://sourceware.org/ftp/elfutils/0.193/elfutils-0.193.tar.bz2	7857f44b624f4d8d421df851aaae7b1402cfe6bcdd2d8049f15fc07d3dde7635
