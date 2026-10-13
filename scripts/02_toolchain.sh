@@ -62,20 +62,6 @@ log "cible=$LFS_TGT jobs=$JOBS ram=$(awk '/MemAvailable/{printf "%.1fG", $2/1048
 # run <commande...> : exécute en dupliquant la sortie vers le journal de build.
 run() { "$@" 2>&1 | tee -a "$BUILD_LOG"; }
 
-# extract_tarball <archive> [dest] : extrait et affiche le dossier obtenu.
-extract_tarball() {
-    local tarball="$1" dest="${2:-$WORK}" base dir
-    base="$(basename "$tarball")"
-    dir="${base%.tar.xz}"; dir="${dir%.tar.gz}"; dir="${dir%.tgz}"
-    if [[ ! -d "$dest/$dir" ]]; then
-        log "extraction : $base"
-        tar -xf "$tarball" -C "$dest"
-    fi
-    printf '%s\n' "$dest/$dir"
-}
-
-src_dir() { extract_tarball "$(source_archive "$1")"; }
-
 require_phase() { stamp_exists "$1" || die "phase prérequise manquante : $1"; }
 
 # --- Phases -----------------------------------------------------------------

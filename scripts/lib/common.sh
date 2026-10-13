@@ -64,3 +64,20 @@ source_archive() {
 STAMP_DIR="$BUILD_DIR/stamps"
 stamp_done() { mkdir -p "$STAMP_DIR"; touch "$STAMP_DIR/$1"; }
 stamp_exists() { [[ -f "$STAMP_DIR/$1" ]]; }
+
+# extract_tarball <archive> [dest] : extrait une archive si nécessaire et
+# affiche le dossier obtenu. dest vaut $WORK (ou build/work) par défaut.
+extract_tarball() {
+    local tarball="$1" dest="${2:-${WORK:-$BUILD_DIR/work}}" base dir
+    base="$(basename "$tarball")"
+    dir="${base%.tar.xz}"; dir="${dir%.tar.gz}"; dir="${dir%.tgz}"
+    if [[ ! -d "$dest/$dir" ]]; then
+        log "extraction : $base"
+        mkdir -p "$dest"
+        tar -xf "$tarball" -C "$dest"
+    fi
+    printf '%s\n' "$dest/$dir"
+}
+
+# src_dir <nom> : dossier des sources extraites d'un paquet du manifeste.
+src_dir() { extract_tarball "$(source_archive "$1")"; }

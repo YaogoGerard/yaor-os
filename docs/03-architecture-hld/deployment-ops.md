@@ -25,14 +25,33 @@ Sources (versions + empreintes épinglées)
 ```text
 scripts/00_check_host.sh   -> vérifie les outils hôte
 scripts/01_download.sh     -> télécharge et vérifie les sources (SHA-256)
-scripts/02_toolchain.sh    -> toolchain temporaire + outils temporaires
-scripts/03_chroot_build.sh -> chroot : système de base + systemd + noyau
-scripts/04_initramfs.sh    -> initramfs systemd
-scripts/05_make_iso.sh     -> EROFS + Limine (BIOS/UEFI) -> ISO signée
+scripts/02_toolchain.sh    -> toolchain croisée temporaire (chapitre 5, sans root)
+scripts/03_temp_tools.sh   -> outils temporaires cross-compilés (chapitre 6, sans root)
+scripts/04_chroot_build.sh -> chroot : système de base + systemd + noyau (root)
+scripts/05_initramfs.sh    -> initramfs systemd
+scripts/06_make_iso.sh     -> EROFS + Limine (BIOS/UEFI) -> ISO signée
 ```
+
+La construction suit les grandes étapes de LFS : la **toolchain croisée** (étape 02)
+puis les **outils temporaires** (étape 03) sont bâtis hors `chroot` par l'utilisateur ;
+seule l'étape 04, qui bascule dans la racine cible (`chroot`), requiert les privilèges
+root. Une fois le système final construit, la toolchain et les outils temporaires ne sont
+plus nécessaires.
 
 Chaque étape est idempotente et peut être relancée seule. Les journaux sont écrits dans
 `build/logs/<étape>.log`.
+
+### Adaptations de compilation croisée
+
+Certains paquets récents embarquent une gnulib dont le script `configure` **échoue**
+sous compilation croisée au lieu de retomber sur sa valeur devinée, pour des tests
+d'exécution (`AC_RUN_IFELSE`). LFS les contourne via des variables de cache. On applique
+la même méthode, en documentant chaque cas :
+
+- `diffutils` 3.12 : `gl_cv_func_strcasecmp_works="guessing yes"` (test « whether
+  strcasecmp works »).
+
+Tout cas de ce type doit être signalé et documenté ici au fur et à mesure.
 
 ## Répartition des répertoires de construction
 
