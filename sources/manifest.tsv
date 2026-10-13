@@ -21,3 +21,16 @@ tools	patch	2.8	https://ftp.gnu.org/gnu/patch/patch-2.8.tar.xz	f87cee69eec2b4fcb
 tools	sed	4.10	https://ftp.gnu.org/gnu/sed/sed-4.10.tar.xz	b8e72182b2ec96a3574e2998c47b7aaa64cc20ce000d8e9ac313cc07cecf28c7
 tools	tar	1.35	https://ftp.gnu.org/gnu/tar/tar-1.35.tar.xz	4d62ff37342ec7aed748535323930c7cf94acf71c3591882b26a7ea50f3edc16
 tools	xz	5.8.4	https://github.com/tukaani-project/xz/releases/download/v5.8.4/xz-5.8.4.tar.xz	4ce24038fd4221e0d13bc1a2de7a4db56e90b92b3bf75321f6c14be73f65de4b
+base	pkgconf	3.0.8	https://github.com/pkgconf/pkgconf/releases/download/pkgconf-3.0.8/pkgconf-3.0.8.tar.xz	943f0bc88bcaeceb630b00262e2a8ad5ea4fac3fba72a4267d8b9ec6b35d1194
+base	zlib	1.3.2	https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz	bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
+base	python	3.13.16	https://www.python.org/ftp/python/3.13.16/Python-3.13.16.tgz	cfac63bddf956deafb1172ca131ae5dcaafd6f95056086e233fca205593ed427
+base	ninja	1.13.2	https://github.com/ninja-build/ninja/archive/v1.13.2/ninja-1.13.2.tar.gz	974d6b2f4eeefa25625d34da3cb36bdcebe7fbce40f4c16ac0835fd1c0cbae17
+base	meson	1.12.1	https://github.com/mesonbuild/meson/releases/download/1.12.1/meson-1.12.1.tar.gz	ab0a6ca09f8ef70c564c8241fb5a23957886a0b53fb58412b5e07eaf07dba743
+base	libcap	2.78	https://www.kernel.org/pub/linux/libs/security/linux-privs/libcap2/libcap-2.78.tar.xz	0d621e562fd932ccf67b9660fb018e468a683d7b827541df27813228c996bb11
+base	libxcrypt	4.5.2	https://github.com/besser82/libxcrypt/releases/download/v4.5.2/libxcrypt-4.5.2.tar.xz	71513a31c01a428bccd5367a32fd95f115d6dac50fb5b60c779d5c7942aec071
+base	util-linux	2.42	https://www.kernel.org/pub/linux/utils/util-linux/v2.42/util-linux-2.42.tar.xz	3452b260bbaa775d6e749ac3bb22111785003fc1f444970025c8da26dfa758e9
+base	kmod	34.2	https://www.kernel.org/pub/linux/utils/kernel/kmod/kmod-34.2.tar.xz	5a5d5073070cc7e0c7a7a3c6ec2a0e1780850c8b47b3e3892226b93ffcb9cb54
+base	pcre2	10.49	https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.49/pcre2-10.49.tar.gz	929f0b20e62879252a15886b06c89f1edef61a363cbd5826fb041080a5e557ae
+base	systemd	262	https://github.com/systemd/systemd/archive/v262/systemd-262.tar.gz	6aa77506c0644aa67f940a48e3d3a7368601f787e4f249139516d353f107bcab
+base	bc	1.08.2	https://ftp.gnu.org/gnu/bc/bc-1.08.2.tar.gz	ae470fec429775653e042015edc928d07c8c3b2fc59765172a330d3d87785f86
+base	perl	5.44.0	https://www.cpan.org/src/5.0/perl-5.44.0.tar.gz	3b855066b92491cb40e86affb1ca57d1a388aa43e51b91c7806a32c2f65f96c3
