@@ -49,9 +49,13 @@ CONFIG_SCSI_VIRTIO=y
 CONFIG_DRM=y
 CONFIG_DRM_VIRTIO_GPU=y
 
-# --- Console / affichage ---
+# --- Console / affichage (framebuffer console pour VGA/EFI) ---
 CONFIG_SERIAL_8250=y
 CONFIG_SERIAL_8250_CONSOLE=y
+CONFIG_SYSFB=y
+CONFIG_SYSFB_SIMPLEFB=y
+CONFIG_DRM_SIMPLEDRM=y
+CONFIG_DRM_FBDEV_EMULATION=y
 CONFIG_FB=y
 CONFIG_FRAMEBUFFER_CONSOLE=y
 CONFIG_INPUT_EVDEV=y
@@ -76,7 +80,11 @@ CONFIG_MODULES=y
 CONFIG_MODULE_SIG=n
 CONFIG_DEBUG_INFO_BTF=n
 # Sans clés de confiance ni liste de révocation, le noyau n'a pas besoin
-# d'OpenSSL/libssl pour construire ses certificats (dépendance évitée).
+# d'OpenSSL/libssl pour construire ses certificats. Or
+# CONFIG_CFG80211_REQUIRE_SIGNED_REGDB (actif par défaut, sans invite de
+# configuration) sélectionne SYSTEM_TRUSTED_KEYRING : on écarte donc tout le
+# WiFi au jalon 0.1. Le WiFi reviendra avec OpenSSL dans un jalon ultérieur.
+# CONFIG_CFG80211 is not set
 # CONFIG_SYSTEM_TRUSTED_KEYRING is not set
 # CONFIG_SYSTEM_REVOCATION_LIST is not set
 # Les avertissements du compilateur restent des avertissements.
