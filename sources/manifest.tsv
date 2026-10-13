@@ -1,0 +1,8 @@
+groupe	nom	version	url	sha256
+toolchain	gmp	6.3.0	https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz	a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898
+toolchain	mpfr	4.2.2	https://ftp.gnu.org/gnu/mpfr/mpfr-4.2.2.tar.xz	b67ba0383ef7e8a8563734e2e889ef5ec3c3b898a01d00fa0a6869ad81c6ce01
+toolchain	mpc	1.4.1	https://ftp.gnu.org/gnu/mpc/mpc-1.4.1.tar.xz	91204cd32f164bd3b7c992d4a6a8ce6519511aadab30f78b6982d0bf8d73e931
+toolchain	binutils	2.47	https://ftp.gnu.org/gnu/binutils/binutils-2.47.tar.xz	154ab23b60070e8f27013c22977f1129425d67d1e8acd6e13010e617811e4cff
+toolchain	gcc	16.2.0	https://ftp.gnu.org/gnu/gcc/gcc-16.2.0/gcc-16.2.0.tar.xz	e6738e29597f733270731aa90600f37ffdc045079dfc27ec7e8192cc81085c3e
+toolchain	glibc	2.44	https://ftp.gnu.org/gnu/glibc/glibc-2.44.tar.xz	37f600f2bef3c5e8300147059568b2a2e40a7ad6ccc65ce942556d49429cc667
+toolchain	linux	7.2.10	https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.10.tar.xz	2feaa70453e91f541be6a5c9078d8168e081af45a3d9718054850538cff2ebf3

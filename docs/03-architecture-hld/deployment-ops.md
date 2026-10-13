@@ -20,6 +20,20 @@ Sources (versions + empreintes épinglées)
   -> ISO (signée, ADR-007)
 ```
 
+## Pipeline (scripts)
+
+```text
+scripts/00_check_host.sh   -> vérifie les outils hôte
+scripts/01_download.sh     -> télécharge et vérifie les sources (SHA-256)
+scripts/02_toolchain.sh    -> toolchain temporaire + outils temporaires
+scripts/03_chroot_build.sh -> chroot : système de base + systemd + noyau
+scripts/04_initramfs.sh    -> initramfs systemd
+scripts/05_make_iso.sh     -> EROFS + Limine (BIOS/UEFI) -> ISO signée
+```
+
+Chaque étape est idempotente et peut être relancée seule. Les journaux sont écrits dans
+`build/logs/<étape>.log`.
+
 ## Environnement de développement
 
 - Cible de test initiale : **QEMU** (BIOS et UEFI).
@@ -31,6 +45,12 @@ Sources (versions + empreintes épinglées)
 - Les versions et les sources utilisées DOIVENT être explicitement définies.
 - Chaque source est vérifiée par empreinte **SHA-256** et les empreintes sont épinglées
   (ADR-007).
+- Le fichier `sources/manifest.tsv` liste les sources (colonnes `groupe`, `nom`,
+  `version`, `url`, `sha256`). Seul ce fichier est versionné ; les archives elles-mêmes
+  sont ignorées par Git.
+- Le téléchargement utilise les URL canoniques des amonts (upstream). Un miroir GNU peut être fourni
+  pour accélérer sans changer les empreintes :
+  `GNU_MIRROR=https://mirrors.kernel.org/gnu ./scripts/01_download.sh`.
 
 ## Sécurité de l'approvisionnement
 
