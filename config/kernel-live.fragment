@@ -1,0 +1,83 @@
+# config/kernel-live.fragment — options noyau pour le système live YAOR (jalon 0.1).
+#
+# Ce fragment est fusionné par scripts/kconfig/merge_config.sh sur un
+# `make defconfig` (x86_64_defconfig). Il ne liste donc que les options que
+# l'on veut FORCER : le reste vient de la configuration par défaut, réputée
+# raisonnable et maintenue.
+#
+# Objectif : pouvoir démarrer sur une image EROFS (compressée) posée en
+# overlayfs sur tmpfs, puis lancer systemd comme PID 1, y compris sous QEMU.
+
+# --- Système de fichiers racine du live (ADR-010) ---
+CONFIG_EROFS_FS=y
+CONFIG_EROFS_FS_ZIP=y
+CONFIG_EROFS_FS_ZIP_LZMA=y
+CONFIG_EROFS_FS_ZIP_DEFLATE=y
+CONFIG_EROFS_FS_ZIP_ZSTD=y
+CONFIG_ZSTD_DECOMPRESS=y
+CONFIG_OVERLAY_FS=y
+CONFIG_TMPFS=y
+CONFIG_TMPFS_XATTR=y
+CONFIG_TMPFS_POSIX_ACL=y
+
+# --- Amorçage : devtmpfs, initramfs ---
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+CONFIG_BLK_DEV_INITRD=y
+CONFIG_RD_GZIP=y
+CONFIG_RD_XZ=y
+CONFIG_RD_ZSTD=y
+
+# --- Démarrage BIOS + UEFI (Limine) ---
+CONFIG_EFI=y
+CONFIG_EFI_STUB=y
+
+# --- Stockage : loop pour EROFS, disques et images ---
+CONFIG_BLK_DEV_LOOP=y
+CONFIG_EXT4_FS=y
+CONFIG_ISO9660_FS=y
+CONFIG_FAT_FS=y
+CONFIG_VFAT_FS=y
+
+# --- Virtualisation (QEMU : cible de test) ---
+CONFIG_VIRTIO=y
+CONFIG_VIRTIO_PCI=y
+CONFIG_VIRTIO_BLK=y
+CONFIG_VIRTIO_NET=y
+CONFIG_VIRTIO_CONSOLE=y
+CONFIG_SCSI_VIRTIO=y
+CONFIG_DRM=y
+CONFIG_DRM_VIRTIO_GPU=y
+
+# --- Console / affichage ---
+CONFIG_SERIAL_8250=y
+CONFIG_SERIAL_8250_CONSOLE=y
+CONFIG_FB=y
+CONFIG_FRAMEBUFFER_CONSOLE=y
+CONFIG_INPUT_EVDEV=y
+
+# --- Exigences de systemd (PID 1) ---
+CONFIG_PROC_FS=y
+CONFIG_SYSFS=y
+CONFIG_CGROUPS=y
+CONFIG_NAMESPACES=y
+CONFIG_FHANDLE=y
+CONFIG_EPOLL=y
+CONFIG_UNIX=y
+CONFIG_INOTIFY_USER=y
+CONFIG_SIGNALFD=y
+CONFIG_TIMERFD=y
+CONFIG_AIO=y
+CONFIG_SECCOMP=y
+CONFIG_KEYS=y
+
+# --- Modules : pas de signature ni de BTF (évite openssl/pahole à la compilation) ---
+CONFIG_MODULES=y
+CONFIG_MODULE_SIG=n
+CONFIG_DEBUG_INFO_BTF=n
+# Sans clés de confiance ni liste de révocation, le noyau n'a pas besoin
+# d'OpenSSL/libssl pour construire ses certificats (dépendance évitée).
+# CONFIG_SYSTEM_TRUSTED_KEYRING is not set
+# CONFIG_SYSTEM_REVOCATION_LIST is not set
+# Les avertissements du compilateur restent des avertissements.
+# CONFIG_WERROR is not set
