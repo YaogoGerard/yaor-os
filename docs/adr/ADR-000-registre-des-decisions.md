@@ -49,6 +49,7 @@ ADR dédié.
 | 28 | Niveaux de test | **Conserver les 8 niveaux, à remplir plus tard** |
 | 29 | Sécurité | **Empreintes sources (SHA-256) + ISO signée** — voir ADR-007 |
 | 30 | Licence | **À décider avant la première release** |
+| 31 | Convention de commit | **Conventional Commits + trailers `Jalon`/`Feature`** — voir ADR-008 |
 
 ## Conséquences
 

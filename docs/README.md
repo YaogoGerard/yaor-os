@@ -10,6 +10,7 @@ Documentation industrielle du projet YAOR OS.
 - `04-design-lld/` — Design détaillé
 - `05-ui-ux/` — Interface et expérience utilisateur
 - `06-testing/` — Vérification et validation
+- `07-contributing/` — Conventions de contribution (commits…)
 
 ## Conventions
 - Corps des documents en français, titres et identifiants en anglais.

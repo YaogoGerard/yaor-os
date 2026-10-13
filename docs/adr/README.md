@@ -31,6 +31,7 @@ Ce dossier consigne les **décisions structurantes** du projet : pourquoi un cho
 | [ADR-005](ADR-005-pile-graphique-wayland.md) | Pile graphique Wayland | Accepté |
 | [ADR-006](ADR-006-accessibilite-at-spi.md) | Accessibilité par réutilisation d'AT-SPI | Accepté |
 | [ADR-007](ADR-007-securite-approvisionnement.md) | Sécurité de la chaîne d'approvisionnement | Accepté |
+| [ADR-008](ADR-008-convention-de-commit.md) | Convention de commit | Accepté |
 
 ## Principe de décision
 
