@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.3
+**Version :** 0.4
 **Dernière mise à jour :** 2026-10-13
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-010
 
@@ -33,6 +33,26 @@ scripts/05_make_iso.sh     -> EROFS + Limine (BIOS/UEFI) -> ISO signée
 
 Chaque étape est idempotente et peut être relancée seule. Les journaux sont écrits dans
 `build/logs/<étape>.log`.
+
+## Répartition des répertoires de construction
+
+```text
+build/rootfs/         racine du système cible (deviendra /)
+build/rootfs/tools/   toolchain temporaire (deviendra /tools) — cf. ci-dessous
+build/work/           sources extraites
+build/stamps/         marqueurs d'idempotence par étape
+build/logs/           journaux de build
+out/                  artefacts produits (image, ISO)
+```
+
+La toolchain temporaire (chapitre 5) est installée **dans** la racine cible
+(`build/rootfs/tools`, soit `/tools` vu depuis le système cible), et non à côté.
+Ce n'est pas un détail cosmétique : le compilateur croisé est configuré avec
+`build/rootfs` comme *sysroot*, et il retrouve ses en-têtes C++ à un chemin
+calculé à partir de son préfixe d'installation. Placer le préfixe dans le
+sysroot (comme LFS) rend ce chemin cohérent et permet de bâtir ensuite le
+système cible par `chroot` sans montage supplémentaire. La toolchain temporaire
+sera supprimée (`/tools`) une fois le système final bâti.
 
 ## Environnement de développement
 

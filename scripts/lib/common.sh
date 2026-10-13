@@ -25,7 +25,7 @@ mkdir -p "$LOG_DIR"
 log() {
     local msg
     msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-    printf '%s\n' "$msg"
+    printf '%s\n' "$msg" >&2
     printf '%s\n' "$msg" >> "$LOG_FILE"
 }
 
@@ -46,3 +46,21 @@ need_cmd() {
     done
     ((${#missing[@]} == 0)) || die "commande(s) manquante(s) : ${missing[*]}"
 }
+
+# manifest_field <nom> <colonne> : lit une colonne du manifeste.
+# Colonnes : 1=groupe, 2=nom, 3=version, 4=url, 5=sha256.
+manifest_field() {
+    awk -F'\t' -v n="$1" -v c="$2" '$2 == n { print $c; exit }' "$SOURCES_DIR/manifest.tsv"
+}
+
+# source_archive <nom> : chemin local de l'archive téléchargée.
+source_archive() {
+    local url
+    url="$(manifest_field "$1" 4)"
+    printf '%s\n' "$SOURCES_DIR/$(basename "$url")"
+}
+
+# stamp_done <étape> : marque une étape terminée (idempotence).
+STAMP_DIR="$BUILD_DIR/stamps"
+stamp_done() { mkdir -p "$STAMP_DIR"; touch "$STAMP_DIR/$1"; }
+stamp_exists() { [[ -f "$STAMP_DIR/$1" ]]; }
