@@ -407,8 +407,10 @@ phase_bc() {
     local d; d="$(ci_work bc)"
     log "configure bc"
     run chroot_run "cd '$d' && ./configure --prefix=/usr"
-    run chroot_run "cd '$d' && make"
-    run chroot_run "cd '$d' && make install"
+    # texinfo (makeinfo) n'est pas dans le lot minimal : MAKEINFO=true neutralise
+    # la génération des pages info, sans effet sur les binaires bc/dc.
+    run chroot_run "cd '$d' && make MAKEINFO=true"
+    run chroot_run "cd '$d' && make install MAKEINFO=true"
 }
 
 # --- Phase : systemd --------------------------------------------------------
