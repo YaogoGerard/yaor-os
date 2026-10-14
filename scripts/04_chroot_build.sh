@@ -19,7 +19,8 @@
 #   - toolchain finale autoporteuse : glibc (final) puis gcc (final) ;
 #   - outils de build exigés par systemd : perl, python3, ninja, meson, pkgconf ;
 #   - bibliothèques requises : zlib, libcap, libxcrypt, util-linux, kmod, pcre2 ;
-#   - libelf (Elfutils) pour objtool, puis systemd (PID 1) et le noyau Linux.
+#   - libelf (Elfutils) pour objtool et flex pour le kconfig du noyau ;
+#   - systemd (PID 1) puis le noyau Linux.
 #
 # Usage :
 #   sudo ./scripts/04_chroot_build.sh                 # enchaîne toutes les phases
@@ -66,6 +67,10 @@ ALL_PHASES=(
     markupsafe jinja2
     systemd
     libelf
+    # Le kconfig du noyau régénère lexer.lex.c (et parser.tab.c) depuis
+    # lexer.l/parser.y : flex est donc requis. L'archive flex fournit ses
+    # sources déjà analysées (src/scan.c, src/parse.c), il s'amorce seul.
+    flex
     kernel
 )
 
@@ -498,6 +503,21 @@ phase_libelf() {
     run chroot_run "cd '$d' && make -C config && make -C lib && make -C libelf"
     log "installation de libelf seul"
     run chroot_run "cd '$d' && make -C libelf install && install -vDm644 config/libelf.pc /usr/lib/pkgconfig/libelf.pc && rm -fv /usr/lib/libelf.a"
+}
+
+# --- Phase : flex (requis par le kconfig du noyau) --------------------------
+# Le noyau ne livre pas scripts/kconfig/{lexer.lex.c,parser.tab.c} : il les
+# régénère depuis lexer.l/parser.y via « LEX = flex » et « YACC = bison ». Flex
+# est donc un outil de build du noyau. L'archive de release fournit ses sources
+# déjà analysées (src/scan.c, src/parse.c), si bien que flex s'amorce sans flex
+# ni bison préalables (comme bison, cf. ci-dessus).
+phase_flex() {
+    require_archive flex
+    local d; d="$(ci_work flex)"
+    log "configure flex (requis par le kconfig du noyau)"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --disable-nls"
+    run chroot_run "cd '$d' && make"
+    run chroot_run "cd '$d' && make install"
 }
 
 # --- Phase : noyau ----------------------------------------------------------

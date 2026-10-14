@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.14
+**Version :** 0.15
 **Dernière mise à jour :** 2026-10-14
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-010
 
@@ -129,7 +129,17 @@ compilation ; on les traite explicitement pour garder le lot minimal :
 
 - `CONFIG_OBJTOOL` (tiré par le dérouleur ORC, l'IBT et les thunks de retour)
   se lie à **libelf** : `libelf` (Elfutils 0.193) est donc construit juste avant
-  le noyau (cf. LFS 12.4, section 8.49).
+  le noyau (cf. LFS 12.4, section 8.49). Comme seul `libelf` est installé, sa
+  compilation est restreinte aux sous-répertoires `config`, `lib` et `libelf` :
+  `libcpu` (non installé) échoue en effet sur `bsearch`, que glibc 2.44 rend
+  « const-générique » en C23 — son retour devient `const void *` quand la base
+  est `const` — sous `-Werror`.
+- **flex** est requis par le `kconfig` du noyau : les fichiers générés
+  `scripts/kconfig/lexer.lex.c` et `parser.tab.c` ne sont pas livrés, le noyau
+  les régénère depuis `lexer.l`/`parser.y` (`LEX = flex`). L'archive de release
+  fournit ses propres sources déjà analysées (`src/scan.c`, `src/parse.c`) : flex
+  s'amorce donc sans flex ni bison préalables, et il est configuré avec
+  `--disable-nls` (gettext absent du lot).
 - `CONFIG_CFG80211_REQUIRE_SIGNED_REGDB` (actif par défaut, sans invite de
   configuration) sélectionne `SYSTEM_TRUSTED_KEYRING`, ce qui ferait construire
   les certificats du noyau avec **OpenSSL**. OpenSSL étant écarté du lot
