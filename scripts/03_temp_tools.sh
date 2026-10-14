@@ -103,6 +103,11 @@ phase_tar()       { build_simple tar; }
 phase_gawk() {
     local d; d="$(src_dir gawk)"
     sed -i 's/extras//' "$d/Makefile.in"
+    # gawk 5.4.1 construit sans MPFR écrase stfmt en convertissant un élément de
+    # tableau non initialisé (voir patches/gawk-5.4.1-elem-new-stfmt.patch).
+    if ! grep -q 'Ne PAS effacer n->vname ici' "$d/eval.c"; then
+        patch -p1 -d "$d" -i "$ROOT/patches/gawk-5.4.1-elem-new-stfmt.patch"
+    fi
     build_simple gawk
 }
 
