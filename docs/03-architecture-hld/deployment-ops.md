@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.5
+**Version :** 0.6
 **Dernière mise à jour :** 2026-10-14
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-010
 
@@ -73,6 +73,24 @@ Le script 03 devait également être corrigé : `binutils` (pass 2) ne doit **pa
 être configuré `--enable-shared`, sous peine de produire un `ld` lié dynamiquement
 à `libbfd`/`libz.so.1` — bibliothèque absente de la cible avant glibc, ce qui
 casserait toute édition de liens dans le chroot.
+
+### Correctif appliqué à gawk 5.4.1
+
+Un défaut de gawk 5.4.1 construit **sans MPFR** (le cas de la cible) fait qu'un
+élément de tableau non initialisé, après une comparaison à la chaîne vide, se
+reformate en `"0"` au lieu de rester vide. En cause : dans la disposition de la
+structure interne `NODE` (sans MPFR), `sub.nodep.name` (`vname`) et
+`sub.val.idx` (`stfmt`) partagent le même décalage ; `elem_new_reset()`, qui
+convertit un `Node_elem_new` en scalaire, écrasait `stfmt` (`STFMT_UNUSED`), ce
+qui forçait un reformatage depuis la valeur numérique 0. La construction avec
+MPFR agrandit la structure et masque le recouvrement.
+
+GCC en dépend directement : ses scripts `optc-gen.awk`/`opth-gen.awk`
+(`if (enables[...] == "")` suivi d'une concaténation) produisaient alors des
+`options.cc`/`options.h` parsemés de `#error ... does not have a Var() flag`,
+faisant échouer la compilation finale de gcc (étape 04). Le correctif
+`patches/gawk-5.4.1-elem-new-stfmt.patch` supprime l'écriture fautive ;
+l'étape 03 l'applique dans `phase_gawk`.
 
 ### Contraintes du système de base (étape 04)
 
