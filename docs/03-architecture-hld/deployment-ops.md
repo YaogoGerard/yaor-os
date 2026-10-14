@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.13
+**Version :** 0.14
 **Dernière mise à jour :** 2026-10-14
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-010
 
@@ -153,6 +153,12 @@ compilation ; on les traite explicitement pour garder le lot minimal :
   purs sont installés par copie dans `site-packages`, comme meson, sans `pip`
   ni backend PEP 517 ; l'extension C optionnelle de MarkupSafe (`_speedups`)
   n'est pas compilée, son repli `_native` suffisant.
+- **systemd** 262 est configuré en « minimal » : `-Dauto_features=disabled`
+  coupe toutes les fonctions optionnelles (`auto`) dont la dépendance est
+  absente du lot (selinux, seccomp, openssl, pam, networkd, `bootloader`, etc.) ;
+  seules `blkid`, `kmod` et `pcre2` sont explicitement activées. En complément,
+  `-Dtranslations=false` évite `msgfmt` (gettext), `-Dman=false` la
+  documentation, `-Dhwdb=false` la base matérielle et `-Dtests=false` les tests.
 
 ## Répartition des répertoires de construction
 
