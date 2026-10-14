@@ -1,8 +1,8 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.4
-**Dernière mise à jour :** 2026-10-13
+**Version :** 0.5
+**Dernière mise à jour :** 2026-10-14
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-010
 
 ## Modèle de construction
@@ -52,6 +52,27 @@ la même méthode, en documentant chaque cas :
   strcasecmp works »).
 
 Tout cas de ce type doit être signalé et documenté ici au fur et à mesure.
+
+### Amorçage exigé par glibc 2.44
+
+Depuis la version 2.44, le `configure` de glibc refuse de poursuivre si `bison`
+(≥ 2.7) ou `python` (≥ 3.4) sont absents, et sa compilation les emploie réellement :
+
+- `intl/plural.c` n'est plus livré : il est régénéré par **bison** depuis
+  `intl/plural.y` (`intl/Makefile`) ;
+- `locale/C-translit.h` est produit par **python** via `locale/gen-translit.py`.
+
+La toolchain temporaire de l'étape 03 n'inclut ni l'un ni l'autre — comme le
+chapitre 6 de LFS, conçu pour glibc 2.42. L'étape 04 construit donc, **dans le
+chroot et avant glibc**, `bison`, `python3` puis `zlib` (ce dernier pour que le
+python d'amorçage dispose de son module `_zlib`). Ces paquets s'appuient sur la
+glibc temporaire de l'étape 02 ; l'ABI étant identique, ils restent valides après
+l'installation de la glibc finale.
+
+Le script 03 devait également être corrigé : `binutils` (pass 2) ne doit **pas**
+être configuré `--enable-shared`, sous peine de produire un `ld` lié dynamiquement
+à `libbfd`/`libz.so.1` — bibliothèque absente de la cible avant glibc, ce qui
+casserait toute édition de liens dans le chroot.
 
 ### Contraintes du système de base (étape 04)
 
