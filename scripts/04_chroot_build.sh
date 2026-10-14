@@ -319,10 +319,15 @@ EOF
 
 phase_pkgconf() {
     require_archive pkgconf
-    local d; d="$(ci_work pkgconf)"
+    local d h; d="$(ci_work pkgconf)"; h="$(src_dir pkgconf)"
     local b="$d/build7"
+    # Le tarball 3.0.8 omet tests/api/test-util.c, pourtant référencé par son
+    # meson.build ; on recrée le fichier amont (voir patches/).
+    if [[ ! -f "$h/tests/api/test-util.c" ]]; then
+        patch -p1 -d "$h" -i "$ROOT/patches/pkgconf-3.0.8-missing-test-util.patch"
+    fi
     log "configure pkgconf (meson)"
-    run chroot_run "mkdir -p '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release"
+    run chroot_run "rm -rf '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release"
     run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
     run chroot_run "ln -sf pkgconf /usr/bin/pkg-config"
 }
