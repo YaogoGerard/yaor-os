@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.7
+**Version :** 0.8
 **Dernière mise à jour :** 2026-10-14
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-010
 
@@ -92,6 +92,16 @@ GCC en dépend directement : ses scripts `optc-gen.awk`/`opth-gen.awk`
 faisant échouer la compilation finale de gcc (étape 04). Le correctif
 `patches/gawk-5.4.1-elem-new-stfmt.patch` supprime l'écriture fautive ;
 l'étape 03 l'applique dans `phase_gawk`.
+
+### Correctif appliqué à pkgconf 3.0.8
+
+Le tarball de release de pkgconf 3.0.8 omet `tests/api/test-util.c`, pourtant
+référencé par son propre `meson.build` : `meson setup` échoue alors sur
+« File tests/api/test-util.c does not exist », avant toute compilation. Le
+fichier existe dans le dépôt Git au tag `pkgconf-3.0.8` ; le correctif
+`patches/pkgconf-3.0.8-missing-test-util.patch` le recrée à l'identique. Le test
+étant déclaré `build_by_default : false`, il n'est jamais compilé par la
+construction normale.
 
 ### Contraintes du système de base (étape 04)
 
