@@ -385,8 +385,10 @@ phase_kmod() {
     require_archive kmod
     local d; d="$(ci_work kmod)"
     local b="$d/build7"
+    # Options « feature » de kmod 34.x : le lot minimal n'a ni libzstd ni
+    # liblzma ni OpenSSL, et scdoc (manpages) est absent.
     log "configure kmod (meson)"
-    run chroot_run "mkdir -p '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release -Dzstd=false"
+    run chroot_run "rm -rf '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release -Dzstd=disabled -Dxz=disabled -Dzlib=enabled -Dopenssl=disabled -Dmanpages=false"
     run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
 }
 
