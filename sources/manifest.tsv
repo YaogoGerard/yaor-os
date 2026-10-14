@@ -26,6 +26,8 @@ base	zlib	1.3.2	https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3
 base	python	3.13.16	https://www.python.org/ftp/python/3.13.16/Python-3.13.16.tgz	cfac63bddf956deafb1172ca131ae5dcaafd6f95056086e233fca205593ed427
 base	ninja	1.13.2	https://github.com/ninja-build/ninja/archive/v1.13.2/ninja-1.13.2.tar.gz	974d6b2f4eeefa25625d34da3cb36bdcebe7fbce40f4c16ac0835fd1c0cbae17
 base	meson	1.12.1	https://github.com/mesonbuild/meson/releases/download/1.12.1/meson-1.12.1.tar.gz	ab0a6ca09f8ef70c564c8241fb5a23957886a0b53fb58412b5e07eaf07dba743
+base	markupsafe	3.0.4	https://files.pythonhosted.org/packages/38/9b/e422a865e1d5d57d0e509b4e0bf1c1a70a7f6382c29a5aa428df994c8bc8/markupsafe-3.0.4.tar.gz	2e9ad7dd851bf45fab9f75cbff4cb493fee9979e8d8c7c9c3ee119022518edd6
+base	jinja2	3.1.6	https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c72f3e33cef02e048281fec7ecec5f032d4aac52226b/jinja2-3.1.6.tar.gz	0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d
 base	libcap	2.78	https://www.kernel.org/pub/linux/libs/security/linux-privs/libcap2/libcap-2.78.tar.xz	0d621e562fd932ccf67b9660fb018e468a683d7b827541df27813228c996bb11
 base	libxcrypt	4.5.2	https://github.com/besser82/libxcrypt/releases/download/v4.5.2/libxcrypt-4.5.2.tar.xz	71513a31c01a428bccd5367a32fd95f115d6dac50fb5b60c779d5c7942aec071
 base	util-linux	2.42	https://www.kernel.org/pub/linux/utils/util-linux/v2.42/util-linux-2.42.tar.xz	3452b260bbaa775d6e749ac3bb22111785003fc1f444970025c8da26dfa758e9

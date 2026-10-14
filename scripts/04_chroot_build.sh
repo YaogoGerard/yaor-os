@@ -60,8 +60,10 @@ ALL_PHASES=(
     perl
     ninja meson pkgconf
     libcap libxcrypt util-linux kmod pcre2
-    bc
-    gperf
+    bc gperf
+    # systemd 262 exige jinja2 (rendu des .pc et de divers en-têtes, dont
+    # libudev.pc) ; markupsafe est sa dépendance d'import.
+    markupsafe jinja2
     systemd
     libelf
     kernel
@@ -96,6 +98,18 @@ ci_work() {
     local d
     d="$(src_dir "$1")"
     printf '/build/work/%s\n' "$(basename "$d")"
+}
+
+# install_pure_python <nom> <sous-dossier> : installe un paquet Python « pur »
+# (sans partie compilée) en copiant son paquet depuis l'arbre extrait vers le
+# site-packages de la cible. On évite ainsi d'introduire pip et un backend
+# PEP 517 dans le système minimal : ces paquets ne servent que d'outils de build.
+install_pure_python() {
+    local name="$1" pkgdir="$2" d sp
+    require_archive "$name"
+    d="$(ci_work "$name")"
+    sp="$(chroot_run "python3 -c 'import sysconfig; print(sysconfig.get_paths()[\"purelib\"])'")"
+    run chroot_run "install -d '$sp' && cp -a '$d/$pkgdir' '$sp/'"
 }
 
 mount_if() {
@@ -415,6 +429,21 @@ phase_bc() {
 }
 
 # --- Phase : systemd --------------------------------------------------------
+# MarkupSafe puis Jinja2 : requis sans condition par systemd 262, qui rend ses
+# gabarits (.pc, dont libudev.pc, et divers en-têtes) via
+# find_installation('python3', modules : ['jinja2']). Paquets Python purs :
+# installés par copie, sans pip ni backend PEP 517 ; l'extension C optionnelle
+# de MarkupSafe (_speedups) n'est pas compilée, son repli _native suffit.
+phase_markupsafe() {
+    log "installation de MarkupSafe (paquet Python pur)"
+    install_pure_python markupsafe src/markupsafe
+}
+
+phase_jinja2() {
+    log "installation de Jinja2 (paquet Python pur)"
+    install_pure_python jinja2 src/jinja2
+}
+
 phase_gperf() {
     require_archive gperf
     local d; d="$(ci_work gperf)"
