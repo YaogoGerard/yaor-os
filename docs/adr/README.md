@@ -35,6 +35,11 @@ Ce dossier consigne les **décisions structurantes** du projet : pourquoi un cho
 | [ADR-009](ADR-009-selection-composants-modernes.md) | Sélection des composants : modernité, maintenance, performance | Accepté |
 | [ADR-010](ADR-010-demarrage-live-limine-initramfs-systemd-erofs.md) | Démarrage live : Limine, initramfs systemd, EROFS | Remplacé par ADR-011 |
 | [ADR-011](ADR-011-demarrage-live-limine-initramfs-shell-erofs.md) | Démarrage live : Limine, initramfs shell, EROFS | Accepté |
+| [ADR-012](ADR-012-amorce-et-integration-de-rust.md) | Amorce et intégration de Rust | Accepté |
+| [ADR-013](ADR-013-reseau-systemd-networkd-iwd.md) | Réseau : systemd-networkd, systemd-resolved, iwd | Accepté |
+| [ADR-014](ADR-014-sessions-comptes-et-services.md) | Sessions, comptes et services de session | Accepté |
+| [ADR-015](ADR-015-cycle-de-vie-installe-et-mises-a-jour.md) | Cycle de vie installé et mises à jour par image | Accepté |
+| [ADR-016](ADR-016-reproductibilite.md) | Reproductibilité : niveau fonctionnel | Accepté |
 
 ## Principe de décision
 

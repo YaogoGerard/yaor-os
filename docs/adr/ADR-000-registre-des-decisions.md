@@ -3,7 +3,7 @@
 **Statut :** Accepté
 **Date :** 2026-10-13
 **Décisionnaire(s) :** Équipe YAOR
-**Décisions liées :** ADR-001 à ADR-011
+**Décisions liées :** ADR-001 à ADR-016
 
 ## Contexte
 
@@ -52,6 +52,12 @@ ADR dédié.
 | 31 | Convention de commit | **Conventional Commits + trailers `Jalon`/`Feature`** — voir ADR-008 |
 | 32 | Sélection par défaut des composants | **Modernes, maintenus et performants** (« mature » ≠ « ancien ») — voir ADR-009 |
 | 33 | Démarrage live | **Limine (BIOS+UEFI) + initramfs shell + image EROFS (zstd)** — voir ADR-011 |
+| 34 | Amorce et intégration de Rust | **`rustc` de l'hôte comme amorçage ; LLVM embarqué ; `uutils/coreutils` ; `sudo-rs`** — voir ADR-012 |
+| 35 | Réseau | **`systemd-networkd` + `systemd-resolved` ; Wi-Fi par `iwd`** — voir ADR-013 |
+| 36 | Sessions et comptes | **D-Bus et `systemd-logind` réactivés ; PAM ; polkit ; `udisks2`** — voir ADR-014 |
+| 37 | Cycle de vie installé | **installateur + Limine sur disque ; mises à jour `systemd-sysupdate` (A/B)** — voir ADR-015 |
+| 38 | Systèmes de fichiers | **`ext4`, `btrfs`, `vfat`/`exFAT`, `NTFS` (rw)** — voir ADR-015 |
+| 39 | Reproductibilité | **fonctionnelle (versions + empreintes épinglées)** — voir ADR-016 |
 
 ## Conséquences
 
@@ -59,5 +65,6 @@ ADR dédié.
   traçables et datées.
 - **Négatives / risques :** le périmètre v1 est très large ; les décisions 6, 7 et 25
   devront être réévaluées au fil des jalons.
-- **Suivi :** les décisions 8, 9, 13, 21, 23 restent à matérialiser dans les documents
-  concernés lors des jalons suivants.
+- **Suivi :** la décision 21 est matérialisée dans [`milestones.md`](../01-product/milestones.md) ;
+  les décisions 8, 9, 13 et 23 restent à matérialiser dans les documents concernés lors
+  des jalons suivants.
