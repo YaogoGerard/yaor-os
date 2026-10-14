@@ -11,6 +11,9 @@
 # build (configure/make/meson) sont déléguées au chroot via chroot_run().
 #
 # Périmètre (jalon 0.1, « minimal bootable ») :
+#   - bison + python3 + zlib construits AVANT glibc : glibc 2.44 exige bison
+#     (intl/plural.c) et python (locale/C-translit.h) au configure comme au
+#     build, tous deux absents de la toolchain temporaire de l'étape 03 ;
 #   - toolchain finale autoporteuse : glibc (final) puis gcc (final) ;
 #   - outils de build exigés par systemd : perl, python3, ninja, meson, pkgconf ;
 #   - bibliothèques requises : zlib, libcap, libxcrypt, util-linux, kmod, pcre2 ;
@@ -47,9 +50,13 @@ need_cmd chroot mountpoint mount umount
 # phase_* à tirets convertis en soulignés (util-linux → phase_util_linux).
 ALL_PHASES=(
     setup
-    glibc zlib gcc
+    # glibc 2.44 ne peut pas être construit avant bison et python3 (voir l'en-tête).
+    # zlib est bâti ici pour que le python d'amorçage dispose de son module _zlib.
+    bison python zlib
+    glibc
+    gcc
     perl
-    python ninja meson pkgconf
+    ninja meson pkgconf
     libcap libxcrypt util-linux kmod pcre2
     bc
     systemd
@@ -215,13 +222,28 @@ phase_teardown() {
     done
 }
 
+# --- Phase : bison (exigé par glibc 2.44) ----------------------------------
+# glibc ne livre plus intl/plural.c : bison le régénère depuis intl/plural.y.
+# La construction est native (elle s'appuie sur la glibc temporaire de l'étape
+# 02) et n'a pas besoin d'un bison préexistant : l'archive fournit les sources
+# déjà analysées (src/parse-gram.c, src/scan-gram.c). m4, requis à l'exécution
+# par bison, provient de la toolchain temporaire.
+phase_bison() {
+    require_archive bison
+    local d; d="$(ci_work bison)"
+    log "configure bison (exigé par glibc 2.44)"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --disable-nls"
+    run chroot_run "cd '$d' && make"
+    run chroot_run "cd '$d' && make install"
+}
+
 # --- Phase : toolchain finale ----------------------------------------------
 phase_glibc() {
     require_archive glibc
     local d; d="$(ci_work glibc)"
     local b="$d/build7"
     log "configure glibc (final, natif)"
-    run chroot_run "mkdir -p '$b' && cd '$b' && ../configure --prefix=/usr --disable-werror --disable-nscd --enable-stack-protector=strong --enable-kernel=6.1 libc_cv_slibdir=/usr/lib"
+    run chroot_run "rm -rf '$b' && mkdir -p '$b' && cd '$b' && ../configure --prefix=/usr --disable-werror --disable-nscd --enable-stack-protector=strong --enable-kernel=6.1 libc_cv_slibdir=/usr/lib"
     log "compilation glibc (final)"
     run chroot_run "cd '$b' && make"
     log "installation glibc (final)"
