@@ -33,7 +33,8 @@ Ce dossier consigne les **décisions structurantes** du projet : pourquoi un cho
 | [ADR-007](ADR-007-securite-approvisionnement.md) | Sécurité de la chaîne d'approvisionnement | Accepté |
 | [ADR-008](ADR-008-convention-de-commit.md) | Convention de commit | Accepté |
 | [ADR-009](ADR-009-selection-composants-modernes.md) | Sélection des composants : modernité, maintenance, performance | Accepté |
-| [ADR-010](ADR-010-demarrage-live-limine-initramfs-systemd-erofs.md) | Démarrage live : Limine, initramfs systemd, EROFS | Accepté |
+| [ADR-010](ADR-010-demarrage-live-limine-initramfs-systemd-erofs.md) | Démarrage live : Limine, initramfs systemd, EROFS | Remplacé par ADR-011 |
+| [ADR-011](ADR-011-demarrage-live-limine-initramfs-shell-erofs.md) | Démarrage live : Limine, initramfs shell, EROFS | Accepté |
 
 ## Principe de décision
 

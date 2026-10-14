@@ -231,6 +231,19 @@ set output-meta on
 "\e[3~": delete-char
 "\e[2~": quoted-insert
 EOF
+    # Identité du produit (systemd, /etc/os-release). Volontairement minimale :
+    # les distributions et outils tiers s'appuient sur ID/ID_LIKE/VERSION_ID.
+    local osver; osver="$(manifest_field linux 3)"
+    cat > "$LFS/etc/os-release" <<EOF
+NAME="YAOR-OS"
+PRETTY_NAME="YAOR-OS (live)"
+ID=yaor
+ID_LIKE="linux"
+VERSION_ID="$osver"
+VERSION="$osver"
+HOME_URL="https://example.invalid/yaor-os"
+ANSI_COLOR="0;36"
+EOF
     [[ -f "$LFS/etc/resolv.conf" ]] || cp -v /etc/resolv.conf "$LFS/etc/resolv.conf"
 
     section "Montages du chroot"
@@ -468,21 +481,47 @@ phase_systemd() {
     # meson n'est pas idempotent sur un dossier déjà configuré : on le recrée.
     # translations=false : le rendu des traductions réclame msgfmt (gettext),
     # absent du lot minimal ; le garde-fou est le même que pour gperf/jinja2.
-    run chroot_run "rm -rf '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release -Dmode=release -Dauto_features=disabled -Dblkid=enabled -Dkmod=enabled -Dpcre2=enabled -Dman=false -Dtranslations=false -Dtests=false -Dhwdb=false"
+    # -Dauto_features=disabled coupe toutes les *fonctionnalités* optionnelles
+    # (les options booléennes, elles, gardent leur défaut : activé). libmount en
+    # fait partie et doit être réactivé explicitement : sans lui, le montage des
+    # systèmes de fichiers d'API (/dev, /run, cgroup2…) échoue au démarrage et
+    # systemd s'arrête sur « Failed to mount API filesystems ».
+    run chroot_run "rm -rf '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release -Dmode=release -Dauto_features=disabled -Dlibmount=enabled -Dblkid=enabled -Dkmod=enabled -Dpcre2=enabled -Dman=false -Dtranslations=false -Dtests=false -Dhwdb=false"
     log "compilation systemd"
     run chroot_run "cd '$d' && ninja -C build7"
     log "installation systemd"
     run chroot_run "cd '$d' && ninja -C build7 install"
 
     log "réglages de démarrage systemd"
-    mkdir -pv "$LFS/etc/systemd/system/getty.target.wants" "$LFS/etc/systemd/system/getty@tty1.service.d"
-    ln -sf /usr/lib/systemd/system/multi-user.target "$LFS/etc/systemd/system/default.target"
-    ln -sf /usr/lib/systemd/system/getty@.service   "$LFS/etc/systemd/system/getty.target.wants/getty@tty1.service"
+    # Le lot minimal ne construit ni agetty/login (util-linux est configuré
+    # --disable-login) : les consoles lancent directement un shell de
+    # connexion root. On couvre la console locale (tty1) et la console série
+    # (ttyS0, utile en QEMU -nographic).
+    mkdir -pv "$LFS/etc/systemd/system/getty.target.wants" \
+              "$LFS/etc/systemd/system/getty@tty1.service.d" \
+              "$LFS/etc/systemd/system/serial-getty@ttyS0.service.d"
+    ln -sf /usr/lib/systemd/system/multi-user.target   "$LFS/etc/systemd/system/default.target"
+    ln -sf /usr/lib/systemd/system/getty@.service        "$LFS/etc/systemd/system/getty.target.wants/getty@tty1.service"
+    ln -sf /usr/lib/systemd/system/serial-getty@.service "$LFS/etc/systemd/system/getty.target.wants/serial-getty@ttyS0.service"
     cat > "$LFS/etc/systemd/system/getty@tty1.service.d/autologin.conf" <<'EOF'
 [Service]
 ExecStart=
-ExecStart=-/usr/sbin/agetty --autologin root --noclear %I $TERM
+ExecStart=-/usr/bin/bash -l
+Environment=TERM=linux
+Environment=HOME=/root
 EOF
+    cat > "$LFS/etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf" <<'EOF'
+[Service]
+ExecStart=
+ExecStart=-/usr/bin/bash -l
+Environment=TERM=linux
+Environment=HOME=/root
+EOF
+    # D-Bus n'est pas construit au jalon 0.1 : systemd-logind ne peut pas
+    # s'attacher au bus système et échoue en boucle (« User Login Management »).
+    # Les sessions ne sont pas nécessaires pour une console root unique ; on
+    # masque l'unité, qui sera réactivée quand D-Bus rejoindra le système.
+    ln -sf /dev/null "$LFS/etc/systemd/system/systemd-logind.service"
     ln -sf /usr/lib/systemd/systemd "$LFS/usr/sbin/init"
     run chroot_run "systemd-machine-id-setup"
 }

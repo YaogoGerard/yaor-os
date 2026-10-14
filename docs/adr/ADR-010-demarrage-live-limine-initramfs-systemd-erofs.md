@@ -1,6 +1,6 @@
 # ADR-010 — Démarrage live : Limine, initramfs systemd, EROFS
 
-**Statut :** Accepté
+**Statut :** Remplacé par ADR-011
 **Date :** 2026-10-13
 **Décisionnaire(s) :** Équipe YAOR
 **Décisions liées :** ADR-000, ADR-003, ADR-004, ADR-007, ADR-009

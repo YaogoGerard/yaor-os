@@ -8,7 +8,12 @@
 # Objectif : pouvoir démarrer sur une image EROFS (compressée) posée en
 # overlayfs sur tmpfs, puis lancer systemd comme PID 1, y compris sous QEMU.
 
-# --- Système de fichiers racine du live (ADR-010) ---
+# --- Compression du noyau (ADR-011 : zstd) ---
+# Le defconfig compresse le noyau en gzip ; on force zstd, plus rapide à
+# décompresser au démarrage et légèrement plus compact.
+CONFIG_KERNEL_ZSTD=y
+
+# --- Système de fichiers racine du live (ADR-011) ---
 CONFIG_EROFS_FS=y
 CONFIG_EROFS_FS_ZIP=y
 CONFIG_EROFS_FS_ZIP_LZMA=y

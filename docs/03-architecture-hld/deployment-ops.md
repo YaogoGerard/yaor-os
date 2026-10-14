@@ -1,9 +1,9 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.16
+**Version :** 0.17
 **Dernière mise à jour :** 2026-10-14
-**Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-010
+**Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011
 
 ## Modèle de construction
 
@@ -28,8 +28,8 @@ scripts/01_download.sh     -> télécharge et vérifie les sources (SHA-256)
 scripts/02_toolchain.sh    -> toolchain croisée temporaire (chapitre 5, sans root)
 scripts/03_temp_tools.sh   -> outils temporaires cross-compilés (chapitre 6, sans root)
 scripts/04_chroot_build.sh -> chroot : système de base + systemd + noyau (root)
-scripts/05_initramfs.sh    -> initramfs systemd
-scripts/06_make_iso.sh     -> EROFS + Limine (BIOS/UEFI) -> ISO signée
+scripts/05_initramfs.sh    -> initramfs shell (script POSIX, ADR-011)
+scripts/06_make_iso.sh     -> EROFS + Limine (BIOS/UEFI) -> ISO (empreinte SHA-256 ; signature ADR-007)
 ```
 
 La construction suit les grandes étapes de LFS : la **toolchain croisée** (étape 02)
@@ -40,6 +40,17 @@ plus nécessaires.
 
 Chaque étape est idempotente et peut être relancée seule. Les journaux sont écrits dans
 `build/logs/<étape>.log`.
+
+### Chaîne de démarrage live
+
+L'image racine est une **EROFS** compressée en zstd ; l'ISO est hybride (El Torito en
+BIOS + UEFI) et amorcée par **Limine** (ADR-011). L'initramfs est un **script POSIX**
+minimal (`/init`) : il monte `proc`/`sysfs`/`devtmpfs`, localise le média live par son
+étiquette (`YAOR-LIVE`, repli `/dev/sr0`), monte `rootfs.erofs` en lecture seule, empile
+un `overlayfs` dont la couche supérieure est un `tmpfs` (session live inscriptible),
+puis `switch_root` vers le systemd du système réel (ADR-004). Les modules `erofs`,
+`overlayfs`, `loop`, `iso9660`, `sr` et `virtio` sont compilés **en dur** dans le noyau :
+l'initramfs n'a aucun module à charger.
 
 ### Adaptations de compilation croisée
 
@@ -181,9 +192,21 @@ compilation ; on les traite explicitement pour garder le lot minimal :
 - **systemd** 262 est configuré en « minimal » : `-Dauto_features=disabled`
   coupe toutes les fonctions optionnelles (`auto`) dont la dépendance est
   absente du lot (selinux, seccomp, openssl, pam, networkd, `bootloader`, etc.) ;
-  seules `blkid`, `kmod` et `pcre2` sont explicitement activées. En complément,
-  `-Dtranslations=false` évite `msgfmt` (gettext), `-Dman=false` la
-  documentation, `-Dhwdb=false` la base matérielle et `-Dtests=false` les tests.
+  seules `blkid`, `kmod`, `pcre2` et **`libmount`** sont explicitement activées.
+  `libmount` est une *fonctionnalité* touchée par `auto_features=disabled` ; sans
+  elle, le montage des systèmes de fichiers d'API (`/dev`, `/run`, `cgroup2`…)
+  échoue au démarrage et systemd s'arrête sur « Failed to mount API
+  filesystems ». En complément, `-Dtranslations=false` évite `msgfmt` (gettext),
+  `-Dman=false` la documentation, `-Dhwdb=false` la base matérielle et
+  `-Dtests=false` les tests.
+- **D-Bus** n'est pas encore construit : `systemd-logind` ne peut donc pas
+  s'attacher au bus système et échoue en boucle. Comme une console root unique
+  ne requiert pas de gestion de sessions, l'unité est **masquée**
+  (`systemd-logind.service` → `/dev/null`) au jalon 0.1 ; elle sera réactivée
+  avec D-Bus. De même,
+  le lot minimal ne construit ni `agetty` ni `login` (util-linux configuré
+  `--disable-login`) : `getty`/`serial-getty` lancent directement `bash -l`
+  (console locale `tty1` et console série `ttyS0`, utile en QEMU `-nographic`).
 
 ## Répartition des répertoires de construction
 

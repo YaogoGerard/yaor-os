@@ -3,7 +3,7 @@
 **Statut :** Accepté
 **Date :** 2026-10-13
 **Décisionnaire(s) :** Équipe YAOR
-**Décisions liées :** ADR-001 à ADR-010
+**Décisions liées :** ADR-001 à ADR-011
 
 ## Contexte
 
@@ -51,7 +51,7 @@ ADR dédié.
 | 30 | Licence | **À décider avant la première release** |
 | 31 | Convention de commit | **Conventional Commits + trailers `Jalon`/`Feature`** — voir ADR-008 |
 | 32 | Sélection par défaut des composants | **Modernes, maintenus et performants** (« mature » ≠ « ancien ») — voir ADR-009 |
-| 33 | Démarrage live | **Limine (BIOS+UEFI) + initramfs systemd + image EROFS (zstd)** — voir ADR-010 |
+| 33 | Démarrage live | **Limine (BIOS+UEFI) + initramfs shell + image EROFS (zstd)** — voir ADR-011 |
 
 ## Conséquences
 
