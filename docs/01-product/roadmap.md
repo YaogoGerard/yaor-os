@@ -1,5 +1,8 @@
 # Roadmap — YAOR OS
 
+Les jalons numérotés et leurs critères de sortie sont définis dans
+[`milestones.md`](milestones.md).
+
 ## Phase 0 — Foundation
 - Build system.
 - Linux kernel.
