@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.8
+**Version :** 0.9
 **Dernière mise à jour :** 2026-10-14
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-010
 
@@ -102,6 +102,17 @@ fichier existe dans le dépôt Git au tag `pkgconf-3.0.8` ; le correctif
 `patches/pkgconf-3.0.8-missing-test-util.patch` le recrée à l'identique. Le test
 étant déclaré `build_by_default : false`, il n'est jamais compilé par la
 construction normale.
+
+### Correctif appliqué à libxcrypt 4.5.2
+
+GCC 16 compile par défaut en C23 (`-std=gnu23`, `__STDC_VERSION__ == 202311L`),
+ce qui active la fonction `strchr` générique de constance livrée par la glibc
+2.44 : pour un argument `const char *`, `strchr` renvoie désormais un
+`const char *`. libxcrypt passait `(const char *) intbuf->retval` (un
+`uint8_t *` pourtant mutable) puis affectait le résultat à un `char *`, ce qui
+déclenche `-Wdiscarded-qualifiers` — fatal car libxcrypt active `-Werror`. Le
+correctif `patches/libxcrypt-4.5.2-c23-strchr-const.patch` retire le `const` du
+cast (correction identique à celle de l'amont, branche `develop`).
 
 ### Contraintes du système de base (étape 04)
 
