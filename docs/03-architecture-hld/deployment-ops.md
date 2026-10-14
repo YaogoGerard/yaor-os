@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.12
+**Version :** 0.13
 **Dernière mise à jour :** 2026-10-14
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-010
 
@@ -147,6 +147,12 @@ compilation ; on les traite explicitement pour garder le lot minimal :
 - **gperf** est requis sans condition par systemd 262 (détermination de
   `GPERF_LEN_TYPE` et génération des tables `.gperf` de udev, networkd, etc.) :
   il est donc ajouté au lot, construit juste avant systemd.
+- **Jinja2** (et sa dépendance d'import **MarkupSafe**) est requis sans
+  condition par systemd 262, qui rend ses gabarits `.pc` et divers en-têtes avec
+  `find_installation('python3', modules : ['jinja2'])`. Ces deux paquets Python
+  purs sont installés par copie dans `site-packages`, comme meson, sans `pip`
+  ni backend PEP 517 ; l'extension C optionnelle de MarkupSafe (`_speedups`)
+  n'est pas compilée, son repli `_native` suffisant.
 
 ## Répartition des répertoires de construction
 
