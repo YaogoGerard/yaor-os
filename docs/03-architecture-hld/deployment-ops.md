@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.11
+**Version :** 0.12
 **Dernière mise à jour :** 2026-10-14
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-010
 
@@ -144,6 +144,9 @@ compilation ; on les traite explicitement pour garder le lot minimal :
   `libzstd` et `liblzma`, `openssl` faute de `libcrypto` (OpenSSL écarté) ;
   `zlib` reste actif et les manpages sont désactivées (`scdoc` absent). Seuls
   les modules gzip et non compressés sont donc gérés au jalon 0.1.
+- **gperf** est requis sans condition par systemd 262 (détermination de
+  `GPERF_LEN_TYPE` et génération des tables `.gperf` de udev, networkd, etc.) :
+  il est donc ajouté au lot, construit juste avant systemd.
 
 ## Répartition des répertoires de construction
 
