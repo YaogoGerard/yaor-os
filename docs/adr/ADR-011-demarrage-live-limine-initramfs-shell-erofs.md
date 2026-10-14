@@ -62,6 +62,7 @@ vers le systemd du système (ADR-004), qui reste l'init unique du **système ins
   (il n'existe pas de modèle d'init unique partagé avec le système) ; il est moins
   extensible qu'un initramfs à base d'outils si des cas futurs (chiffrement, RAID,
   réveil réseau) apparaissent — un ADR ultérieur tranchera alors l'outillage.
-- **Suivi :** le noyau est encore compressé en gzip dans le jalon 0.1 et sera
-  reconstruit avec `CONFIG_KERNEL_ZSTD=y` ; l'ISO reste à signer (ADR-007) et à valider
-  en BIOS **et** UEFI sous QEMU.
+- **Suivi :** le noyau est compressé en zstd (`CONFIG_KERNEL_ZSTD=y`), l'outil
+  `zstd` étant construit dans le chroot juste avant le noyau ; la signature GPG de
+  l'ISO (ADR-007) reste à activer pour une image de release, et le boot reste à
+  valider en BIOS **et** UEFI sous QEMU.

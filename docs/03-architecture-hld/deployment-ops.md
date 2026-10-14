@@ -43,7 +43,8 @@ Chaque étape est idempotente et peut être relancée seule. Les journaux sont �
 
 ### Chaîne de démarrage live
 
-L'image racine est une **EROFS** compressée en zstd ; l'ISO est hybride (El Torito en
+L'image racine est une **EROFS** compressée en zstd et l'image du noyau est
+compressée en zstd (`CONFIG_KERNEL_ZSTD`) ; l'ISO est hybride (El Torito en
 BIOS + UEFI) et amorcée par **Limine** (ADR-011). L'initramfs est un **script POSIX**
 minimal (`/init`) : il monte `proc`/`sysfs`/`devtmpfs`, localise le média live par son
 étiquette (`YAOR-LIVE`, repli `/dev/sr0`), monte `rootfs.erofs` en lecture seule, empile
@@ -166,6 +167,11 @@ compilation ; on les traite explicitement pour garder le lot minimal :
   fournit ses propres sources déjà analysées (`src/scan.c`, `src/parse.c`) : flex
   s'amorce donc sans flex ni bison préalables, et il est configuré avec
   `--disable-nls` (gettext absent du lot).
+- **zstd** est requis au moment de compiler le noyau : `CONFIG_KERNEL_ZSTD`
+  fait compresser `arch/x86/boot/compressed/vmlinux.bin` par l'outil `zstd`,
+  absent du lot. Il est donc construit juste avant le noyau (phase `zstd`,
+  groupe `base` du manifeste). L'image du noyau comprimée en zstd est plus
+  petite que la sortie gzip par défaut et se décompresse plus vite au démarrage.
 - `CONFIG_CFG80211_REQUIRE_SIGNED_REGDB` (actif par défaut, sans invite de
   configuration) sélectionne `SYSTEM_TRUSTED_KEYRING`, ce qui ferait construire
   les certificats du noyau avec **OpenSSL**. OpenSSL étant écarté du lot

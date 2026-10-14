@@ -19,7 +19,8 @@
 #   - toolchain finale autoporteuse : glibc (final) puis gcc (final) ;
 #   - outils de build exigés par systemd : perl, python3, ninja, meson, pkgconf ;
 #   - bibliothèques requises : zlib, libcap, libxcrypt, util-linux, kmod, pcre2 ;
-#   - libelf (Elfutils) pour objtool et flex pour le kconfig du noyau ;
+#   - libelf (Elfutils) pour objtool, flex pour le kconfig du noyau et zstd
+#     pour la compression de l'image du noyau (CONFIG_KERNEL_ZSTD) ;
 #   - systemd (PID 1) puis le noyau Linux.
 #
 # Usage :
@@ -71,6 +72,9 @@ ALL_PHASES=(
     # lexer.l/parser.y : flex est donc requis. L'archive flex fournit ses
     # sources déjà analysées (src/scan.c, src/parse.c), il s'amorce seul.
     flex
+    # CONFIG_KERNEL_ZSTD fait compresser l'image du noyau par l'outil « zstd » :
+    # il doit être présent dans le chroot au moment de la phase kernel.
+    zstd
     kernel
 )
 
@@ -557,6 +561,19 @@ phase_flex() {
     run chroot_run "cd '$d' && ./configure --prefix=/usr --disable-nls"
     run chroot_run "cd '$d' && make"
     run chroot_run "cd '$d' && make install"
+}
+
+# --- Phase : zstd (compression de l'image du noyau) -------------------------
+# CONFIG_KERNEL_ZSTD fait compresser arch/x86/boot/compressed/vmlinux.bin par
+# l'outil « zstd », qui doit donc exister dans le chroot. zstd n'a aucune
+# dépendance externe ; son Makefile installe binaire et bibliothèque.
+phase_zstd() {
+    require_archive zstd
+    local d; d="$(ci_work zstd)"
+    log "compilation zstd (requis par le noyau, CONFIG_KERNEL_ZSTD)"
+    run chroot_run "cd '$d' && make -j$JOBS prefix=/usr"
+    log "installation zstd"
+    run chroot_run "cd '$d' && make prefix=/usr install"
 }
 
 # --- Phase : noyau ----------------------------------------------------------
