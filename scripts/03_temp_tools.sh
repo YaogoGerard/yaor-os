@@ -227,7 +227,6 @@ phase_binutils2() {
         --build="$BUILD_TRIPLE" \
         --host="$LFS_TGT" \
         --disable-nls \
-        --enable-shared \
         --enable-gprofng=no \
         --disable-werror \
         --enable-64-bit-bfd \
@@ -238,7 +237,10 @@ phase_binutils2() {
     log "installation binutils (pass 2)"
     run make DESTDIR="$LFS" install
     popd >/dev/null
-    rm -fv "$LFS"/usr/lib/lib{bfd,ctf,ctf-nobfd,opcodes,sframe}.{a,la} 2>/dev/null || true
+    # Sans --enable-shared, ld est lié statiquement à bfd (et à zlib embarqué) :
+    # aucune dépendance libz.so.1 à l'exécution. On purge néanmoins tout objet
+    # partagé qu'une exécution antérieure aurait pu installer.
+    rm -fv "$LFS"/usr/lib/lib{bfd,ctf,ctf-nobfd,opcodes,sframe}*.{a,la,so,so.*} 2>/dev/null || true
 }
 
 phase_gcc2() {
