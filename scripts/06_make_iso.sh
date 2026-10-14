@@ -53,12 +53,19 @@ mkdir -p "$ROOTFS_CLEAN"
 # On ne conserve que ce qui est nécessaire au démarrage et à l'exécution :
 # rien des artefacts de compilation (build/work), de la toolchain temporaire
 # (tools), des sources, ni des outils de développement.
+#
+# L'image live est un système minimal amorçable, pas un environnement de
+# développement : les outils de compilation sont écartés (gcc et binutils,
+# python3, perl, bison, flex, file), de même que les copies de /boot, déjà
+# portées séparément par l'ISO. Ni systemd, ni glibc, ni les bibliothèques de
+# base n'en dépendent au démarrage.
 rsync -a --delete \
   --exclude='/proc/*' --exclude='/sys/*' --exclude='/dev/*' \
   --exclude='/run/*'  --exclude='/tmp/*' \
   --exclude='/build/work/*' --exclude='/build/config/*' \
   --exclude='/sources/*' --exclude='/tools/*' \
   --exclude='/.cache/*' --exclude='*.log' \
+  --exclude='/boot/*' \
   --exclude='/usr/libexec/gcc/*' \
   --exclude='/usr/lib/gcc/*' \
   --exclude='/usr/x86_64-lfs-linux-gnu/*' \
@@ -67,15 +74,27 @@ rsync -a --delete \
   --exclude='/usr/share/gtk-doc/*' --exclude='/usr/share/locale/*' --exclude='/usr/share/i18n/*' \
   --exclude='/usr/share/aclocal/*' --exclude='/usr/share/gettext/*' \
   --exclude='/usr/share/vim/*' \
-  --exclude='/usr/lib/python3.13/test/*' \
-  --exclude='/usr/lib/python3.13/idlelib/*' \
-  --exclude='/usr/lib/python3.13/turtledemo/*' \
-  --exclude='/usr/lib/python3.13/ensurepip/*' \
-  --exclude='/usr/lib/python3.13/__pycache__/*' \
-  --exclude='/usr/lib/perl5/*' \
   --exclude='/usr/lib/meson/*' \
   --exclude='/usr/bin/meson*' --exclude='/usr/bin/ninja*' \
   --exclude='*.a' --exclude='*.la' \
+  --exclude='/usr/bin/*gcc*' --exclude='/usr/bin/*g++*' \
+  --exclude='/usr/bin/*cpp*' --exclude='/usr/bin/*c++*' \
+  --exclude='/usr/bin/cc' --exclude='/usr/bin/c99' \
+  --exclude='/usr/bin/x86_64-pc-linux-gnu-*' \
+  --exclude='/usr/bin/x86_64-lfs-linux-gnu-*' \
+  --exclude='/usr/bin/ld' --exclude='/usr/bin/ld.bfd' --exclude='/usr/bin/ld.gold' \
+  --exclude='/usr/bin/as' --exclude='/usr/bin/ar' --exclude='/usr/bin/ranlib' \
+  --exclude='/usr/bin/nm' --exclude='/usr/bin/objcopy' --exclude='/usr/bin/objdump' \
+  --exclude='/usr/bin/readelf' --exclude='/usr/bin/strip' --exclude='/usr/bin/size' \
+  --exclude='/usr/bin/strings' --exclude='/usr/bin/addr2line' --exclude='/usr/bin/elfedit' \
+  --exclude='/usr/bin/gprof*' --exclude='/usr/bin/c++filt' \
+  --exclude='/usr/lib/bfd-plugins/*' \
+  --exclude='/usr/bin/bison' --exclude='/usr/bin/yacc' --exclude='/usr/share/bison/*' \
+  --exclude='/usr/bin/flex' --exclude='/usr/bin/lex' \
+  --exclude='/usr/bin/python3*' --exclude='/usr/lib/python3.13/*' \
+  --exclude='/usr/bin/perl*' --exclude='/usr/lib/perl5/*' \
+  --exclude='/usr/bin/file' --exclude='/usr/lib/libmagic*' \
+  --exclude='/usr/share/misc/magic.mgc' \
   "$LFS/" "$ROOTFS_CLEAN/"
 
 mkdir -p "$ROOTFS_CLEAN"/{proc,sys,dev,run,tmp,mnt,build,sources}

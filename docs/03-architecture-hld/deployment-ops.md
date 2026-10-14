@@ -53,6 +53,13 @@ puis `switch_root` vers le systemd du système réel (ADR-004). Les modules `ero
 `overlayfs`, `loop`, `iso9660`, `sr` et `virtio` sont compilés **en dur** dans le noyau :
 l'initramfs n'a aucun module à charger.
 
+L'image racine livrée est allégée au staging (étape 06) : l'image live est un
+**système minimal amorçable**, pas un environnement de développement. Les outils
+de compilation (gcc, binutils, python3, perl, bison, flex, `file`) et les copies
+de `/boot` — déjà portées par l'ISO — en sont écartés, ce qui retire l'essentiel
+du volume. Ni systemd, ni glibc, ni les bibliothèques de base n'en dépendent au
+démarrage.
+
 ### Adaptations de compilation croisée
 
 Certains paquets récents embarquent une gnulib dont le script `configure` **échoue**
