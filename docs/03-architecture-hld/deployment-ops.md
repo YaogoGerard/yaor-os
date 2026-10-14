@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.6
+**Version :** 0.7
 **Dernière mise à jour :** 2026-10-14
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-010
 
@@ -64,10 +64,11 @@ Depuis la version 2.44, le `configure` de glibc refuse de poursuivre si `bison`
 
 La toolchain temporaire de l'étape 03 n'inclut ni l'un ni l'autre — comme le
 chapitre 6 de LFS, conçu pour glibc 2.42. L'étape 04 construit donc, **dans le
-chroot et avant glibc**, `bison`, `python3` puis `zlib` (ce dernier pour que le
-python d'amorçage dispose de son module `_zlib`). Ces paquets s'appuient sur la
-glibc temporaire de l'étape 02 ; l'ABI étant identique, ils restent valides après
-l'installation de la glibc finale.
+chroot et avant glibc**, `bison`, `zlib` puis `python3` — zlib devant précéder
+python3 pour que celui-ci construise son module `_zlib`, exigé par meson
+(`import gzip`). Ces paquets s'appuient sur la glibc temporaire de l'étape 02 ;
+l'ABI étant identique, ils restent valides après l'installation de la glibc
+finale.
 
 Le script 03 devait également être corrigé : `binutils` (pass 2) ne doit **pas**
 être configuré `--enable-shared`, sous peine de produire un `ld` lié dynamiquement
