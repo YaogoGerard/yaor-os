@@ -460,7 +460,10 @@ phase_systemd() {
     local d; d="$(ci_work systemd)"
     local b="$d/build7"
     log "configure systemd (meson, fonctionnalités optionnelles désactivées)"
-    run chroot_run "mkdir -p '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release -Dmode=release -Dauto_features=disabled -Dblkid=enabled -Dkmod=enabled -Dpcre2=enabled -Dman=false -Dtests=false -Dhwdb=false"
+    # meson n'est pas idempotent sur un dossier déjà configuré : on le recrée.
+    # translations=false : le rendu des traductions réclame msgfmt (gettext),
+    # absent du lot minimal ; le garde-fou est le même que pour gperf/jinja2.
+    run chroot_run "rm -rf '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release -Dmode=release -Dauto_features=disabled -Dblkid=enabled -Dkmod=enabled -Dpcre2=enabled -Dman=false -Dtranslations=false -Dtests=false -Dhwdb=false"
     log "compilation systemd"
     run chroot_run "cd '$d' && ninja -C build7"
     log "installation systemd"
