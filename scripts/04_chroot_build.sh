@@ -61,6 +61,7 @@ ALL_PHASES=(
     ninja meson pkgconf
     libcap libxcrypt util-linux kmod pcre2
     bc
+    gperf
     systemd
     libelf
     kernel
@@ -414,6 +415,17 @@ phase_bc() {
 }
 
 # --- Phase : systemd --------------------------------------------------------
+phase_gperf() {
+    require_archive gperf
+    local d; d="$(ci_work gperf)"
+    # Outil de génération requis par systemd 262 (GPERF_LEN_TYPE et tables
+    # .gperf de udev/networkd/…) ; sa documentation est livrée pré-générée.
+    log "configure gperf"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr"
+    run chroot_run "cd '$d' && make"
+    run chroot_run "cd '$d' && make install"
+}
+
 phase_systemd() {
     require_archive systemd
     local d; d="$(ci_work systemd)"

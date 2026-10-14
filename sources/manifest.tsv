@@ -30,6 +30,7 @@ base	libcap	2.78	https://www.kernel.org/pub/linux/libs/security/linux-privs/libc
 base	libxcrypt	4.5.2	https://github.com/besser82/libxcrypt/releases/download/v4.5.2/libxcrypt-4.5.2.tar.xz	71513a31c01a428bccd5367a32fd95f115d6dac50fb5b60c779d5c7942aec071
 base	util-linux	2.42	https://www.kernel.org/pub/linux/utils/util-linux/v2.42/util-linux-2.42.tar.xz	3452b260bbaa775d6e749ac3bb22111785003fc1f444970025c8da26dfa758e9
 base	kmod	34.2	https://www.kernel.org/pub/linux/utils/kernel/kmod/kmod-34.2.tar.xz	5a5d5073070cc7e0c7a7a3c6ec2a0e1780850c8b47b3e3892226b93ffcb9cb54
+base	gperf	3.3	https://ftp.gnu.org/gnu/gperf/gperf-3.3.tar.gz	fd87e0aba7e43ae054837afd6cd4db03a3f2693deb3619085e6ed9d8d9604ad8
 base	pcre2	10.49	https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.49/pcre2-10.49.tar.gz	929f0b20e62879252a15886b06c89f1edef61a363cbd5826fb041080a5e557ae
 base	systemd	262	https://github.com/systemd/systemd/archive/v262/systemd-262.tar.gz	6aa77506c0644aa67f940a48e3d3a7368601f787e4f249139516d353f107bcab
 base	bc	1.08.2	https://ftp.gnu.org/gnu/bc/bc-1.08.2.tar.gz	ae470fec429775653e042015edc928d07c8c3b2fc59765172a330d3d87785f86
