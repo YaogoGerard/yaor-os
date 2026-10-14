@@ -32,6 +32,9 @@ scripts/05_initramfs.sh    -> initramfs shell (script POSIX, ADR-011)
 scripts/06_make_iso.sh     -> EROFS + Limine (BIOS/UEFI) -> ISO (empreinte SHA-256 ; signature ADR-007)
 ```
 
+L'ensemble s'enchaîne avec `scripts/build.sh`, qui exécute ces étapes dans
+l'ordre (en élevant les droits pour 04 et 06) et s'arrête à la première erreur.
+
 La construction suit les grandes étapes de LFS : la **toolchain croisée** (étape 02)
 puis les **outils temporaires** (étape 03) sont bâtis hors `chroot` par l'utilisateur ;
 seule l'étape 04, qui bascule dans la racine cible (`chroot`), requiert les privilèges
