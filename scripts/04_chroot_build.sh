@@ -11,9 +11,11 @@
 # build (configure/make/meson) sont déléguées au chroot via chroot_run().
 #
 # Périmètre (jalon 0.1, « minimal bootable ») :
-#   - bison + python3 + zlib construits AVANT glibc : glibc 2.44 exige bison
+#   - bison + zlib + python3 construits AVANT glibc : glibc 2.44 exige bison
 #     (intl/plural.c) et python (locale/C-translit.h) au configure comme au
 #     build, tous deux absents de la toolchain temporaire de l'étape 03 ;
+#     zlib précède python3 pour que celui-ci construise son module _zlib,
+#     exigé par meson (import gzip) ;
 #   - toolchain finale autoporteuse : glibc (final) puis gcc (final) ;
 #   - outils de build exigés par systemd : perl, python3, ninja, meson, pkgconf ;
 #   - bibliothèques requises : zlib, libcap, libxcrypt, util-linux, kmod, pcre2 ;
@@ -50,9 +52,9 @@ need_cmd chroot mountpoint mount umount
 # phase_* à tirets convertis en soulignés (util-linux → phase_util_linux).
 ALL_PHASES=(
     setup
-    # glibc 2.44 ne peut pas être construit avant bison et python3 (voir l'en-tête).
-    # zlib est bâti ici pour que le python d'amorçage dispose de son module _zlib.
-    bison python zlib
+    # glibc 2.44 exige bison et python3 (voir l'en-tête). zlib précède python3 :
+    # meson (import gzip) exige le module _zlib du python d'amorçage.
+    bison zlib python
     glibc
     gcc
     perl
