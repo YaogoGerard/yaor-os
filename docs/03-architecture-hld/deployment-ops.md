@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.9
+**Version :** 0.10
 **Dernière mise à jour :** 2026-10-14
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-010
 
@@ -113,6 +113,14 @@ ce qui active la fonction `strchr` générique de constance livrée par la glibc
 déclenche `-Wdiscarded-qualifiers` — fatal car libxcrypt active `-Werror`. Le
 correctif `patches/libxcrypt-4.5.2-c23-strchr-const.patch` retire le `const` du
 cast (correction identique à celle de l'amont, branche `develop`).
+
+### Utilisateurs et groupes du système de base (étape 04)
+
+L'étape 04 installe dans le chroot les fichiers `/etc/passwd` et `/etc/group`,
+couvrant les utilisateurs et groupes standard (dont `tty`, `utmp`, `input`,
+`kvm`, `render`, `audio`, `video`…). Plusieurs `make install` s'y appuient :
+util-linux termine notamment par `chgrp tty /usr/bin/wall`, qui échoue si le
+groupe `tty` est absent.
 
 ### Contraintes du système de base (étape 04)
 
