@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.15
+**Version :** 0.16
 **Dernière mise à jour :** 2026-10-14
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-010
 
@@ -77,21 +77,36 @@ casserait toute édition de liens dans le chroot.
 
 ### Correctif appliqué à gawk 5.4.1
 
-Un défaut de gawk 5.4.1 construit **sans MPFR** (le cas de la cible) fait qu'un
-élément de tableau non initialisé, après une comparaison à la chaîne vide, se
-reformate en `"0"` au lieu de rester vide. En cause : dans la disposition de la
-structure interne `NODE` (sans MPFR), `sub.nodep.name` (`vname`) et
-`sub.val.idx` (`stfmt`) partagent le même décalage ; `elem_new_reset()`, qui
-convertit un `Node_elem_new` en scalaire, écrasait `stfmt` (`STFMT_UNUSED`), ce
-qui forçait un reformatage depuis la valeur numérique 0. La construction avec
-MPFR agrandit la structure et masque le recouvrement.
+Un seul défaut d'origine, mais **deux** symptômes opposés. Dans la disposition de
+la structure interne `NODE` compilée **sans MPFR** (le cas de la cible),
+`sub.nodep.name` (alias de `vname`) et `sub.val.idx` (alias de `stfmt`) tombent
+au même décalage ; les deux champs se recouvrent alors qu'ils servent à des
+nœuds différents. La construction avec MPFR agrandit `val` (`mpfr_t`) et
+supprime ce recouvrement — c'est la configuration que l'amont teste.
 
-GCC en dépend directement : ses scripts `optc-gen.awk`/`opth-gen.awk`
-(`if (enables[...] == "")` suivi d'une concaténation) produisaient alors des
-`options.cc`/`options.h` parsemés de `#error ... does not have a Var() flag`,
-faisant échouer la compilation finale de gcc (étape 04). Le correctif
-`patches/gawk-5.4.1-elem-new-stfmt.patch` supprime l'écriture fautive ;
-l'étape 03 l'applique dans `phase_gawk`.
+- `elem_new_reset()`, qui convertit un `Node_elem_new` non initialisé en
+  scalaire, écrivait `n->vname = NULL` : cela écrasait `stfmt`
+  (`STFMT_UNUSED` devenait 0) et une chaîne vide se reformatait en `"0"`. GCC en
+  dépendait directement : ses scripts `optc-gen.awk`/`opth-gen.awk` produisaient
+  des `options.cc`/`options.h` parsemés de `#error ... does not have a Var()
+  flag`, faisant échouer la compilation finale de gcc (étape 04).
+- À l'inverse, ne pas écrire ce `vname = NULL` laisse `stfmt = STFMT_UNUSED`
+  (`0xffffffff`) dans l'emplacement de `vname`. La promotion d'un
+  `Node_elem_new` en variable (`r_get_lhs`, `adjust_param_node`,
+  `split`/`patsplit`, API d'extension) donne alors à `vname` un pointeur
+  invalide ; `r_unref()` / `efree(vname)` provoque `free(): invalid pointer`
+  (SIGABRT). Observé sur la génération, par le noyau Linux, de
+  `tools/objtool/arch/x86/lib/inat-tables.c`.
+
+Aucune valeur unique ne peut convenir aux deux usages tant que les champs se
+recouvrent. Le correctif `patches/gawk-5.4.1-vname-out-of-union.patch` **sort
+`vname` de l'union** : il devient un champ de premier niveau, commun à plusieurs
+types de nœuds, sans plus recouvrir `stfmt`. C'est la correction retenue par
+l'amont (git de gawk). Les deux bogues disparaissent simultanément et
+`elem_new_reset()` conserve son `n->vname = NULL` d'origine. L'étape 03
+l'applique dans `phase_gawk` ; le correctif a été vérifié par la suite de tests
+amont (`make check`, « ALL TESTS PASSED ») et par comparaison, octet pour octet,
+de `options.cc` avec celui produit par un gawk lié à MPFR.
 
 ### Correctif appliqué à pkgconf 3.0.8
 

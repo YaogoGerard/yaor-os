@@ -103,10 +103,13 @@ phase_tar()       { build_simple tar; }
 phase_gawk() {
     local d; d="$(src_dir gawk)"
     sed -i 's/extras//' "$d/Makefile.in"
-    # gawk 5.4.1 construit sans MPFR écrase stfmt en convertissant un élément de
-    # tableau non initialisé (voir patches/gawk-5.4.1-elem-new-stfmt.patch).
-    if ! grep -q 'Ne PAS effacer n->vname ici' "$d/eval.c"; then
-        patch -p1 -d "$d" -i "$ROOT/patches/gawk-5.4.1-elem-new-stfmt.patch"
+    # gawk 5.4.1 construit sans MPFR partage un même emplacement entre
+    # `vname` (sub.nodep.name) et `stfmt` (sub.val.idx). Sortir `vname` de
+    # l'union corrige à la fois le formatage des éléments de tableau vides et
+    # les `free()` invalides lors de la promotion d'un élément en variable
+    # (voir patches/gawk-5.4.1-vname-out-of-union.patch).
+    if ! grep -q 'char \*vname;' "$d/awk.h"; then
+        patch -p1 -d "$d" -i "$ROOT/patches/gawk-5.4.1-vname-out-of-union.patch"
     fi
     build_simple gawk
 }

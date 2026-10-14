@@ -1,0 +1,57 @@
+gawk 5.4.1 — sortir vname de l'union « sub » (correctif amont)
+
+Dans la disposition de NODE compilée *sans* MPFR, `sub.nodep.name` (alias de
+`vname`) et `sub.val.idx` (alias de `stfmt`) tombent au même décalage (32 sur
+x86_64) : les deux champs se recouvrent alors qu'ils sont tous deux utilisés
+par des nœuds différents. Même disposition *avec* MPFR : aucun recouvrement,
+car `mpfr_t` agrandit `val`.
+
+Deux bogues distincts en découlent :
+
+1. `elem_new_reset()`, appelé pour convertir un élément de tableau non
+   initialisé (`Node_elem_new`) en scalaire, écrivait `n->vname = NULL`, ce qui
+   écrasait `stfmt` (`STFMT_UNUSED` devenait 0). La représentation chaîne de
+   l'élément n'était plus considérée comme à jour et était reformatée à partir
+   de sa valeur numérique (0) : un élément vide se transformait en "0" au lieu
+   de "". En générant ses options, GCC produisait de nombreux
+   `#error ... does not have a Var() flag` dans `options.cc`.
+
+2. Inversement, ne pas écrire ce `vname = NULL` laisse `stfmt = STFMT_UNUSED`
+   (0xffffffff) dans l'emplacement de `vname`. Lorsqu'un `Node_elem_new` est
+   promu en `Node_var`/`Node_var_new` (`r_get_lhs`, `adjust_param_node`,
+   `split`/`patsplit`, API d'extension), `vname` lit alors un pointeur
+   invalide, et `r_unref()` / `efree(vname)` déclenche `free(): invalid
+   pointer` (SIGABRT). Exemple observé : génération de
+   `tools/objtool/arch/x86/lib/inat-tables.c` du noyau Linux.
+
+Aucune valeur unique ne peut convenir aux deux usages tant que les champs se
+recouvrent. Le correctif amont (présent dans le git de gawk) sort `vname` de
+l'union : `vname` devient un champ de premier niveau, commun à plusieurs types
+de nœuds, sans plus jamais recouvrir `stfmt`. Les deux bogues disparaissent et
+`elem_new_reset()` conserve son `n->vname = NULL` d'origine (ce correctif ne
+touche pas `eval.c`).
+
+--- a/awk.h
++++ b/awk.h
+@@ -513,10 +513,19 @@
+ 		OFMT_FMT	= 0x0200000,	/* string formatted via OFMT */
+ 	} flags;
+ 	long valref;
++	/*
++	 * vname -- diagnostic name for several node types (Node_param_list,
++	 * Node_func, Node_var, Node_var_array, ...).  It is deliberately kept
++	 * OUTSIDE the 'sub' union: upstream used sub.nodep.name, which aliases
++	 * sub.val.idx (stfmt) in builds configured without MPFR.  In that
++	 * layout, elem_new_reset()'s vname = NULL clobbered stfmt (turning an
++	 * empty array element into "0"), while leaving stfmt = STFMT_UNUSED
++	 * made a promoted Node_var's vname an invalid pointer (free() abort).
++	 * See gawk git master, where vname is likewise a top-level field.
++	 */
++	char *vname;
+ } NODE;
+ 
+-#define vname sub.nodep.name
+-
+ #define lnode	sub.nodep.l.lptr
+ #define rnode	sub.nodep.r.rptr
+ 
