@@ -1,0 +1,34 @@
+libxcrypt 4.5.2 — corrige l'initialisation de hptr face au strchr générique C23
+
+GCC 16 compile par défaut en C23 (-std=gnu23, __STDC_VERSION__ == 202311L), ce
+qui active le « strchr » générique de constance livré par la glibc 2.44 : avec
+un argument const char *, strchr renvoie désormais const char *. libxcrypt
+passait (const char *) intbuf->retval — un uint8_t * pourtant mutable — puis
+affectait le résultat à un char *, ce qui déclenche -Wdiscarded-qualifiers.
+Le diagnostic est fatal car libxcrypt active -Werror.
+
+Retirer le const du cast (inutile et devenu incorrect) fait renvoyer un char *.
+Correction identique à celle appliquée en amont (branche develop).
+
+--- a/lib/crypt-gost-yescrypt.c
++++ b/lib/crypt-gost-yescrypt.c
+@@ -131,7 +131,7 @@
+   intbuf->outbuf[1] = 'g';
+ 
+   /* extract yescrypt output from "$y$param$salt$output" */
+-  char *hptr = strchr ((const char *) intbuf->retval + 3, '$');
++  char *hptr = strchr ((char *) intbuf->retval + 3, '$');
+   if (!hptr)
+     {
+       errno = EINVAL;
+--- a/lib/crypt-sm3-yescrypt.c
++++ b/lib/crypt-sm3-yescrypt.c
+@@ -136,7 +136,7 @@
+   intbuf->outbuf[3] = '3';
+ 
+   /* extract yescrypt output from "$y$param$salt$output" */
+-  char *hptr = strchr ((const char *) intbuf->retval + 3, '$');
++  char *hptr = strchr ((char *) intbuf->retval + 3, '$');
+   if (!hptr)
+     {
+       errno = EINVAL;

@@ -344,7 +344,12 @@ phase_libcap() {
 
 phase_libxcrypt() {
     require_archive libxcrypt
-    local d; d="$(ci_work libxcrypt)"
+    local d h; d="$(ci_work libxcrypt)"; h="$(src_dir libxcrypt)"
+    # GCC 16 (C23) + glibc 2.44 : strchr renvoie const char * pour un argument
+    # const ; le cast d'origine déclenche -Wdiscarded-qualifiers (-Werror).
+    if grep -q 'strchr ((const char \*) intbuf->retval' "$h/lib/crypt-gost-yescrypt.c" 2>/dev/null; then
+        patch -p1 -d "$h" -i "$ROOT/patches/libxcrypt-4.5.2-c23-strchr-const.patch"
+    fi
     log "configure libxcrypt"
     run chroot_run "cd '$d' && ./configure --prefix=/usr --enable-hashes=strong,glibc --enable-obsolete-api=no --disable-static --disable-failure-tokens"
     run chroot_run "cd '$d' && make"
