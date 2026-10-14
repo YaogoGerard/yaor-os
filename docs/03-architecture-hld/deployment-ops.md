@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.10
+**Version :** 0.11
 **Dernière mise à jour :** 2026-10-14
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-010
 
@@ -139,6 +139,11 @@ compilation ; on les traite explicitement pour garder le lot minimal :
   récent que celui des développeurs du noyau peut introduire de nouveaux
   avertissements, ce qui casserait la compilation — recommandation explicite de
   LFS.
+- **kmod** 34.2 expose ses compressions et la signature OpenSSL en options
+  « feature » (actives par défaut) : `zstd` et `xz` sont désactivés faute de
+  `libzstd` et `liblzma`, `openssl` faute de `libcrypto` (OpenSSL écarté) ;
+  `zlib` reste actif et les manpages sont désactivées (`scdoc` absent). Seuls
+  les modules gzip et non compressés sont donc gérés au jalon 0.1.
 
 ## Répartition des répertoires de construction
 
