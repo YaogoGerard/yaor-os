@@ -33,7 +33,8 @@ Existe-t-il une solution ?
 | Besoin | Candidats | Décision |
 |---|---|---|
 | Kernel | Linux | **Linux** |
-| Core utilities | uutils/coreutils, GNU coreutils | **`uutils/coreutils`** (ADR-012) |
+| Core utilities | uutils/coreutils, GNU coreutils | **`uutils/coreutils`** (remplace GNU, ADR-012) |
+| findutils | uutils/findutils, GNU findutils | **`uutils/findutils`** (remplace GNU, ADR-017) |
 | Init et services | systemd, alternatives | **systemd** (ADR-004) |
 | Réseau | systemd-networkd, NetworkManager | **`systemd-networkd` + `systemd-resolved`** (ADR-013) |
 | Wi-Fi | iwd, wpa_supplicant | **`iwd`** (ADR-013) |
@@ -45,5 +46,10 @@ Existe-t-il une solution ?
 | Graphics | Mesa et alternatives | À évaluer (Phase 2) |
 | Audio | PipeWire et éventuelles implémentations Rust | À évaluer (Phase 2) |
 | Input | libinput et alternatives | À évaluer (Phase 2) |
+
+> **Principe de non-duplication :** un besoin correspond à **un seul fournisseur**. Un
+> composant Rust retenu **remplace** son homologue C/GNU, qui n'est pas embarqué
+> (ADR-017). Non retenus pour v0.2 (maturité) : `uutils/diffutils`, `grep`, `sed`,
+> `util-linux`.
 
 Les décisions définitives doivent être enregistrées avec version et justification.

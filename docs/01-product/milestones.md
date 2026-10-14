@@ -65,6 +65,10 @@ installé et mises à jour par image. Correspond à la Phase 1 « System ».
   embarqué (ADR-012).
 - [ ] `uutils/coreutils` remplace GNU coreutils dans l'image finale ; GNU reste les outils
   temporaires de construction (ADR-012).
+- [ ] `uutils/findutils` remplace GNU findutils ; aucun outil n'est fourni deux fois
+  (principe de non-duplication, ADR-017).
+- [ ] Les dépendances cargo sont **vendues** et les composants Rust se compilent
+  **hors-ligne** (ADR-018).
 - [ ] Le build est **reproductible au sens fonctionnel** : versions et empreintes épinglées,
   même résultat pour une même révision (ADR-016, REQ-SW-016).
 

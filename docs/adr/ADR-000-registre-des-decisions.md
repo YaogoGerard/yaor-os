@@ -3,7 +3,7 @@
 **Statut :** Accepté
 **Date :** 2026-10-13
 **Décisionnaire(s) :** Équipe YAOR
-**Décisions liées :** ADR-001 à ADR-016
+**Décisions liées :** ADR-001 à ADR-018
 
 ## Contexte
 
@@ -58,6 +58,8 @@ ADR dédié.
 | 37 | Cycle de vie installé | **installateur + Limine sur disque ; mises à jour `systemd-sysupdate` (A/B)** — voir ADR-015 |
 | 38 | Systèmes de fichiers | **`ext4`, `btrfs`, `vfat`/`exFAT`, `NTFS` (rw)** — voir ADR-015 |
 | 39 | Reproductibilité | **fonctionnelle (versions + empreintes épinglées)** — voir ADR-016 |
+| 40 | Lot Rust et non-duplication | **`uutils/findutils` remplace GNU ; un besoin = un seul fournisseur** — voir ADR-017 |
+| 41 | Dépendances cargo | **vendoring (`cargo vendor`), build hors-ligne** — voir ADR-018 |
 
 ## Conséquences
 

@@ -40,6 +40,8 @@ Ce dossier consigne les **décisions structurantes** du projet : pourquoi un cho
 | [ADR-014](ADR-014-sessions-comptes-et-services.md) | Sessions, comptes et services de session | Accepté |
 | [ADR-015](ADR-015-cycle-de-vie-installe-et-mises-a-jour.md) | Cycle de vie installé et mises à jour par image | Accepté |
 | [ADR-016](ADR-016-reproductibilite.md) | Reproductibilité : niveau fonctionnel | Accepté |
+| [ADR-017](ADR-017-lot-rust-findutils-et-non-duplication.md) | Lot Rust : findutils et non-duplication des outils | Accepté |
+| [ADR-018](ADR-018-dependances-cargo-vendoring.md) | Dépendances cargo : vendoring | Accepté |
 
 ## Principe de décision
 

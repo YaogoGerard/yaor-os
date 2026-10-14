@@ -3,7 +3,7 @@
 **Statut :** Accepté
 **Version :** 0.17
 **Dernière mise à jour :** 2026-10-14
-**Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011, ADR-012, ADR-013, ADR-014, ADR-015, ADR-016
+**Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011, ADR-012, ADR-013, ADR-014, ADR-015, ADR-016, ADR-017, ADR-018
 
 ## Modèle de construction
 
@@ -43,6 +43,15 @@ plus nécessaires.
 
 Chaque étape est idempotente et peut être relancée seule. Les journaux sont écrits dans
 `build/logs/<étape>.log`.
+
+### Chaîne Rust et composants Rust
+
+Rust est construit **depuis les sources**, amorcé par le `rustc` de l'hôte (ADR-012) ;
+aucun LLVM système n'est ajouté (LLVM embarqué par Rust). Les composants Rust retenus
+(`uutils/coreutils`, `uutils/findutils`, `sudo-rs`) sont compilés avec `cargo` à partir de
+dépendances **vendues** (`cargo vendor`), en **hors-ligne** (ADR-018). Ils **remplacent**
+leurs homologues GNU dans l'image finale : un besoin n'a **qu'un seul fournisseur** et les
+binaires GNU remplacés sont retirés à l'assemblage (étape 06), conformément à ADR-017.
 
 ### Chaîne de démarrage live
 
