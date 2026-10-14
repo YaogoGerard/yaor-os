@@ -488,8 +488,14 @@ phase_libelf() {
     local d; d="$(ci_work libelf)"
     log "configure libelf (Elfutils, requis par objtool)"
     run chroot_run "cd '$d' && ./configure --prefix=/usr --disable-nls --disable-debuginfod --enable-libdebuginfod=dummy"
-    log "compilation libelf"
-    run chroot_run "cd '$d' && make"
+    # On ne bâtit que « config », « lib » et « libelf » : les autres
+    # sous-répertoires (libcpu, backends, libdw, src) ne sont pas installés.
+    # Sous C23, glibc 2.44 rend bsearch « const-générique »
+    # (__glibc_const_generic) : son retour est const void* quand la base est
+    # const, ce qui déclenche -Wdiscarded-qualifiers puis échoue sous -Werror
+    # (libcpu/riscv_disasm.c). « lib » fournit libeu.a, requis par libelf.
+    log "compilation de libelf (sous-ensemble requis par objtool)"
+    run chroot_run "cd '$d' && make -C config && make -C lib && make -C libelf"
     log "installation de libelf seul"
     run chroot_run "cd '$d' && make -C libelf install && install -vDm644 config/libelf.pc /usr/lib/pkgconfig/libelf.pc && rm -fv /usr/lib/libelf.a"
 }
