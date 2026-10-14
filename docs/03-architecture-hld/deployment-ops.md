@@ -3,7 +3,7 @@
 **Statut :** Accepté
 **Version :** 0.17
 **Dernière mise à jour :** 2026-10-14
-**Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011
+**Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011, ADR-012, ADR-013, ADR-014, ADR-015, ADR-016
 
 ## Modèle de construction
 
@@ -62,6 +62,17 @@ de compilation (gcc, binutils, python3, perl, bison, flex, `file`) et les copies
 de `/boot` — déjà portées par l'ISO — en sont écartés, ce qui retire l'essentiel
 du volume. Ni systemd, ni glibc, ni les bibliothèques de base n'en dépendent au
 démarrage.
+
+### Système installé, réseau et mises à jour
+
+Le mode **installé** (ADR-015) dépose le système sur disque et configure **Limine** en
+BIOS et UEFI ; les mises à jour se font par **image**, avec deux slots A/B et retour
+arrière, via **`systemd-sysupdate`**. Les systèmes de fichiers supportés sont `ext4`
+(racine par défaut), `btrfs`, `vfat`, `exFAT` et `NTFS` (rw) ; le chiffrement LUKS est
+reporté.
+
+Le réseau est assuré par **`systemd-networkd`** et **`systemd-resolved`** (filaire) et par
+**`iwd`** avec `linux-firmware` (Wi-Fi), voir ADR-013.
 
 ### Adaptations de compilation croisée
 
@@ -270,8 +281,10 @@ sera supprimée (`/tools`) une fois le système final bâti.
 
 ## Mises à jour
 
-- Modèle **image immuable** : mise à jour par remplacement d'image (A/B ou
-  réinstallation), pas de gestionnaire de paquets classique (ADR-003).
+- Modèle **image immuable** : mise à jour par remplacement d'image, pas de gestionnaire
+  de paquets classique (ADR-003).
+- Mécanisme : **`systemd-sysupdate`**, deux slots A/B et retour arrière (ADR-015,
+  REQ-SW-020).
 
 ## CI (ultérieure)
 
