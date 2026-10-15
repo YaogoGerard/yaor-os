@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.22
+**Version :** 0.23
 **Dernière mise à jour :** 2026-10-15
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011, ADR-012, ADR-013, ADR-014, ADR-015, ADR-016, ADR-017, ADR-018, ADR-019, ADR-020
 
@@ -43,6 +43,19 @@ plus nécessaires.
 
 Chaque étape est idempotente et peut être relancée seule. Les journaux sont écrits dans
 `build/logs/<étape>.log`.
+
+### Configuration système (arborescence `config/rootfs/`)
+
+La configuration fournie par YAOR vit dans **`config/rootfs/`**, une arborescence qui
+**reflète la racine du système** (`config/rootfs/etc/…` → `/etc/…`). Elle est copiée
+telle quelle par la **phase de configuration** de l'étape 04, **après** l'installation
+des paquets : la configuration de YAOR prime ainsi sur les fichiers par défaut des
+paquets. Cette phase **active aussi les services** (`systemctl enable`) et pose les
+liens (`/etc/resolv.conf`). Le détail figure dans
+[`config/rootfs/README.md`](../../config/rootfs/README.md).
+
+Le **noyau**, lui, est configuré par `config/kernel-live.fragment` (variables fusionnées
+par `merge_config.sh`).
 
 ### Chaîne Rust et composants Rust
 
@@ -91,7 +104,7 @@ Le **réseau filaire** s'appuie sur **`systemd-networkd`** et **`systemd-resolve
 présents (systemd 262) : **aucune source nouvelle**. Il faut les **activer** à la
 construction — systemd est bâti `-Dauto_features=disabled` — via `-Dnetworkd=true` et
 `-Dresolve=true`, puis fournir une configuration par défaut
-(`/etc/systemd/network/*.network` en DHCP, `resolved.conf`).
+(DHCP filaire et Wi-Fi) et `resolved.conf.d` vivent dans `config/rootfs/etc/systemd/`.
 
 Le **Wi-Fi** (ADR-013, ADR-020) ajoute deux sources, épinglées au manifeste :
 
@@ -102,6 +115,10 @@ Le **Wi-Fi** (ADR-013, ADR-020) ajoute deux sources, épinglées au manifeste :
 - **`linux-firmware`** 20260916 — microprogrammes. Le tarball officiel est
   **monolithique** (~662 Mio compressés) ; seule la **sous-partie** correspondant aux
   pilotes retenus est installée dans l'image, pour préserver la légèreté.
+
+`iwd` est configuré en **couche 2 seule** (`config/rootfs/etc/iwd/main.conf`,
+`EnableNetworkConfiguration=false`) : l'adressage IP, filaire comme Wi-Fi, est assuré par
+`systemd-networkd` — un seul fournisseur par besoin.
 
 Le Wi-Fi exige enfin d'**activer le noyau**, que le jalon 0.1 écartait entièrement ;
 c'est désormais le cas dans `config/kernel-live.fragment` : `CONFIG_CFG80211=y` avec
@@ -130,6 +147,12 @@ Deux reconfigurations suffisent, sans source nouvelle :
 - **util-linux** : retirer `--disable-login` pour fournir **`agetty`** et **`login`** ;
   `su`/`nologin`/`runuser`/`setpriv` restent désactivés, l'élévation passant par
   `sudo-rs` (un besoin, un fournisseur).
+
+La configuration associée est fournie dans `config/rootfs/etc/` : **chaînes PAM**
+(`pam.d/`, dont `pam_systemd` — sans quoi `logind` ne suit pas les sessions,
+`REQ-SW-021`), **`sudoers`** (administration par le groupe `wheel`) et **règle polkit**
+accordant les actions `udisks2` à `wheel` (suivi d'ADR-014). Le groupe `wheel` et
+`/var/lib/iwd` sont créés par la phase de configuration.
 
 ### Composants stockage (v0.2)
 
