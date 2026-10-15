@@ -26,6 +26,13 @@
 #     le chroot, avec la toolchain Rust de l'hôte montée en lecture seule
 #     (ADR-019) : elle n'est jamais embarquée dans l'image.
 #
+# Périmètre v0.2 (« userland fonctionnel », phase 1 — ADR-013/014/015) :
+#   - sessions : expat et linux-pam, D-Bus (expat + libsystemd), shadow (comptes)
+#     et sudo-rs (élévation) ; util-linux fournit login/agetty et systemd est
+#     bâti avec PAM et logind (plus de session root « nue ») ;
+#   - la phase « configure-system » (en fin de liste) copie l'arborescence
+#     config/rootfs et active les services, une fois tous les paquets installés.
+#
 # Usage :
 #   sudo ./scripts/04_chroot_build.sh                 # enchaîne toutes les phases
 #   sudo ./scripts/04_chroot_build.sh setup systemd   # relance des phases choisies
@@ -64,12 +71,22 @@ ALL_PHASES=(
     gcc
     perl
     ninja meson pkgconf
-    libcap libxcrypt util-linux kmod pcre2
+    libcap libxcrypt
+    # Sessions (ADR-014) : expat (analyse XML de D-Bus) et linux-pam doivent
+    # précéder util-linux (dont « login » s'appuie sur PAM) et systemd, bâti
+    # -Dpam=enabled (la fonctionnalité « pam » est coupée par
+    # -Dauto_features=disabled).
+    expat linux-pam
+    util-linux
+    kmod pcre2
     bc gperf
     # systemd 262 exige jinja2 (rendu des .pc et de divers en-têtes, dont
     # libudev.pc) ; markupsafe est sa dépendance d'import.
     markupsafe jinja2
     systemd
+    # Suite des sessions (ADR-014) : D-Bus (sur expat, lié à libsystemd),
+    # shadow (comptes et /etc/shadow) et sudo-rs (élévation, lié à libpam).
+    dbus shadow sudo-rs
     libelf
     # Le kconfig du noyau régénère lexer.lex.c (et parser.tab.c) depuis
     # lexer.l/parser.y : flex est donc requis. L'archive flex fournit ses
@@ -79,6 +96,10 @@ ALL_PHASES=(
     # il doit être présent dans le chroot au moment de la phase kernel.
     zstd
     kernel
+    # Phase de configuration système : copie config/rootfs et active les
+    # services. Elle précède les composants Rust pour s'appuyer sur les outils
+    # de base encore en place.
+    configure-system
     # Composants Rust, en dernier : ils écrasent leurs homologues GNU dans
     # /usr/bin, une fois que plus aucune phase C n'en dépend (ADR-017). La
     # toolchain de l'hôte sert seule à les compiler (ADR-019).
@@ -485,11 +506,38 @@ phase_libxcrypt() {
     run chroot_run "cd '$d' && make install"
 }
 
+# --- Phase : expat (analyse XML, requise par D-Bus) -------------------------
+phase_expat() {
+    require_archive expat
+    local d; d="$(ci_work expat)"
+    log "configure expat"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --disable-static --without-xmlwf --without-examples --without-tests --without-docbook"
+    run chroot_run "cd '$d' && make"
+    run chroot_run "cd '$d' && make install"
+}
+
+# --- Phase : linux-pam (authentification, ADR-014) --------------------------
+# À précéder util-linux (dont « login » s'appuie sur PAM) et systemd, bâti
+# -Dpam=enabled. Les fonctionnalités optionnelles sont coupées ; les modules
+# s'installent dans /usr/lib/security, comme pam_systemd.so (fourni par
+# systemd) : un seul répertoire de modules pour PAM.
+phase_linux_pam() {
+    require_archive linux-pam
+    local d; d="$(ci_work linux-pam)"
+    local b="$d/build7"
+    log "configure linux-pam (meson)"
+    run chroot_run "rm -rf '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release -Ddocs=disabled -Di18n=disabled -Daudit=disabled -Dselinux=disabled -Deconf=auto -Delogind=disabled -Dlogind=disabled -Dopenssl=disabled -Dpwaccess=disabled -Dpam_userdb=disabled -Dexamples=false"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
 phase_util_linux() {
     require_archive util-linux
     local d; d="$(ci_work util-linux)"
+    # v0.2 fournit « login » et « agetty » (consoles) : on retire
+    # --disable-login. su/nologin/runuser/setpriv restent désactivés,
+    # l'élévation passant par sudo-rs (un besoin, un fournisseur — ADR-014).
     log "configure util-linux"
-    run chroot_run "cd '$d' && ./configure --bindir=/usr/bin --sbindir=/usr/sbin --libdir=/usr/lib --runstatedir=/run --disable-chfn-chsh --disable-login --disable-nologin --disable-su --disable-setpriv --disable-runuser --disable-pylibmount --disable-liblastlog2 --disable-static --without-python ADJTIME_PATH=/var/run/adjtime"
+    run chroot_run "cd '$d' && ./configure --bindir=/usr/bin --sbindir=/usr/sbin --libdir=/usr/lib --runstatedir=/run --disable-chfn-chsh --disable-nologin --disable-su --disable-setpriv --disable-runuser --disable-pylibmount --disable-liblastlog2 --disable-static --without-python ADJTIME_PATH=/var/run/adjtime"
     run chroot_run "cd '$d' && make"
     run chroot_run "cd '$d' && make install"
 }
@@ -565,18 +613,20 @@ phase_systemd() {
     # (les options booléennes, elles, gardent leur défaut : activé). libmount en
     # fait partie et doit être réactivé explicitement : sans lui, le montage des
     # systèmes de fichiers d'API (/dev, /run, cgroup2…) échoue au démarrage et
-    # systemd s'arrête sur « Failed to mount API filesystems ».
-    run chroot_run "rm -rf '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release -Dmode=release -Dauto_features=disabled -Dlibmount=enabled -Dblkid=enabled -Dkmod=enabled -Dpcre2=enabled -Dman=false -Dtranslations=false -Dtests=false -Dhwdb=false"
+    # systemd s'arrête sur « Failed to mount API filesystems ». « pam » est une
+    # fonctionnalité : on l'active pour logind et les sessions (ADR-014).
+    # networkd/resolve/logind sont des booléens : on les fixe explicitement.
+    run chroot_run "rm -rf '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release -Dmode=release -Dauto_features=disabled -Dlibmount=enabled -Dblkid=enabled -Dkmod=enabled -Dpcre2=enabled -Dpam=enabled -Dnetworkd=true -Dresolve=true -Dlogind=true -Dman=false -Dtranslations=false -Dtests=false -Dhwdb=false"
     log "compilation systemd"
     run chroot_run "cd '$d' && ninja -C build7"
     log "installation systemd"
     run chroot_run "cd '$d' && ninja -C build7 install"
 
     log "réglages de démarrage systemd"
-    # Le lot minimal ne construit ni agetty/login (util-linux est configuré
-    # --disable-login) : les consoles lancent directement un shell de
-    # connexion root. On couvre la console locale (tty1) et la console série
-    # (ttyS0, utile en QEMU -nographic).
+    # Consoles locale (tty1) et série (ttyS0, utile en QEMU -nographic) :
+    # agetty + login (util-linux), avec connexion automatique de root pour le
+    # média live. « login -f » traverse PAM : la session est enregistrée auprès
+    # de systemd-logind via pam_systemd, même sans mot de passe (REQ-SW-021).
     mkdir -pv "$LFS/etc/systemd/system/getty.target.wants" \
               "$LFS/etc/systemd/system/getty@tty1.service.d" \
               "$LFS/etc/systemd/system/serial-getty@ttyS0.service.d"
@@ -586,24 +636,60 @@ phase_systemd() {
     cat > "$LFS/etc/systemd/system/getty@tty1.service.d/autologin.conf" <<'EOF'
 [Service]
 ExecStart=
-ExecStart=-/usr/bin/bash -l
+ExecStart=-/usr/sbin/agetty --autologin root --noclear %I $TERM
 Environment=TERM=linux
-Environment=HOME=/root
 EOF
     cat > "$LFS/etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf" <<'EOF'
 [Service]
 ExecStart=
-ExecStart=-/usr/bin/bash -l
+ExecStart=-/usr/sbin/agetty --autologin root --noclear %I $TERM
 Environment=TERM=linux
-Environment=HOME=/root
 EOF
-    # D-Bus n'est pas construit au jalon 0.1 : systemd-logind ne peut pas
-    # s'attacher au bus système et échoue en boucle (« User Login Management »).
-    # Les sessions ne sont pas nécessaires pour une console root unique ; on
-    # masque l'unité, qui sera réactivée quand D-Bus rejoindra le système.
-    ln -sf /dev/null "$LFS/etc/systemd/system/systemd-logind.service"
     ln -sf /usr/lib/systemd/systemd "$LFS/usr/sbin/init"
     run chroot_run "systemd-machine-id-setup"
+}
+
+# --- Phase : D-Bus (bus système et utilisateur) -----------------------------
+# D-Bus 1.16.2 est bâti par meson et lié à libsystemd (sd-daemon) : il suit donc
+# systemd et expat (analyse XML des politiques). GLib n'étant pas encore
+# présent, l'option « modular_tests » (qui l'exige) est coupée.
+phase_dbus() {
+    require_archive dbus
+    local d; d="$(ci_work dbus)"
+    local b="$d/build7"
+    log "configure D-Bus (meson, bus système sur libsystemd)"
+    run chroot_run "rm -rf '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release -Dsystemd=enabled -Dselinux=disabled -Dapparmor=disabled -Dmodular_tests=disabled -Dinstalled_tests=false -Dintrusive_tests=false -Ddoxygen_docs=disabled -Dducktype_docs=disabled -Dxml_docs=disabled"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# --- Phase : shadow (comptes et /etc/shadow) --------------------------------
+# shadow 4.20.3 fournit useradd/usermod/passwd ; /etc/shadow et /etc/gshadow en
+# sont dérivés (pwconv/grpconv, phase de configuration). Il est lié à libpam
+# (--with-libpam) et n'embarque PAS « su » : l'élévation passe par sudo-rs (un
+# besoin, un fournisseur — ADR-014). yescrypt est retenu pour les mots de passe.
+phase_shadow() {
+    require_archive shadow
+    local d; d="$(ci_work shadow)"
+    log "configure shadow"
+    run chroot_run "cd '$d' && ./configure --sysconfdir=/etc --disable-static --without-su --with-libpam --with-yescrypt --disable-lastlog --with-group-name-max-length=32"
+    run chroot_run "cd '$d' && make"
+    run chroot_run "cd '$d' && make install"
+}
+
+# --- Phase : sudo-rs (élévation de privilèges) ------------------------------
+# sudo-rs 0.2.15 (Rust, ADR-012) se compile hors-ligne (ADR-018/019) ; il se lie
+# nativement à libpam (#[link(name = "pam")]). Le service PAM est « sudo »
+# (sudoers-rs puis sudoers, voir config/rootfs). « sudo » est setuid root ;
+# « sudoedit » n'est qu'une invocation de sudo (détectée sur argv[0]), d'où le
+# lien symbolique. « su » n'est pas installé (ADR-014).
+phase_sudo_rs() {
+    require_archive sudo-rs
+    ensure_host_rust
+    local d; d="$(ci_work sudo-rs)"
+    log "compilation de sudo-rs (Rust, hors-ligne)"
+    run chroot_rust "cd '$d' && cargo build --release --locked"
+    log "installation de sudo/visudo (sudo setuid, sudoedit en lien)"
+    run chroot_run "install -Dm755 '$d/target/release/sudo' /usr/bin/sudo && install -Dm755 '$d/target/release/visudo' /usr/bin/visudo && ln -sf sudo /usr/bin/sudoedit && chmod 4755 /usr/bin/sudo"
 }
 
 # --- Phase : libelf (Elfutils, requis par objtool du noyau) -----------------
@@ -667,6 +753,31 @@ phase_kernel() {
     log "installation des modules"
     run chroot_run "cd '$d' && make modules_install"
     run chroot_run "cd '$d' && cp -v arch/x86/boot/bzImage /boot/vmlinuz-$ver && cp -v System.map /boot/System.map-$ver && cp -v .config /boot/config-$ver"
+}
+
+# --- Phase : configuration système (ADR-013/014/015) ------------------------
+# Copie l'arborescence de configuration fournie par YAOR (config/rootfs, miroir
+# de la racine) APRÈS les paquets, pour primer sur leurs fichiers par défaut.
+# Puis traite ce qui n'est pas un simple fichier : groupe « wheel », dérivés de
+# /etc/passwd et /etc/group, /etc/resolv.conf et activation des services.
+phase_configure_system() {
+    section "Configuration système (config/rootfs → /)"
+    run cp -a "$CONFIG_DIR/rootfs/." "$LFS/"
+    # sudoers et son complément ne doivent pas être lisibles par tous.
+    chroot_run "chmod 440 /etc/sudoers /etc/sudoers.d/00-wheel"
+
+    section "Comptes : groupe wheel et ombres"
+    # « wheel » porte l'administration (sudoers, règle polkit — ADR-014), GID 998.
+    chroot_run "grep -q '^wheel:' /etc/group || echo 'wheel:x:998:' >> /etc/group"
+    # pam_unix exige une entrée shadow (même verrouillée) ; on dérive /etc/shadow
+    # et /etc/gshadow de /etc/passwd et /etc/group.
+    chroot_run "[ -f /etc/shadow ]  || pwconv"
+    chroot_run "[ -f /etc/gshadow ] || grpconv"
+
+    # Sessions : dbus.socket (paquet dbus) et systemd-logind.service (systemd)
+    # sont activés par les liens symboliques posés à l'installation de leurs
+    # paquets (sockets.target.wants, multi-user.target.wants) ; ces unités n'ont
+    # pas de section [Install], donc aucun « systemctl enable » n'est nécessaire.
 }
 
 # --- Phases : composants Rust (uutils) --------------------------------------

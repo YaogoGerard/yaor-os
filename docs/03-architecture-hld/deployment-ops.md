@@ -42,7 +42,11 @@ root. Une fois le système final construit, la toolchain et les outils temporair
 plus nécessaires.
 
 Chaque étape est idempotente et peut être relancée seule. Les journaux sont écrits dans
-`build/logs/<étape>.log`.
+`build/logs/<étape>.log`. Les phases de l'étape 04 laissent un marqueur
+(`build/stamps/ch7.<phase>`) : quand une **recette change** entre deux jalons (par
+exemple les options de `systemd` ou `util-linux` en v0.2), il faut **supprimer le
+marqueur** de la phase concernée, ou repartir d'un `build/` vierge, faute de quoi elle
+n'est pas reconstruite.
 
 ### Configuration système (arborescence `config/rootfs/`)
 
