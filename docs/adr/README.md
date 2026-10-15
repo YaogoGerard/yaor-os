@@ -43,6 +43,7 @@ Ce dossier consigne les **décisions structurantes** du projet : pourquoi un cho
 | [ADR-017](ADR-017-lot-rust-findutils-et-non-duplication.md) | Lot Rust : findutils et non-duplication des outils | Accepté |
 | [ADR-018](ADR-018-dependances-cargo-vendoring.md) | Dépendances cargo : vendoring | Accepté |
 | [ADR-019](ADR-019-chaine-rust-build-toolchain-hote-et-vendoring.md) | Chaîne Rust : toolchain hôte et vendoring au téléchargement | Accepté |
+| [ADR-020](ADR-020-wifi-sans-regdb-signe.md) | Wi-Fi : cfg80211 sans registre réglementaire signé | Accepté |
 
 ## Principe de décision
 
