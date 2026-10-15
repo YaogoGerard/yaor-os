@@ -1,0 +1,13 @@
+// YAOR — actions udisks2 réservées à l'administration (ADR-014).
+//
+// Les règles par défaut d'udisks2 laissent déjà un utilisateur local actif
+// monter les volumes amovibles sans authentification. Cette règle accorde en
+// plus au groupe « wheel » les actions udisks2 privilégiées, après
+// authentification ; les autres sujets retombent sur les règles par défaut.
+polkit.addRule(function(action, subject) {
+    if (action.id.indexOf("org.freedesktop.udisks2.") === 0 &&
+        subject.isInGroup("wheel")) {
+        return polkit.Result.AUTH_ADMIN_KEEP;
+    }
+    return polkit.Result.NOT_HANDLED;
+});

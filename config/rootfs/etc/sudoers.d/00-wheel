@@ -1,0 +1,2 @@
+## YAOR — administration : les membres du groupe « wheel » (ADR-014).
+%wheel ALL=(ALL:ALL) ALL

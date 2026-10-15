@@ -1,0 +1,2 @@
+# YAOR — chaîne d'authentification commune (ADR-014).
+auth      required   pam_unix.so

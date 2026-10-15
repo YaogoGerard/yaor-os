@@ -1,0 +1,5 @@
+# YAOR — service PAM de sudo-rs (ADR-012, ADR-014).
+auth      include    system-auth
+account   include    system-account
+password  include    system-password
+session   include    system-session

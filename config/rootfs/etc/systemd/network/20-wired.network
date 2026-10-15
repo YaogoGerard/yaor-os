@@ -1,0 +1,14 @@
+# YAOR — interface filaire (ADR-013).
+#
+# systemd-networkd configure l'adressage IP par DHCP (v4 et v6) ; la
+# résolution de noms est assurée par systemd-resolved.
+[Match]
+Type=ether
+
+[Network]
+DHCP=yes
+IPv6AcceptRA=yes
+
+[DHCPv4]
+# Utiliser le domaine fourni par le serveur DHCP comme domaine de recherche.
+UseDomains=yes

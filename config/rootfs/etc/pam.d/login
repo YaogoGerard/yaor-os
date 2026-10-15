@@ -1,0 +1,6 @@
+# YAOR — connexion sur terminal (util-linux « login », ADR-014).
+auth      requisite  pam_nologin.so
+auth      include    system-auth
+account   include    system-account
+password  include    system-password
+session   include    system-session

@@ -1,0 +1,14 @@
+# YAOR — interface sans fil (ADR-013).
+#
+# « iwd » ne fait que l'association (couche 2) ; c'est systemd-networkd qui
+# configure l'adressage IP, comme pour le filaire : un seul fournisseur par
+# besoin (pas de second client DHCP).
+[Match]
+Type=wlan
+
+[Network]
+DHCP=yes
+IPv6AcceptRA=yes
+
+[DHCPv4]
+UseDomains=yes

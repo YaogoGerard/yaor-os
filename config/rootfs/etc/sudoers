@@ -1,0 +1,7 @@
+## YAOR — fichier sudoers minimal (sudo-rs).
+##
+## À modifier avec « visudo ». Voir sudoers(5).
+Defaults secure_path="/usr/sbin:/usr/bin:/sbin:/bin"
+
+## Les règles d'administration vivent dans des fichiers complémentaires.
+@includedir /etc/sudoers.d
