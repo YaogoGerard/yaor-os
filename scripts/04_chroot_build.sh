@@ -87,6 +87,11 @@ ALL_PHASES=(
     # Suite des sessions (ADR-014) : D-Bus (sur expat, lié à libsystemd),
     # shadow (comptes et /etc/shadow) et sudo-rs (élévation, lié à libpam).
     dbus shadow sudo-rs
+    # Réseau (ADR-013, ADR-020) : iwd (Wi-Fi, couche 2 seule) s'appuie sur
+    # libreadline pour « iwctl » et détecte D-Bus et systemd via leurs fichiers
+    # pkg-config (dbus-1, systemd) — donc après la phase systemd. linux-firmware
+    # fournit les microprogrammes des pilotes activés dans le noyau.
+    readline iwd linux-firmware
     libelf
     # Le kconfig du noyau régénère lexer.lex.c (et parser.tab.c) depuis
     # lexer.l/parser.y : flex est donc requis. L'archive flex fournit ses
@@ -692,6 +697,46 @@ phase_sudo_rs() {
     run chroot_run "install -Dm755 '$d/target/release/sudo' /usr/bin/sudo && install -Dm755 '$d/target/release/visudo' /usr/bin/visudo && ln -sf sudo /usr/bin/sudoedit && chmod 4755 /usr/bin/sudo"
 }
 
+# --- Phases : réseau (ADR-013, ADR-020) -------------------------------------
+
+# readline : bibliothèque de saisie de « iwctl ». ncurses (bâti en « wide » à
+# l'étape 03) est référencé sous son nom ncursesw ; on lie la bibliothèque
+# partagée à libncursesw (SHLIB_LIBS), que configure ne détecte pas seul.
+phase_readline() {
+    require_archive readline
+    local d; d="$(ci_work readline)"
+    log "configure readline"
+    run chroot_run "cd '$d' && sed -i '/MV.*old/d' Makefile.in && sed -i '/{OLDSUFF}/c:' support/shlib-install && ./configure --prefix=/usr --with-curses"
+    log "compilation readline"
+    run chroot_run "cd '$d' && make SHLIB_LIBS='-lncursesw'"
+    log "installation readline"
+    run chroot_run "cd '$d' && make install"
+}
+
+# iwd : démon Wi-Fi en couche 2 seule (ADR-013). Il embarque « ell » (aucun
+# paquet externe, ADR-017) et « iwctl » exige readline. Les emplacements D-Bus
+# et systemd sont lus via pkg-config (dbus-1, systemd).
+phase_iwd() {
+    require_archive iwd
+    local d; d="$(ci_work iwd)"
+    log "configure iwd"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --localstatedir=/var --disable-manual-pages"
+    log "compilation iwd"
+    run chroot_run "cd '$d' && make -j$JOBS"
+    log "installation iwd"
+    run chroot_run "cd '$d' && make install"
+}
+
+# linux-firmware : microprogrammes des pilotes activés au noyau (Wi-Fi et
+# quelques cartes filaires). Le tarball est monolithique ; on l'installe en
+# entier, l'image EROFS (étape 06, zstd) assurant seule la compression.
+phase_linux_firmware() {
+    require_archive linux-firmware
+    local d; d="$(ci_work linux-firmware)"
+    log "installation des microprogrammes (linux-firmware)"
+    run chroot_run "cd '$d' && make install DESTDIR= FIRMWAREDIR=/lib/firmware"
+}
+
 # --- Phase : libelf (Elfutils, requis par objtool du noyau) -----------------
 phase_libelf() {
     require_archive libelf
@@ -778,6 +823,19 @@ phase_configure_system() {
     # sont activés par les liens symboliques posés à l'installation de leurs
     # paquets (sockets.target.wants, multi-user.target.wants) ; ces unités n'ont
     # pas de section [Install], donc aucun « systemctl enable » n'est nécessaire.
+
+    section "Activation des services (réseau)"
+    # systemd-networkd et systemd-resolved portent [Install] (multi-user.target
+    # et sysinit.target) ; iwd aussi (multi-user.target). Seules ces unités
+    # s'activent donc par « systemctl enable ».
+    chroot_run "systemctl enable systemd-networkd systemd-resolved iwd"
+
+    section "Résolution de noms et profils Wi-Fi"
+    # systemd-resolved expose son résolveur local : /etc/resolv.conf doit y
+    # pointer (le fichier n'est fourni par aucun paquet).
+    chroot_run "ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf"
+    # Profils Wi-Fi persistants d'iwd (l'unité les crée aussi à l'exécution).
+    chroot_run "mkdir -p -m 0700 /var/lib/iwd"
 }
 
 # --- Phases : composants Rust (uutils) --------------------------------------

@@ -38,9 +38,11 @@ configuration de l'étape 04.
 | `/etc/sudoers`, `/etc/sudoers.d/00-wheel` | `sudo-rs` | administration par le groupe `wheel` |
 | `/etc/polkit-1/rules.d/49-yaor-udisks.rules` | `polkit` | actions `udisks2` pour `wheel` |
 
-Services **activés** au démarrage : `systemd-networkd`, `systemd-resolved`, `iwd`,
-`udisks2`, `dbus.socket` et `systemd-logind`. `systemd-logind` conserve les **valeurs par
-défaut** (aucun `logind.conf.d` n'est fourni — comportement multi-utilisateur standard).
+Services **activés** au démarrage : `systemd-networkd`, `systemd-resolved`, `iwd` et
+`udisks2` (par `systemctl enable`) ; `dbus.socket` et `systemd-logind.service` n'ont
+pas de section `[Install]` : leurs paquets les activent par des liens symboliques posés
+à l'installation. `systemd-logind` conserve les **valeurs par défaut** (aucun
+`logind.conf.d` n'est fourni — comportement multi-utilisateur standard).
 `/etc/resolv.conf` pointe vers `/run/systemd/resolve/stub-resolv.conf` ; le groupe `wheel`
 et `/var/lib/iwd` sont créés à la construction.
 

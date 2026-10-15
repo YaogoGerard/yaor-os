@@ -160,6 +160,19 @@ phase_ncurses() {
             ln -sf "$real"          "$libdir/lib$name.so.6"
         done
     fi
+
+    # ncurses ne publie aussi que les fichiers pkg-config « wide »
+    # (ncursesw.pc) ; comme LFS, on expose ncurses.pc et tinfo.pc pour les
+    # consommateurs qui référencent les noms non-wide (readline.pc les place
+    # dans son Requires.private).
+    local pcdir="$LFS/usr/lib/pkgconfig"
+    if [[ -f "$pcdir/ncursesw.pc" ]]; then
+        for name in ncurses tinfo; do
+            [[ -e "$pcdir/$name.pc" ]] && continue
+            log "alias pkg-config : $name.pc -> ncursesw.pc"
+            ln -sf ncursesw.pc "$pcdir/$name.pc"
+        done
+    fi
 }
 
 phase_bash() {

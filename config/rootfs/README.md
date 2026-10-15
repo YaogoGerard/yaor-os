@@ -26,9 +26,10 @@ configuration fournie par YAOR prime sur les fichiers par défaut des paquets.
 La phase de configuration système assure aussi ce qui n'est pas un simple
 fichier :
 
-- **activer les services** :
-  `systemctl enable systemd-networkd systemd-resolved iwd udisks2 dbus.socket
-  systemd-logind` ;
+- **activer les services** : `systemctl enable systemd-networkd
+  systemd-resolved iwd udisks2` ; `dbus.socket` et `systemd-logind.service` n'ont
+  pas de section `[Install]` : leurs paquets les activent par des liens
+  symboliques posés à l'installation ;
 - faire pointer **`/etc/resolv.conf`** vers
   `/run/systemd/resolve/stub-resolv.conf` ;
 - créer le groupe **`wheel`** et le dossier **`/var/lib/iwd`** (profils Wi-Fi).

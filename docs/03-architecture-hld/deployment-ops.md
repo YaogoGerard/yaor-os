@@ -116,9 +116,10 @@ Le **Wi-Fi** (ADR-013, ADR-020) ajoute deux sources, épinglées au manifeste :
   `--enable-external-ell`) : **aucun paquet `ell` séparé**, conforme au principe de
   non-duplication (ADR-017). Son client **`iwctl`** exige **`readline`** 8.3 (lui-même
   au-dessus de `ncurses`, déjà au lot).
-- **`linux-firmware`** 20260916 — microprogrammes. Le tarball officiel est
-  **monolithique** (~662 Mio compressés) ; seule la **sous-partie** correspondant aux
-  pilotes retenus est installée dans l'image, pour préserver la légèreté.
+- **`linux-firmware`** 20260916 — microprogrammes, installés **en entier** (Wi-Fi
+  et cartes filaires) pour maximiser la prise en charge matérielle. Le tarball est
+  monolithique (~662 Mio compressés) ; l'image EROFS de l'étape 06 (zstd) en assure
+  la compression, sans quoi l'ISO dépasserait de loin la cible de légèreté.
 
 `iwd` est configuré en **couche 2 seule** (`config/rootfs/etc/iwd/main.conf`,
 `EnableNetworkConfiguration=false`) : l'adressage IP, filaire comme Wi-Fi, est assuré par
