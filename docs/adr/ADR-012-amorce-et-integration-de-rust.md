@@ -1,9 +1,13 @@
 # ADR-012 — Amorce et intégration de Rust
 
-**Statut :** Accepté
+**Statut :** Accepté — remplacé en partie par ADR-019
 **Date :** 2026-10-14
 **Décisionnaire(s) :** Équipe YAOR
-**Décisions liées :** ADR-000, ADR-001, ADR-002, ADR-009
+**Décisions liées :** ADR-000, ADR-001, ADR-002, ADR-009, ADR-019
+
+> **Note (ADR-019) :** l'amorçage par le `rustc` de l'hôte est **conservé** ; le volet
+> « bâtir `rustc` depuis les sources et le livrer » est **remplacé** : la toolchain Rust
+> devient un **outil de build**, non embarqué dans l'image.
 
 ## Contexte
 

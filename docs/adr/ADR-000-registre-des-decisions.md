@@ -3,7 +3,7 @@
 **Statut :** Accepté
 **Date :** 2026-10-13
 **Décisionnaire(s) :** Équipe YAOR
-**Décisions liées :** ADR-001 à ADR-018
+**Décisions liées :** ADR-001 à ADR-019
 
 ## Contexte
 
@@ -52,7 +52,7 @@ ADR dédié.
 | 31 | Convention de commit | **Conventional Commits + trailers `Jalon`/`Feature`** — voir ADR-008 |
 | 32 | Sélection par défaut des composants | **Modernes, maintenus et performants** (« mature » ≠ « ancien ») — voir ADR-009 |
 | 33 | Démarrage live | **Limine (BIOS+UEFI) + initramfs shell + image EROFS (zstd)** — voir ADR-011 |
-| 34 | Amorce et intégration de Rust | **`rustc` de l'hôte comme amorçage ; LLVM embarqué ; `uutils/coreutils` ; `sudo-rs`** — voir ADR-012 |
+| 34 | Amorce et intégration de Rust | **`uutils/coreutils` ; `sudo-rs`** — voir ADR-012 |
 | 35 | Réseau | **`systemd-networkd` + `systemd-resolved` ; Wi-Fi par `iwd`** — voir ADR-013 |
 | 36 | Sessions et comptes | **D-Bus et `systemd-logind` réactivés ; PAM ; polkit ; `udisks2`** — voir ADR-014 |
 | 37 | Cycle de vie installé | **installateur + Limine sur disque ; mises à jour `systemd-sysupdate` (A/B)** — voir ADR-015 |
@@ -60,6 +60,7 @@ ADR dédié.
 | 39 | Reproductibilité | **fonctionnelle (versions + empreintes épinglées)** — voir ADR-016 |
 | 40 | Lot Rust et non-duplication | **`uutils/findutils` remplace GNU ; un besoin = un seul fournisseur** — voir ADR-017 |
 | 41 | Dépendances cargo | **vendoring (`cargo vendor`), build hors-ligne** — voir ADR-018 |
+| 42 | Chaîne Rust au build | **toolchain hôte (outil de build, non livrée) ; vendoring au téléchargement** — voir ADR-019 |
 
 ## Conséquences
 

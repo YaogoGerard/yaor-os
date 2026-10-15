@@ -61,8 +61,8 @@ installé et mises à jour par image. Correspond à la Phase 1 « System ».
 
 ### Construction et toolchain
 
-- [ ] Rust est construit depuis les sources, amorcé par le `rustc` de l'hôte, avec le LLVM
-  embarqué (ADR-012).
+- [ ] La toolchain Rust (`rustc`/`cargo` de l'hôte) est un **prérequis de build** vérifié à
+  l'étape 00 ; aucun `rustc`/LLVM n'est embarqué (ADR-019, remplace en partie ADR-012).
 - [ ] `uutils/coreutils` remplace GNU coreutils dans l'image finale ; GNU reste les outils
   temporaires de construction (ADR-012).
 - [ ] `uutils/findutils` remplace GNU findutils ; aucun outil n'est fourni deux fois
