@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.20
+**Version :** 0.21
 **Dernière mise à jour :** 2026-10-15
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011, ADR-012, ADR-013, ADR-014, ADR-015, ADR-016, ADR-017, ADR-018, ADR-019, ADR-020
 
@@ -153,6 +153,18 @@ Côté noyau, il faut activer `CONFIG_EXT4_FS`, `CONFIG_BTRFS_FS`, `CONFIG_VFAT_
 (avec `CONFIG_NLS_CODEPAGE_437`/`CONFIG_NLS_ISO8859_1`), `CONFIG_EXFAT_FS` et
 `CONFIG_NTFS3_FS`. Le greffon `fs` de `libblockdev` exige que les outils `mkfs`/`fsck`
 correspondants soient présents au runtime.
+
+### Mode installé et mises à jour (v0.2)
+
+La conception détaillée (installateur, schéma GPT, transferts `systemd-sysupdate`, machine
+à états A/B et retour arrière avec Limine) est décrite dans
+[`../04-design-lld/installer/installer.md`](../04-design-lld/installer/installer.md).
+
+Sans **source nouvelle** — l'installateur (`yaor-install`) et la sélection de slot
+(`yaor-slot`) sont des composants **internes en Rust** — le mode installé exige d'**activer
+deux fonctions de systemd**, bâti `-Dauto_features=disabled` : **`-Drepart=true`**
+(partitionnement idempotent) et **`-Dsysupdate=true`**. La signature des images de mise à
+jour ramène OpenSSL (ADR-007, ADR-020).
 
 ### Adaptations de compilation croisée
 

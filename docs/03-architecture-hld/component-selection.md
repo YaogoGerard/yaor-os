@@ -40,6 +40,7 @@ Existe-t-il une solution ?
 | Wi-Fi | iwd, wpa_supplicant | **`iwd`** (ADR-013) |
 | Élévation de privilèges | sudo-rs, sudo, doas | **`sudo-rs`** (ADR-012) |
 | Montage de volumes | udisks2, systemd-mount | **`udisks2`** (ADR-014) |
+| Installateur | (aucune solution adaptée) | **`yaor-install`** + **`yaor-slot`** (internes, Rust — ADR-015) |
 | Toolchain | Rust, LLVM, GCC | **GCC** (dans l'image) ; **Rust = outil de build** (`rustc`/`cargo` de l'hôte, non embarqué — ADR-019) |
 | Packaging | dpkg/APT, image immuable | **image immuable** (`systemd-sysupdate`, ADR-015) |
 | Compositor | Smithay et autres projets Rust | À évaluer (Phase 2) |
