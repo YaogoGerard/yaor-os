@@ -54,9 +54,11 @@ La configuration fournie par YAOR vit dans **`config/rootfs/`**, une arborescenc
 **reflète la racine du système** (`config/rootfs/etc/…` → `/etc/…`). Elle est copiée
 telle quelle par la **phase de configuration** de l'étape 04, **après** l'installation
 des paquets : la configuration de YAOR prime ainsi sur les fichiers par défaut des
-paquets. Cette phase **active aussi les services** (`systemctl enable`) et pose les
-liens (`/etc/resolv.conf`). Le détail figure dans
-[`config/rootfs/README.md`](../../config/rootfs/README.md).
+paquets. La copie ne conserve **pas** l'appartenance du dépôt (`cp -a
+--no-preserve=ownership`) : les fichiers appartiennent à `root`, ce qu'exigent `sudo`
+(`/etc/sudoers`) et polkit (règles de `/etc/polkit-1/rules.d`). Cette phase **active
+aussi les services** (`systemctl enable`) et pose les liens (`/etc/resolv.conf`). Le
+détail figure dans [`config/rootfs/README.md`](../../config/rootfs/README.md).
 
 Le **noyau**, lui, est configuré par `config/kernel-live.fragment` (variables fusionnées
 par `merge_config.sh`).
@@ -171,22 +173,38 @@ Le montage automatique des volumes amovibles (ADR-015) s'appuie sur **`udisks2`*
   fusion de la politique (`i18n.merge_file`, type XML) par une copie, écartant
   `itstool` et `libxml2`. Son binaire **`pkexec`** (setuid-root) est **retiré** :
   l'élévation de privilèges reste le seul fait de `sudo-rs` (ADR-012/014) ;
-- **`libblockdev`** 3.5.0 (sur **`libbytesize`** 2.12). Construit `--enable-daemon`,
-  `udisks` appelle sans garde les symboles `bd_md_`, `bd_crypto_`, `bd_nvme_`,
-  `bd_smart_`, `bd_fs_`, `bd_part_`, `bd_loop_` et `bd_swap_` : le **jeu de greffons
-  est donc imposé**, et non choisi — `part`, `fs`, `loop`, `swap`, `mdraid`, `crypto`,
-  `nvme`, `smart` sont **obligatoires** (chacun manquant fait échouer le `configure`
-  de `udisks`). Seuls `lvm`, `dm`, `mpath`, `nvdimm` et `tools` sont désactivés
-  (`udisks` n'emploie ni `bd_dm_` ni `bd_lvm_` ni `bd_btrfs_` ; `tools` tirerait
-  `libparted`).
+- **`libblockdev`** 3.5.0 (sur **`libbytesize`** 2.12). `udisks2`, bâti
+  `--enable-daemon`, appelle sans garde les symboles `bd_md_`, `bd_crypto_`,
+  `bd_nvme_`, `bd_smart_`, `bd_fs_`, `bd_part_`, `bd_loop_` et `bd_swap_` : le **jeu
+  de greffons est donc imposé**, et non choisi — `part`, `fs`, `loop`, `swap`,
+  `mdraid`, `crypto`, `nvme`, `smart` sont **obligatoires** (chacun manquant fait
+  échouer le `configure` de `udisks`). Seuls `lvm`, `dm`, `mpath`, `nvdimm` et
+  `tools` sont désactivés (`udisks` n'emploie ni `bd_dm_` ni `bd_lvm_` ; `tools`
+  tirerait `libparted`). L'introspection GObject y est écartée
+  (`--disable-introspection`) : `gobject-introspection` est absent du chroot et la
+  détection partielle amont casse la construction (cible `BlockDev-3.0.typelib`
+  sans règle).
+- **`udisks`** 2.11.2 : démon de montage automatique (ADR-015) ; manuels, gtk-doc,
+  introspection et ACL sont écartés (`--disable-man --disable-gtk-doc
+  --disable-introspection --disable-acl`). `udisks2.service` est de type **`dbus`**
+  et s'accompagne d'un fichier d'activation D-Bus : le démon est lancé **à la
+  demande**, sans activation au démarrage (sa section `[Install]` ne vise que
+  `graphical.target`, jamais atteint par la racine live).
 - **`gettext`** 1.0 : seuls ses outils (`msgfmt`, `xgettext`, `msgmerge`) sont utiles,
   mais `polkit` (`i18n.gettext`), `libbytesize`, `udisks` et `cryptsetup` les réclament
   **en dur** au configure. Les traductions restent désactivées (`--disable-nls`) partout
   ailleurs.
 
-Le greffon `crypto` de `libblockdev` (et son build `--enable-daemon`) entraîne une
-**chaîne de dépendances cryptographiques** supplémentaire, indépendante du périmètre
-LUKS (hors v0.2) :
+`libblockdev` et `udisks` sont les seuls paquets Autotools du lot sans `configure`
+dans l'arbre Git. Ils sont donc pris dans leurs **archives de publication**
+(`releases/download/…`, issues de `make dist`), qui **embarquent un `configure`
+pré-généré** et les macros `m4` requises (`ax_check_enable_debug`, `ax_recursive_eval`,
+`gtk-doc.m4`, et les macros gettext) : la toolchain n'a ainsi **pas** besoin
+d'`autoconf`/`automake`/`libtool`/`autoconf-archive`.
+
+Le greffon `crypto` de `libblockdev` (et le build `--enable-daemon` d'`udisks2`)
+entraîne une **chaîne de dépendances cryptographiques** supplémentaire, indépendante du
+périmètre LUKS (hors v0.2) :
 
 - **`openssl`** 3.6.5 : backend crypto de `libcryptsetup` (`--with-crypto_backend=openssl`),
   et brique de signature de `systemd-sysupdate` (mode installé) ;
