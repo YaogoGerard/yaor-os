@@ -171,6 +171,9 @@ Le montage automatique des volumes amovibles (ADR-015) s'appuie sur **`udisks2`*
   greffons minimal** : `part`, `fs`, `loop`, `swap`, `btrfs`. Les greffons `lvm`, `dm`,
   `crypto`, `nvme`, `smart`, `nvdimm`, `mpath` et `tools` sont **désactivés** : LUKS est
   hors périmètre et `tools` tirerait `libparted`.
+- **`gettext`** 1.0 : seuls ses outils (`msgfmt`, `xgettext`, `msgmerge`) sont utiles,
+  mais `polkit` (`i18n.merge_file`), `libbytesize` et `udisks` les réclament **en dur**
+  au configure. Les traductions restent désactivées (`--disable-nls`) partout ailleurs.
 
 Les systèmes de fichiers exigent leurs outils :
 

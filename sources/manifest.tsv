@@ -48,6 +48,7 @@ base	expat	2.9.0	https://github.com/libexpat/libexpat/releases/download/R_2_9_0/
 base	dbus	1.16.2	https://dbus.freedesktop.org/releases/dbus/dbus-1.16.2.tar.xz	0ba2a1a4b16afe7bceb2c07e9ce99a8c2c3508e5dec290dbb643384bd6beb7e2
 base	linux-pam	1.7.3	https://github.com/linux-pam/linux-pam/releases/download/v1.7.3/Linux-PAM-1.7.3.tar.xz	2ce4765fd49df6693771ef2941f81e33d8ee14b94a81a5c7b369aa3b137b85a5
 base	shadow	4.20.3	https://github.com/shadow-maint/shadow/releases/download/4.20.3/shadow-4.20.3.tar.xz	623be9429f64fa2165bfc5957c6a642ec309c5cf23c0d53855c99f7591922297
+base	gettext	1.0	https://ftp.gnu.org/gnu/gettext/gettext-1.0.tar.xz	71132a3fb71e68245b8f2ac4e9e97137d3e5c02f415636eb508ae607bc01add7
 base	libffi	3.8.0	https://github.com/libffi/libffi/releases/download/v3.8.0/libffi-3.8.0.tar.gz	7da3e2d9a171eb0a038f592ecad3ff2bb2550f3496d87b3b29ad0cf4430c0db4
 base	glib	2.88.4	https://download.gnome.org/sources/glib/2.88/glib-2.88.4.tar.xz	25fd169f3b2f91fe2391ad297883ce0fcf30c69fc789ffd1c9672d1332b1c5a8
 base	libgudev	238	https://download.gnome.org/sources/libgudev/238/libgudev-238.tar.xz	61266ab1afc9d73dbc60a8b2af73e99d2fdff47d99544d085760e4fa667b5dd1

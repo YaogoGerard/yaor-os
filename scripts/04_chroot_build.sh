@@ -92,6 +92,9 @@ ALL_PHASES=(
     # pkg-config (dbus-1, systemd) — donc après la phase systemd. linux-firmware
     # fournit les microprogrammes des pilotes activés dans le noyau.
     readline iwd linux-firmware
+    # Lot stockage (1/3) : socle GLib et moteurs requis par polkit, libblockdev
+    # et udisks. gettext fournit les outils (msgfmt) qu'ils exigent.
+    gettext libffi glib libgudev duktape
     libelf
     # Le kconfig du noyau régénère lexer.lex.c (et parser.tab.c) depuis
     # lexer.l/parser.y : flex est donc requis. L'archive flex fournit ses
@@ -735,6 +738,82 @@ phase_linux_firmware() {
     local d; d="$(ci_work linux-firmware)"
     log "installation des microprogrammes (linux-firmware)"
     run chroot_run "cd '$d' && make install DESTDIR= FIRMWAREDIR=/lib/firmware"
+}
+
+# === Lot stockage (1/3) : socle GLib et moteurs ============================
+# Ces composants n'ont rien de « stockage » en soi : ils forment la pile dont
+# polkit, libbytesize, libblockdev et udisks dépendent. Ils viennent après
+# systemd (libudev) et pcre2, avant le noyau.
+
+# gettext n'est pas un confort : polkit (i18n.merge_file), udisks (msgfmt) et
+# libbytesize le réclament en dur à la configuration. Seuls les outils
+# (msgfmt/msgmerge/xgettext) servent ; les traductions restent désactivées
+# partout ailleurs (--disable-nls).
+phase_gettext() {
+    require_archive gettext
+    local d; d="$(ci_work gettext)"
+    log "configure gettext (outils msgfmt/msgmerge/xgettext)"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --disable-static --disable-nls --disable-rpath --disable-libasprintf --disable-c++ --disable-java --disable-d --disable-modula2 --disable-openmp"
+    log "compilation gettext"
+    run chroot_run "cd '$d' && make"
+    log "installation gettext"
+    run chroot_run "cd '$d' && make install"
+}
+
+# libffi : requis par GObject. Les structures (ffi_type, défaut) restent
+# activées, GObject en dépend à l'exécution.
+phase_libffi() {
+    require_archive libffi
+    local d; d="$(ci_work libffi)"
+    log "configure libffi"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --libdir=/usr/lib --disable-static --disable-docs"
+    log "compilation libffi"
+    run chroot_run "cd '$d' && make"
+    log "installation libffi"
+    run chroot_run "cd '$d' && make install"
+}
+
+# glib : socle GObject/GIO dont dépendent libgudev, libbytesize, polkit et
+# udisks. « intl » est résolu par le libc (glibc fournit libintl.h et les
+# symboles gettext) : aucun proxy-libintl n'est téléchargé. --wrap-mode=
+# nodownload autorise le sous-projet gvdb, vendorisé dans le tarball, tout en
+# interdisant tout accès réseau.
+phase_glib() {
+    require_archive glib
+    local d; d="$(ci_work glib)"
+    local b="$d/build7"
+    log "configure glib (meson)"
+    run chroot_run "rm -rf '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Dtests=false -Dnls=disabled -Dman-pages=disabled -Ddocumentation=false -Dintrospection=disabled -Dlibmount=disabled -Dselinux=disabled -Dlibelf=disabled -Ddtrace=disabled -Dsystemtap=disabled -Dsysprof=disabled"
+    log "compilation glib"
+    run chroot_run "cd '$d' && ninja -C build7"
+    log "installation glib"
+    run chroot_run "cd '$d' && ninja -C build7 install"
+}
+
+# libgudev : passerelle GObject au-dessus de libudev (gudev-1.0), requise par
+# udisks pour observer les périphériques de bloc.
+phase_libgudev() {
+    require_archive libgudev
+    local d; d="$(ci_work libgudev)"
+    log "configure libgudev (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Dtests=disabled -Dintrospection=disabled -Dvapi=disabled"
+    log "compilation libgudev"
+    run chroot_run "cd '$d' && ninja -C build7"
+    log "installation libgudev"
+    run chroot_run "cd '$d' && ninja -C build7 install"
+}
+
+# duktape : moteur JavaScript embarqué (greffon « duktape » de polkit). Le
+# Makefile.sharedlibrary installe bibliothèque, en-tête et .pc ; le binaire de
+# débogage (libduktaped) est écarté.
+phase_duktape() {
+    require_archive duktape
+    local d; d="$(ci_work duktape)"
+    log "compilation duktape (bibliothèque partagée)"
+    run chroot_run "cd '$d' && make -f Makefile.sharedlibrary INSTALL_PREFIX=/usr LIBDIR=/lib"
+    log "installation duktape"
+    run chroot_run "cd '$d' && make -f Makefile.sharedlibrary INSTALL_PREFIX=/usr LIBDIR=/lib install"
+    run chroot_run "rm -f /usr/lib/libduktaped.so*"
 }
 
 # --- Phase : libelf (Elfutils, requis par objtool du noyau) -----------------
