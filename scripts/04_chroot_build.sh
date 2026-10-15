@@ -106,6 +106,9 @@ ALL_PHASES=(
     # Lot stockage (2/3) : outils de systèmes de fichiers (btrfs-progs exige
     # libzstd, donc après zstd).
     e2fsprogs btrfs-progs dosfstools exfatprogs
+    # Lot stockage (3/3) : autorisation des actions privilégiées (polkit), puis
+    # les bibliothèques de bloc et le démon de montage.
+    polkit
     kernel
     # Phase de configuration système : copie config/rootfs et active les
     # services. Elle précède les composants Rust pour s'appuyer sur les outils
@@ -923,6 +926,37 @@ phase_exfatprogs() {
     run chroot_run "cd '$d' && make"
     log "installation exfatprogs"
     run chroot_run "cd '$d' && make install"
+}
+
+# === Lot stockage (3/3) : autorisation, bibliothèques de bloc et démon =====
+
+# polkit : autorisation des actions privilégiées, socle d'udisks2. Moteur de
+# règles duktape (pas de mozjs), session suivie via logind
+# (session_tracking=libsystemd-login) et authentification PAM. os_type=lfs fait
+# générer /usr/lib/pam.d/polkit-1, qui inclut les chaînes PAM de YAOR
+# (system-auth/system-account/system-password/system-session) — Linux-PAM
+# cherche /etc/pam.d puis /usr/lib/pam.d. L'introspection GObject, les manuels,
+# la documentation et les exemples sont écartés. Le correctif remplace le
+# i18n.merge_file() (type XML) par une simple copie : ni itstool ni libxml2
+# (voir patches/). polkit.service est activé par D-Bus (aucune section
+# [Install]) ; l'utilisateur polkitd est créé par sysusers.d au démarrage.
+# « pkexec », binaire setuid-root installé par polkit, ouvre une seconde voie
+# d'élévation de privilèges : on le retire, l'élévation étant le seul fait de
+# sudo-rs (ADR-012/014). L'agent PAM de polkit (polkit-agent-helper-1, setuid)
+# reste, lui, strictement borné à l'authentification polkit.
+phase_polkit() {
+    require_archive polkit
+    local d h; d="$(ci_work polkit)"; h="$(src_dir polkit)"
+    if grep -q 'i18n.merge_file' "$h/actions/meson.build" 2>/dev/null; then
+        patch -p1 -d "$h" -i "$ROOT/patches/polkit-124-merge-file-sans-itstool.patch"
+    fi
+    log "configure polkit (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Dos_type=lfs -Dsession_tracking=libsystemd-login -Djs_engine=duktape -Dintrospection=false -Dman=false -Dgtk_doc=false -Dtests=false -Dexamples=false"
+    log "compilation polkit"
+    run chroot_run "cd '$d' && ninja -C build7"
+    log "installation polkit"
+    run chroot_run "cd '$d' && ninja -C build7 install"
+    run chroot_run "rm -f /usr/bin/pkexec"
 }
 
 # --- Phase : noyau ----------------------------------------------------------

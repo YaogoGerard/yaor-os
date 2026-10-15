@@ -1,0 +1,32 @@
+polkit 124 — installe la politique polkit sans passer par itstool
+
+`actions/meson.build` publie la politique de polkit via `i18n.merge_file()`.
+Sans `type:` explicite, meson retient le type `xml` : il invoque alors
+`itstool`, qui exige le module Python `libxml2` (liaisons de libxml2). Or
+polkit n'utilise que expat ; tirer libxml2 et ses liaisons Python pour fusionner
+un unique fichier de politique — qui ne contient aucun repère de traduction —
+serait contraire à l'objectif de légèreté, d'autant que les traductions sont
+désactivées dans toute la distribution.
+
+Le fichier `org.freedesktop.policykit.policy.in` ne porte aucune balise ITS
+(`its:locInfo`…) : la fusion d'itstool s'y réduit à une copie. Ce correctif
+remplace `i18n.merge_file()` par un simple `configure_file(copy: true)` au
+résultat identique, ce qui supprime la dépendance à itstool (et à libxml2) au
+moment de la construction.
+
+--- a/actions/meson.build
++++ b/actions/meson.build
+@@ -1,10 +1,9 @@
+ policy = 'org.freedesktop.policykit.policy'
+ 
+-i18n.merge_file(
++configure_file(
+   input: policy + '.in',
+-  output: '@BASENAME@',
+-  po_dir: po_dir,
+-  data_dirs: its_dir,
++  output: policy,
++  copy: true,
+   install: true,
+   install_dir: pk_pkgactiondir,
+ )

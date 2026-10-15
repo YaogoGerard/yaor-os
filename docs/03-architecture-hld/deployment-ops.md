@@ -166,13 +166,17 @@ Le montage automatique des volumes amovibles (ADR-015) s'appuie sur **`udisks2`*
 
 - **`glib`** 2.88.4 (sur **`libffi`** 3.8.0) et **`libgudev`** 238 ;
 - **`polkit`** 124 pour l'autorisation des actions privilégiées, avec **`duktape`**
-  2.7.0 comme moteur de règles (`js_engine=duktape`) ;
+  2.7.0 comme moteur de règles (`js_engine=duktape`). `os_type=lfs` lui fait inclure
+  les chaînes PAM de YAOR (`/usr/lib/pam.d/polkit-1`) ; un **correctif** remplace la
+  fusion de la politique (`i18n.merge_file`, type XML) par une copie, écartant
+  `itstool` et `libxml2`. Son binaire **`pkexec`** (setuid-root) est **retiré** :
+  l'élévation de privilèges reste le seul fait de `sudo-rs` (ADR-012/014) ;
 - **`libblockdev`** 3.5.0 (sur **`libbytesize`** 2.12), construit avec un **jeu de
   greffons minimal** : `part`, `fs`, `loop`, `swap`, `btrfs`. Les greffons `lvm`, `dm`,
   `crypto`, `nvme`, `smart`, `nvdimm`, `mpath` et `tools` sont **désactivés** : LUKS est
   hors périmètre et `tools` tirerait `libparted`.
 - **`gettext`** 1.0 : seuls ses outils (`msgfmt`, `xgettext`, `msgmerge`) sont utiles,
-  mais `polkit` (`i18n.merge_file`), `libbytesize` et `udisks` les réclament **en dur**
+  mais `polkit` (`i18n.gettext`), `libbytesize` et `udisks` les réclament **en dur**
   au configure. Les traductions restent désactivées (`--disable-nls`) partout ailleurs.
 
 Les systèmes de fichiers exigent leurs outils :
@@ -287,6 +291,26 @@ déclenche `-Wdiscarded-qualifiers` — fatal car libxcrypt active `-Werror`. Le
 correctif `patches/libxcrypt-4.5.2-c23-strchr-const.patch` retire le `const` du
 cast (correction identique à celle de l'amont, branche `develop`).
 
+### Correctif appliqué à polkit 124
+
+`actions/meson.build` publie la politique de polkit via `i18n.merge_file()`. Sans
+`type:` explicite, meson retient le type `xml` : il invoque alors `itstool`, qui
+réclame le module Python `libxml2` (liaisons de libxml2). Or polkit n'utilise que
+`expat` ; tirer `libxml2` et ses liaisons Python pour fusionner un unique fichier
+de politique — qui ne porte aucun repère de traduction — contredirait l'objectif
+de légèreté. Le correctif
+`patches/polkit-124-merge-file-sans-itstool.patch` remplace `i18n.merge_file()`
+par `configure_file(copy: true)`, au résultat identique (le `.policy.in` ne
+contient aucune balise ITS). Les catalogues de polkit (`po/`, via
+`i18n.gettext`) continuent d'être compilés par gettext.
+
+Au-delà du correctif, polkit installe `pkexec`, binaire **setuid-root** qui exécute
+une commande sous une autre identité après autorisation polkit ; c'est une seconde
+voie d'élévation de privilèges. ADR-012/014 font de `sudo-rs` le **seul** fournisseur
+d'élévation : `phase_polkit` supprime `/usr/bin/pkexec` après installation.
+`polkit-agent-helper-1` (setuid lui aussi) est conservé : il n'assure que la
+conversation PAM d'authentification polkit, pas l'exécution d'une commande arbitraire.
+
 ### Utilisateurs et groupes du système de base (étape 04)
 
 L'étape 04 installe dans le chroot les fichiers `/etc/passwd` et `/etc/group`,
@@ -312,7 +336,7 @@ compilation ; on les traite explicitement pour garder le lot minimal :
   les régénère depuis `lexer.l`/`parser.y` (`LEX = flex`). L'archive de release
   fournit ses propres sources déjà analysées (`src/scan.c`, `src/parse.c`) : flex
   s'amorce donc sans flex ni bison préalables, et il est configuré avec
-  `--disable-nls` (gettext absent du lot).
+  `--disable-nls` (les traductions restent écartées).
 - **zstd** est requis au moment de compiler le noyau : `CONFIG_KERNEL_ZSTD`
   fait compresser `arch/x86/boot/compressed/vmlinux.bin` par l'outil `zstd`,
   absent du lot. Il est donc construit juste avant le noyau (phase `zstd`,
