@@ -109,6 +109,12 @@ ALL_PHASES=(
     # Lot stockage (3/3) : autorisation des actions privilégiées (polkit), puis
     # les bibliothèques de bloc et le démon de montage.
     polkit
+    # Lot stockage (3/3, suite) : bibliothèques de bloc et dépendances
+    openssl json-c popt keyutils
+    lvm2
+    libcryptsetup
+    libnvme
+    libatasmart
     kernel
     # Phase de configuration système : copie config/rootfs et active les
     # services. Elle précède les composants Rust pour s'appuyer sur les outils
@@ -957,6 +963,109 @@ phase_polkit() {
     log "installation polkit"
     run chroot_run "cd '$d' && ninja -C build7 install"
     run chroot_run "rm -f /usr/bin/pkexec"
+}
+
+# === Lot stockage (3/3, suite) : bibliothèques de bloc et dépendances =======
+
+# openssl : bibliothèque cryptographique, backend de libcryptsetup et requis
+# par systemd-sysupdate. Shared, sans tests, pages de man écartées.
+phase_openssl() {
+    require_archive openssl
+    local d; d="$(ci_work openssl)"
+    log "configure openssl"
+    run chroot_run "cd '$d' && ./config --prefix=/usr --openssldir=/etc/ssl --libdir=/usr/lib shared zlib-dynamic no-tests"
+    log "compilation openssl"
+    run chroot_run "cd '$d' && make -j$JOBS"
+    log "installation openssl"
+    run chroot_run "cd '$d' && make install_sw"
+    run chroot_run "mkdir -p /etc/ssl/certs /etc/ssl/private"
+    run chroot_run "rm -f /usr/lib/libcrypto.a /usr/lib/libssl.a 2>/dev/null; true"
+}
+
+# json-c 0.19 : requis par cryptsetup et libnvme. Correctif pour headers/pkg-config.
+phase_json_c() {
+    require_archive json-c
+    local d h; d="$(ci_work json-c)"; h="$(src_dir json-c)"
+    if [ -f "$ROOT/patches/json-c-0.19-meson-pc.patch" ]; then
+        patch -p1 -d "$h" -i "$ROOT/patches/json-c-0.19-meson-pc.patch"
+    fi
+    log "configure json-c (meson)"
+    run chroot_run "rm -rf '$d/build' && cd '$d' && meson setup build --prefix=/usr --libdir=/usr/lib --buildtype=release -Dbuild_apps=false"
+    log "compilation json-c"
+    run chroot_run "cd '$d' && ninja -C build"
+    log "installation json-c"
+    run chroot_run "cd '$d' && ninja -C build install"
+}
+
+# popt : requis par cryptsetup.
+phase_popt() {
+    require_archive popt
+    local d; d="$(ci_work popt)"
+    log "configure popt"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --libdir=/usr/lib --disable-static --disable-nls"
+    log "compilation popt"
+    run chroot_run "cd '$d' && make -j$JOBS"
+    log "installation popt"
+    run chroot_run "cd '$d' && make install"
+}
+
+# keyutils : requis par libblockdev crypto.
+phase_keyutils() {
+    require_archive keyutils
+    local d; d="$(ci_work keyutils)"
+    log "compilation keyutils"
+    run chroot_run "cd '$d' && make -j$JOBS NO_ARLIB=1 LIBDIR=/usr/lib USRLIBDIR=/usr/lib"
+    log "installation keyutils"
+    run chroot_run "cd '$d' && make NO_ARLIB=1 LIBDIR=/usr/lib USRLIBDIR=/usr/lib BINDIR=/usr/bin SBINDIR=/usr/sbin ETCDIR=/etc INCLUDEDIR=/usr/include MANDIR=/usr/share/man SHAREDIR=/usr/share/keyutils install"
+    run chroot_run "rm -f /usr/sbin/request-key /usr/sbin/key.dns_resolver /etc/request-key.conf && rm -rf /etc/request-key.d /usr/share/keyutils"
+}
+
+# LVM2 libdevmapper : requis par libcryptsetup.
+phase_lvm2() {
+    require_archive LVM2
+    local d; d="$(ci_work LVM2)"
+    log "configure libdevmapper"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --libdir=/usr/lib --sbindir=/usr/sbin --sysconfdir=/etc --disable-nls --enable-pkgconfig"
+    log "compilation libdevmapper"
+    run chroot_run "cd '$d' && make -C libdm -j$JOBS"
+    log "installation libdevmapper"
+    run chroot_run "cd '$d' && make -C libdm install"
+}
+
+# libcryptsetup : requis par libblockdev crypto plugin (bibliothèque uniquement).
+phase_libcryptsetup() {
+    require_archive libcryptsetup
+    local d; d="$(ci_work libcryptsetup)"
+    log "configure libcryptsetup"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --libdir=/usr/lib --sbindir=/usr/sbin --sysconfdir=/etc --disable-static --with-crypto_backend=openssl --disable-cryptsetup --disable-veritysetup --disable-integritysetup --disable-ssh-token --disable-asciidoc --disable-nls --disable-selinux"
+    log "compilation libcryptsetup"
+    run chroot_run "cd '$d' && make -j$JOBS"
+    log "installation libcryptsetup"
+    run chroot_run "cd '$d' && make install"
+}
+
+# libnvme : requis par libblockdev nvme plugin.
+phase_libnvme() {
+    require_archive libnvme
+    local d; d="$(ci_work libnvme)"
+    log "configure libnvme (meson)"
+    run chroot_run "rm -rf '$d/build' && cd '$d' && meson setup build --prefix=/usr --libdir=/usr/lib -Djson-c=enabled -Dopenssl=disabled -Dkeyutils=disabled -Dlibdbus=disabled -Dliburing=disabled -Dpython=disabled -Ddocs=false -Dexamples=false -Dtests=false"
+    log "compilation libnvme"
+    run chroot_run "cd '$d' && ninja -C build"
+    log "installation libnvme"
+    run chroot_run "cd '$d' && ninja -C build install"
+}
+
+# libatasmart : requis par libblockdev smart plugin.
+phase_libatasmart() {
+    require_archive libatasmart
+    local d; d="$(ci_work libatasmart)"
+    log "configure libatasmart"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --libdir=/usr/lib --disable-static"
+    log "compilation libatasmart"
+    run chroot_run "cd '$d' && make -j$JOBS"
+    log "installation libatasmart"
+    run chroot_run "cd '$d' && make install"
 }
 
 # --- Phase : noyau ----------------------------------------------------------

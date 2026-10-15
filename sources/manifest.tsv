@@ -64,3 +64,11 @@ base	exfatprogs	1.4.3	https://github.com/exfatprogs/exfatprogs/releases/download
 rust	uutils-coreutils	0.12.0	https://github.com/uutils/coreutils/archive/refs/tags/0.12.0.tar.gz	4fb327655cb4ffcbf2f16550cf9234079ffe839692f7aa1a6eda104af684e122	coreutils-0.12.0.tar.gz
 rust	uutils-findutils	0.10.0	https://github.com/uutils/findutils/releases/download/0.10.0/source.tar.gz	0df3f270ddbaa9be443abad0f122b526b01f7576ed0195d481dcac766e64fd5e	findutils-0.10.0.tar.gz
 rust	sudo-rs	0.2.15	https://github.com/trifectatechfoundation/sudo-rs/archive/refs/tags/v0.2.15.tar.gz	ae857c3cde962a1ade2b981f7e01cf95e9fa05d5c5f95f94cf5f35394c1bf899	sudo-rs-0.2.15.tar.gz
+base	openssl	3.6.5	https://www.openssl.org/source/openssl-3.6.5.tar.gz	a2157c2830efdec3788939b00c9b0638306d3f0bbb76dc4832ee503bb397df98
+base	json-c	0.19	https://github.com/json-c/json-c/releases/download/json-c-0.19-20260627/json-c-0.19-nodoc.tar.gz	704927172443309a8efeb162060bb215548e1286e5568514007dd2cc35a0a164	json-c-0.19.tar.gz
+base	popt	1.19	http://ftp.rpm.org/popt/releases/popt-1.x/popt-1.19.tar.gz	c25a4838fc8e4c1c8aacb8bd620edb3084a3d63bf8987fdad3ca2758c63240f9
+base	keyutils	1.6.3	https://deb.debian.org/debian/pool/main/k/keyutils/keyutils_1.6.3.orig.tar.gz	a61d5706136ae4c05bd48f86186bcfdbd88dd8bd5107e3e195c924cfc1b39bb4
+base	LVM2	2.03.43	https://sourceware.org/ftp/lvm2/LVM2.2.03.43.tgz	d87ec0dac9061f1fa58ebced5c6b1360c87d4c5cd7b455dc0ebe1d3f036920d7
+base	libcryptsetup	2.8.8	https://mirrors.edge.kernel.org/pub/linux/utils/cryptsetup/v2.8/cryptsetup-2.8.8.tar.xz	3acfa685f2dd7fcc832e0b77bc7093aa7da554a51ce8dafbb4138eaa854eee35
+base	libnvme	1.16.2	https://github.com/linux-nvme/libnvme/archive/refs/tags/v1.16.2.tar.gz	1d850d5a871559abf641d6e6b63bb86047e4cb26f3ad144597c2c64b3cff7231
+base	libatasmart	0.19	https://0pointer.de/public/libatasmart-0.19.tar.xz	61f0ea345f63d28ab2ff0dc352c22271661b66bf09642db3a4049ac9dbdb0f8d
