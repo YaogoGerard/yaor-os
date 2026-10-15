@@ -115,6 +115,11 @@ ALL_PHASES=(
     libcryptsetup
     libnvme
     libatasmart
+    # Lot stockage (3/3, fin) : socle de stockage d'udisks2, puis le démon de
+    # montage automatique lui-même (ADR-015).
+    libbytesize
+    libblockdev
+    udisks
     kernel
     # Phase de configuration système : copie config/rootfs et active les
     # services. Elle précède les composants Rust pour s'appuyer sur les outils
@@ -1068,6 +1073,48 @@ phase_libatasmart() {
     run chroot_run "cd '$d' && make install"
 }
 
+# libbytesize : conversions de tailles en octets, exigée par les greffons
+# « btrfs » et « mdraid » de libblockdev (sur gmp/mpfr).
+phase_libbytesize() {
+    require_archive libbytesize
+    local d; d="$(ci_work libbytesize)"
+    log "configure libbytesize"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --libdir=/usr/lib --disable-static --disable-nls"
+    log "compilation libbytesize"
+    run chroot_run "cd '$d' && make -j$JOBS"
+    log "installation libbytesize"
+    run chroot_run "cd '$d' && make install"
+}
+
+# libblockdev : socle de manipulation des périphériques de bloc d'udisks2. Le
+# jeu de greffons est imposé par udisks (voir les notes de l'en-tête du lot),
+# et l'introspection GObject est écartée (g-i est absent du chroot, et un
+# g-ir-scanner présent sans g-ir-compiler casse la génération du typelib).
+phase_libblockdev() {
+    require_archive libblockdev
+    local d; d="$(ci_work libblockdev)"
+    log "configure libblockdev"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --libdir=/usr/lib --sysconfdir=/etc --without-s390 --without-python3 --without-gtk-doc --disable-introspection --disable-tests --without-escrow --without-tools --without-smartmontools --without-dm --without-lvm --without-lvm_dbus --without-mpath --without-nvdimm"
+    log "compilation libblockdev"
+    run chroot_run "cd '$d' && make -j$JOBS"
+    log "installation libblockdev"
+    run chroot_run "cd '$d' && make install"
+}
+
+# udisks2 : démon de montage automatique des volumes amovibles (ADR-015). Le
+# drapeau « btrfs » est activé pour rester cohérent avec le greffon homonyme de
+# libblockdev ; l'ACL, les manuels, gtk-doc et l'introspection sont écartés.
+phase_udisks() {
+    require_archive udisks
+    local d; d="$(ci_work udisks)"
+    log "configure udisks"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --libdir=/usr/lib --sysconfdir=/etc --localstatedir=/var --disable-man --disable-gtk-doc --disable-introspection --disable-acl --enable-btrfs --disable-nls"
+    log "compilation udisks"
+    run chroot_run "cd '$d' && make -j$JOBS"
+    log "installation udisks"
+    run chroot_run "cd '$d' && make install"
+}
+
 # --- Phase : noyau ----------------------------------------------------------
 phase_kernel() {
     require_archive linux
@@ -1092,7 +1139,13 @@ phase_kernel() {
 # /etc/passwd et /etc/group, /etc/resolv.conf et activation des services.
 phase_configure_system() {
     section "Configuration système (config/rootfs → /)"
-    run cp -a "$CONFIG_DIR/rootfs/." "$LFS/"
+    # --no-preserve=ownership : le dépôt est consulté par l'utilisateur de
+    # compilation (uid 1000) ; sans cela « cp -a » recopierait cet uid dans le
+    # système construit. Or sudo refuse un /etc/sudoers qui n'appartient pas à
+    # root, et polkit n'inspecte que les règles déposées par root. Les fichiers
+    # ainsi posés appartiennent donc au compte qui exécute la construction
+    # (root, la phase 04 étant privilégiée).
+    run cp -a --no-preserve=ownership "$CONFIG_DIR/rootfs/." "$LFS/"
     # sudoers et son complément ne doivent pas être lisibles par tous.
     chroot_run "chmod 440 /etc/sudoers /etc/sudoers.d/00-wheel"
 
@@ -1108,6 +1161,13 @@ phase_configure_system() {
     # sont activés par les liens symboliques posés à l'installation de leurs
     # paquets (sockets.target.wants, multi-user.target.wants) ; ces unités n'ont
     # pas de section [Install], donc aucun « systemctl enable » n'est nécessaire.
+
+    # Stockage : udisks2.service est de type « dbus » et accompagne un fichier
+    # d'activation D-Bus (org.freedesktop.UDisks2.service dans
+    # /usr/share/dbus-1/system-services). Le démon est donc lancé à la demande,
+    # dès qu'un client réclame le nom org.freedesktop.UDisks2 — utile sur une
+    # racine live qui n'atteint pas graphical.target (cible de son [Install]).
+    # Aucune activation au démarrage n'est requise.
 
     section "Activation des services (réseau)"
     # systemd-networkd et systemd-resolved portent [Install] (multi-user.target

@@ -55,8 +55,8 @@ base	libgudev	238	https://download.gnome.org/sources/libgudev/238/libgudev-238.t
 base	duktape	2.7.0	https://duktape.org/duktape-2.7.0.tar.xz	90f8d2fa8b5567c6899830ddef2c03f3c27960b11aca222fa17aa7ac613c2890
 base	polkit	124	https://gitlab.freedesktop.org/polkit/polkit/-/archive/124/polkit-124.tar.gz	72457d96a0538fd03a3ca96a6bf9b7faf82184d4d67c793eb759168e4fd49e20
 base	libbytesize	2.12	https://github.com/storaged-project/libbytesize/releases/download/2.12/libbytesize-2.12.tar.gz	8356bac2cafd2f31f39bf1ad373cef8448cab08b817aeaee5c526d54e81c3c5a
-base	libblockdev	3.5.0	https://github.com/storaged-project/libblockdev/archive/refs/tags/3.5.0.tar.gz	38b59473eaffdb2f6b27e30a7461a896ed9f12223b95737e8906789a92eff471	libblockdev-3.5.0.tar.gz
-base	udisks	2.11.2	https://github.com/storaged-project/udisks/archive/refs/tags/udisks-2.11.2.tar.gz	1e2c6db7c68a5f72c0810db823aa1422ba66f19502a9e00a70ba72db7bcfd85f	udisks-udisks-2.11.2.tar.gz
+base	libblockdev	3.5.0	https://github.com/storaged-project/libblockdev/releases/download/3.5.0/libblockdev-3.5.0.tar.gz	bccd30e6b5d11504de60d9889ff6a2a25b07a4ec8f04070f2387e168301b3e3a
+base	udisks	2.11.2	https://github.com/storaged-project/udisks/releases/download/udisks-2.11.2/udisks-2.11.2.tar.bz2	18630a8aad806bea0bc626ce97e71e50ec82c742956ac1c834a4275f8f22207b
 base	e2fsprogs	1.47.4	https://mirrors.edge.kernel.org/pub/linux/kernel/people/tytso/e2fsprogs/v1.47.4/e2fsprogs-1.47.4.tar.xz	fd5bf388cbdbe006a3d3b318d983b2948382440acc85a87f1e7d108653e8db0b
 base	btrfs-progs	7.1	https://mirrors.edge.kernel.org/pub/linux/kernel/people/kdave/btrfs-progs/btrfs-progs-v7.1.tar.xz	d1f55cc2971398c9142eaa79d203e63d586a3b4b867f956664a1d68322cd4e34
 base	dosfstools	4.2	https://github.com/dosfstools/dosfstools/releases/download/v4.2/dosfstools-4.2.tar.gz	64926eebf90092dca21b14259a5301b7b98e7b1943e8a201c7d726084809b527
