@@ -103,6 +103,9 @@ ALL_PHASES=(
     # CONFIG_KERNEL_ZSTD fait compresser l'image du noyau par l'outil « zstd » :
     # il doit être présent dans le chroot au moment de la phase kernel.
     zstd
+    # Lot stockage (2/3) : outils de systèmes de fichiers (btrfs-progs exige
+    # libzstd, donc après zstd).
+    e2fsprogs btrfs-progs dosfstools exfatprogs
     kernel
     # Phase de configuration système : copie config/rootfs et active les
     # services. Elle précède les composants Rust pour s'appuyer sur les outils
@@ -860,6 +863,66 @@ phase_zstd() {
     run chroot_run "cd '$d' && make -j$JOBS prefix=/usr"
     log "installation zstd"
     run chroot_run "cd '$d' && make prefix=/usr install"
+}
+
+# === Lot stockage (2/3) : outils de systèmes de fichiers ===================
+# Placés après zstd (btrfs-progs exige libzstd) et avant le noyau. Un besoin,
+# un fournisseur : e2fsprogs pour ext2/3/4 (fournit aussi libext2fs et e2p,
+# requises par le greffon « fs » de libblockdev), btrfs-progs, dosfstools et
+# exfatprogs. NTFS reste assuré par le noyau (ntfs3).
+
+# e2fsprogs : ext2/3/4. Les bibliothèques privées blkid/uuid ne sont PAS
+# bâties (défaut) : ce sont celles d'util-linux. --enable-elf-shlibs fournit
+# libext2fs/e2p partagées et leurs fichiers pkg-config. --disable-uuidd laisse
+# de côté le démon d'UUID.
+phase_e2fsprogs() {
+    require_archive e2fsprogs
+    local d; d="$(ci_work e2fsprogs)"
+    log "configure e2fsprogs"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --bindir=/usr/bin --sbindir=/usr/sbin --libdir=/usr/lib --sysconfdir=/etc --enable-elf-shlibs --disable-uuidd --disable-nls"
+    log "compilation e2fsprogs"
+    run chroot_run "cd '$d' && make"
+    log "installation e2fsprogs"
+    run chroot_run "cd '$d' && make install"
+    run chroot_run "rm -f /usr/lib/libcom_err.a /usr/lib/libe2p.a /usr/lib/libext2fs.a /usr/lib/libss.a"
+}
+
+# btrfs-progs : btrfs. --disable-convert évite ext2fs/reiserfs ; --disable-lzo
+# évite liblzo2 (non embarquée) ; la compression zstd reste disponible.
+phase_btrfs_progs() {
+    require_archive btrfs-progs
+    local d; d="$(ci_work btrfs-progs)"
+    log "configure btrfs-progs"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --libdir=/usr/lib --disable-documentation --disable-python --disable-convert --disable-lzo"
+    log "compilation btrfs-progs"
+    run chroot_run "cd '$d' && make"
+    log "installation btrfs-progs"
+    run chroot_run "cd '$d' && make install"
+}
+
+# dosfstools : FAT12/16/32. --enable-compat-symlinks fournit mkfs.vfat/fsck.vfat,
+# réclamés par le greffon « fs » de libblockdev.
+phase_dosfstools() {
+    require_archive dosfstools
+    local d; d="$(ci_work dosfstools)"
+    log "configure dosfstools"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --enable-compat-symlinks"
+    log "compilation dosfstools"
+    run chroot_run "cd '$d' && make"
+    log "installation dosfstools"
+    run chroot_run "cd '$d' && make install"
+}
+
+# exfatprogs : exFAT (mkfs.exfat/fsck.exfat).
+phase_exfatprogs() {
+    require_archive exfatprogs
+    local d; d="$(ci_work exfatprogs)"
+    log "configure exfatprogs"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr"
+    log "compilation exfatprogs"
+    run chroot_run "cd '$d' && make"
+    log "installation exfatprogs"
+    run chroot_run "cd '$d' && make install"
 }
 
 # --- Phase : noyau ----------------------------------------------------------
