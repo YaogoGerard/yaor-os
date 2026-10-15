@@ -78,7 +78,7 @@ installé et mises à jour par image. Correspond à la Phase 1 « System ».
 
 - [ ] Le réseau filaire est opérationnel via `systemd-networkd` (DHCP), la résolution via
   `systemd-resolved`.
-- [ ] Le Wi-Fi matériel fonctionne via `iwd` et `linux-firmware`.
+- [ ] Le Wi-Fi matériel fonctionne via `iwd` et `linux-firmware` (ADR-013, ADR-020).
 - [ ] Aucun démon réseau secondaire (NetworkManager) n'est embarqué.
 
 ### Sessions, comptes et services (ADR-014)

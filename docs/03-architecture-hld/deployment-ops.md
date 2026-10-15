@@ -1,9 +1,9 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.17
-**Dernière mise à jour :** 2026-10-14
-**Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011, ADR-012, ADR-013, ADR-014, ADR-015, ADR-016, ADR-017, ADR-018, ADR-019
+**Version :** 0.18
+**Dernière mise à jour :** 2026-10-15
+**Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011, ADR-012, ADR-013, ADR-014, ADR-015, ADR-016, ADR-017, ADR-018, ADR-019, ADR-020
 
 ## Modèle de construction
 
@@ -84,6 +84,28 @@ reporté.
 
 Le réseau est assuré par **`systemd-networkd`** et **`systemd-resolved`** (filaire) et par
 **`iwd`** avec `linux-firmware` (Wi-Fi), voir ADR-013.
+
+### Composants réseau (v0.2)
+
+Le **réseau filaire** s'appuie sur **`systemd-networkd`** et **`systemd-resolved`**, déjà
+présents (systemd 262) : **aucune source nouvelle**. Il faut les **activer** à la
+construction — systemd est bâti `-Dauto_features=disabled` — via `-Dnetworkd=true` et
+`-Dresolve=true`, puis fournir une configuration par défaut
+(`/etc/systemd/network/*.network` en DHCP, `resolved.conf`).
+
+Le **Wi-Fi** (ADR-013, ADR-020) ajoute deux sources, épinglées au manifeste :
+
+- **`iwd`** 3.12 — démon Wi-Fi. Il **embarque `ell`** (construction par défaut, sans
+  `--enable-external-ell`) : **aucun paquet `ell` séparé**, conforme au principe de
+  non-duplication (ADR-017). Son client **`iwctl`** exige **`readline`** 8.3 (lui-même
+  au-dessus de `ncurses`, déjà au lot).
+- **`linux-firmware`** 20260916 — microprogrammes. Le tarball officiel est
+  **monolithique** (~662 Mio compressés) ; seule la **sous-partie** correspondant aux
+  pilotes retenus est installée dans l'image, pour préserver la légèreté.
+
+Le Wi-Fi exige enfin d'**activer le noyau**, que le jalon 0.1 écartait entièrement :
+`CONFIG_CFG80211=y` avec **`CONFIG_CFG80211_REQUIRE_SIGNED_REGDB=n`** (ADR-020),
+`CONFIG_MAC80211`, `CONFIG_FW_LOADER` et les pilotes sans fil retenus.
 
 ### Adaptations de compilation croisée
 
