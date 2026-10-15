@@ -1,4 +1,4 @@
-# config/kernel-live.fragment — options noyau pour le système live YAOR (jalon 0.1).
+# config/kernel-live.fragment — options noyau pour le système live YAOR (jalons 0.1–0.2).
 #
 # Ce fragment est fusionné par scripts/kconfig/merge_config.sh sur un
 # `make defconfig` (x86_64_defconfig). Il ne liste donc que les options que
@@ -39,10 +39,24 @@ CONFIG_EFI_STUB=y
 
 # --- Stockage : loop pour EROFS, disques et images ---
 CONFIG_BLK_DEV_LOOP=y
-CONFIG_EXT4_FS=y
 CONFIG_ISO9660_FS=y
+
+# --- Systèmes de fichiers supportés (ADR-015, REQ-SW-025) ---
+# ext4 (racine par défaut), btrfs, vfat + exFAT (volumes amovibles) et NTFS en
+# lecture/écriture via ntfs3. Le NTFS historique en lecture seule (ntfs-3g) est
+# écarté : ntfs3 est le fournisseur unique (un besoin, un fournisseur).
+CONFIG_EXT4_FS=y
+CONFIG_BTRFS_FS=y
 CONFIG_FAT_FS=y
 CONFIG_VFAT_FS=y
+CONFIG_EXFAT_FS=y
+CONFIG_NTFS3_FS=y
+CONFIG_NTFS3_LZX_XPRESS=y
+# CONFIG_NTFS_FS is not set
+# Jeux de caractères requis par vfat (noms de fichiers longs).
+CONFIG_NLS_CODEPAGE_437=y
+CONFIG_NLS_ISO8859_1=y
+CONFIG_NLS_UTF8=y
 
 # --- Virtualisation (QEMU : cible de test) ---
 CONFIG_VIRTIO=y
@@ -84,13 +98,55 @@ CONFIG_KEYS=y
 CONFIG_MODULES=y
 CONFIG_MODULE_SIG=n
 CONFIG_DEBUG_INFO_BTF=n
-# Sans clés de confiance ni liste de révocation, le noyau n'a pas besoin
-# d'OpenSSL/libssl pour construire ses certificats. Or
-# CONFIG_CFG80211_REQUIRE_SIGNED_REGDB (actif par défaut, sans invite de
-# configuration) sélectionne SYSTEM_TRUSTED_KEYRING : on écarte donc tout le
-# WiFi au jalon 0.1. Le WiFi reviendra avec OpenSSL dans un jalon ultérieur.
-# CONFIG_CFG80211 is not set
+# Aucune infrastructure de clés ni de signature n'est embarquée (ADR-020).
 # CONFIG_SYSTEM_TRUSTED_KEYRING is not set
 # CONFIG_SYSTEM_REVOCATION_LIST is not set
 # Les avertissements du compilateur restent des avertissements.
 # CONFIG_WERROR is not set
+
+# --- Chargement des microprogrammes (Wi-Fi, ADR-013) ---
+# linux-firmware distribue des microprogrammes compressés (.xz/.zst).
+CONFIG_FW_LOADER=y
+CONFIG_FW_LOADER_COMPRESS=y
+CONFIG_FW_LOADER_COMPRESS_XZ=y
+CONFIG_FW_LOADER_COMPRESS_ZSTD=y
+
+# --- Réseau sans fil (ADR-013, ADR-020) ---
+# La vérification *par signature* de la base réglementaire est désactivée sans
+# introduire OpenSSL : REQUIRE_SIGNED_REGDB n'a d'invite de configuration que si
+# CERTIFICATION_ONUS est actif, d'où son activation préalable. On évite ainsi
+# SYSTEM_TRUSTED_KEYRING (donc OpenSSL) tout en gardant le Wi-Fi (ADR-020).
+CONFIG_CFG80211=y
+CONFIG_CFG80211_CERTIFICATION_ONUS=y
+# CONFIG_CFG80211_REQUIRE_SIGNED_REGDB is not set
+CONFIG_MAC80211=y
+CONFIG_WLAN=y
+# Pilotes courants en modules : udev les charge selon le matériel présent.
+CONFIG_IWLWIFI=m
+CONFIG_IWLMVM=m
+CONFIG_ATH9K=m
+CONFIG_ATH10K=m
+CONFIG_ATH11K=m
+CONFIG_ATH12K=m
+CONFIG_RTW88=m
+CONFIG_RTW88_8822BE=m
+CONFIG_RTW88_8822CE=m
+CONFIG_RTW88_8821CE=m
+CONFIG_RTW88_8723DE=m
+CONFIG_RTW88_8822BU=m
+CONFIG_RTW88_8821CU=m
+CONFIG_RTW89=m
+CONFIG_RTW89_8852AE=m
+CONFIG_RTW89_8852BE=m
+CONFIG_RTW89_8852CE=m
+CONFIG_RTW89_8922AE=m
+CONFIG_MT7601U=m
+CONFIG_MT76x0U=m
+CONFIG_MT76x2E=m
+CONFIG_MT7915E=m
+CONFIG_MT7921E=m
+CONFIG_MT7921U=m
+CONFIG_MT7925E=m
+CONFIG_MT7996E=m
+CONFIG_BRCMFMAC=m
+CONFIG_RTL8XXXU=m

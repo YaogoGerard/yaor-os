@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.21
+**Version :** 0.22
 **Dernière mise à jour :** 2026-10-15
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011, ADR-012, ADR-013, ADR-014, ADR-015, ADR-016, ADR-017, ADR-018, ADR-019, ADR-020
 
@@ -103,9 +103,11 @@ Le **Wi-Fi** (ADR-013, ADR-020) ajoute deux sources, épinglées au manifeste :
   **monolithique** (~662 Mio compressés) ; seule la **sous-partie** correspondant aux
   pilotes retenus est installée dans l'image, pour préserver la légèreté.
 
-Le Wi-Fi exige enfin d'**activer le noyau**, que le jalon 0.1 écartait entièrement :
-`CONFIG_CFG80211=y` avec **`CONFIG_CFG80211_REQUIRE_SIGNED_REGDB=n`** (ADR-020),
-`CONFIG_MAC80211`, `CONFIG_FW_LOADER` et les pilotes sans fil retenus.
+Le Wi-Fi exige enfin d'**activer le noyau**, que le jalon 0.1 écartait entièrement ;
+c'est désormais le cas dans `config/kernel-live.fragment` : `CONFIG_CFG80211=y` avec
+**`CONFIG_CFG80211_REQUIRE_SIGNED_REGDB` désactivé** (rendu paramétrable par
+`CONFIG_CFG80211_CERTIFICATION_ONUS=y`, ADR-020), `CONFIG_MAC80211`, `CONFIG_FW_LOADER`
+et les pilotes sans fil courants (modules chargés par udev).
 
 ### Composants sessions (v0.2)
 
@@ -149,10 +151,10 @@ Les systèmes de fichiers exigent leurs outils :
 - **NTFS** est assuré par le **noyau `ntfs3`** (lecture/écriture) : `ntfs-3g` n'est
   **pas** embarqué (aucun besoin de formatage en v0.2 ; un besoin, un fournisseur).
 
-Côté noyau, il faut activer `CONFIG_EXT4_FS`, `CONFIG_BTRFS_FS`, `CONFIG_VFAT_FS`
-(avec `CONFIG_NLS_CODEPAGE_437`/`CONFIG_NLS_ISO8859_1`), `CONFIG_EXFAT_FS` et
-`CONFIG_NTFS3_FS`. Le greffon `fs` de `libblockdev` exige que les outils `mkfs`/`fsck`
-correspondants soient présents au runtime.
+Côté noyau, `config/kernel-live.fragment` active `CONFIG_EXT4_FS`, `CONFIG_BTRFS_FS`,
+`CONFIG_VFAT_FS` (avec `CONFIG_NLS_CODEPAGE_437`/`CONFIG_NLS_ISO8859_1`), `CONFIG_EXFAT_FS`
+et `CONFIG_NTFS3_FS` (le NTFS historique `CONFIG_NTFS_FS` reste désactivé). Le greffon `fs`
+de `libblockdev` exige que les outils `mkfs`/`fsck` correspondants soient présents au runtime.
 
 ### Mode installé et mises à jour (v0.2)
 
@@ -285,11 +287,12 @@ compilation ; on les traite explicitement pour garder le lot minimal :
   absent du lot. Il est donc construit juste avant le noyau (phase `zstd`,
   groupe `base` du manifeste). L'image du noyau comprimée en zstd est plus
   petite que la sortie gzip par défaut et se décompresse plus vite au démarrage.
-- `CONFIG_CFG80211_REQUIRE_SIGNED_REGDB` (actif par défaut, sans invite de
-  configuration) sélectionne `SYSTEM_TRUSTED_KEYRING`, ce qui ferait construire
-  les certificats du noyau avec **OpenSSL**. OpenSSL étant écarté du lot
-  minimal, tout le WiFi (`CFG80211`) est désactivé au jalon 0.1 ; le réseau
-  filaire (virtio-net) reste disponible. Le WiFi reviendra avec OpenSSL.
+- `CONFIG_CFG80211_REQUIRE_SIGNED_REGDB` (actif par défaut) sélectionne
+  `SYSTEM_TRUSTED_KEYRING`, ce qui ferait construire les certificats du noyau
+  avec **OpenSSL**. Depuis ADR-020 il est **désactivé** — son invite n'existe que
+  si `CONFIG_CFG80211_CERTIFICATION_ONUS=y`, activé précisément pour cela — et le
+  Wi-Fi (`CFG80211`, `MAC80211`, pilotes) fonctionne **sans OpenSSL** ; le réseau
+  filaire (virtio-net) reste disponible.
 - `CONFIG_WERROR` (avertissements = erreurs) est désactivé : un compilateur plus
   récent que celui des développeurs du noyau peut introduire de nouveaux
   avertissements, ce qui casserait la compilation — recommandation explicite de
@@ -318,6 +321,9 @@ compilation ; on les traite explicitement pour garder le lot minimal :
   filesystems ». En complément, `-Dtranslations=false` évite `msgfmt` (gettext),
   `-Dman=false` la documentation, `-Dhwdb=false` la base matérielle et
   `-Dtests=false` les tests.
+  **En v0.2**, ces fonctions sont activées : `-Dnetworkd=true -Dresolve=true`
+  (réseau), `-Dlogind=true -Dpam=enabled` (sessions) et
+  `-Drepart=true -Dsysupdate=true` (mode installé).
 - **D-Bus** n'est pas encore construit : `systemd-logind` ne peut donc pas
   s'attacher au bus système et échoue en boucle. Comme une console root unique
   ne requiert pas de gestion de sessions, l'unité est **masquée**
