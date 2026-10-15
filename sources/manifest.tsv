@@ -44,5 +44,10 @@ base	zstd	1.5.7	https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1
 base	readline	8.3	https://ftp.gnu.org/gnu/readline/readline-8.3.tar.gz	fe5383204467828cd495ee8d1d3c037a7eba1389c22bc6a041f627976f9061cc
 base	iwd	3.12	https://mirrors.edge.kernel.org/pub/linux/network/wireless/iwd-3.12.tar.xz	d89a5e45c7180170e19be828f9e944a768c593758094fc57a358d0e7c4cb1a49
 base	linux-firmware	20260916	https://mirrors.edge.kernel.org/pub/linux/kernel/firmware/linux-firmware-20260916.tar.xz	f80dcb757a623deda62200c08e0e1a88c76fb6b54964f31b35fa74da1c90ccc5
+base	expat	2.9.0	https://github.com/libexpat/libexpat/releases/download/R_2_9_0/expat-2.9.0.tar.xz	1e6371862cc31999b368c3b89b49994f0677e1bab5f1b2b85ae3741f5d803051
+base	dbus	1.16.2	https://dbus.freedesktop.org/releases/dbus/dbus-1.16.2.tar.xz	0ba2a1a4b16afe7bceb2c07e9ce99a8c2c3508e5dec290dbb643384bd6beb7e2
+base	linux-pam	1.7.3	https://github.com/linux-pam/linux-pam/releases/download/v1.7.3/Linux-PAM-1.7.3.tar.xz	2ce4765fd49df6693771ef2941f81e33d8ee14b94a81a5c7b369aa3b137b85a5
+base	shadow	4.20.3	https://github.com/shadow-maint/shadow/releases/download/4.20.3/shadow-4.20.3.tar.xz	623be9429f64fa2165bfc5957c6a642ec309c5cf23c0d53855c99f7591922297
 rust	uutils-coreutils	0.12.0	https://github.com/uutils/coreutils/archive/refs/tags/0.12.0.tar.gz	4fb327655cb4ffcbf2f16550cf9234079ffe839692f7aa1a6eda104af684e122	coreutils-0.12.0.tar.gz
 rust	uutils-findutils	0.10.0	https://github.com/uutils/findutils/releases/download/0.10.0/source.tar.gz	0df3f270ddbaa9be443abad0f122b526b01f7576ed0195d481dcac766e64fd5e	findutils-0.10.0.tar.gz
+rust	sudo-rs	0.2.15	https://github.com/trifectatechfoundation/sudo-rs/archive/refs/tags/v0.2.15.tar.gz	ae857c3cde962a1ade2b981f7e01cf95e9fa05d5c5f95f94cf5f35394c1bf899	sudo-rs-0.2.15.tar.gz
