@@ -96,3 +96,8 @@ Le système DOIT assurer le **montage automatique des volumes amovibles** (`udis
 DOIT prendre en charge les systèmes de fichiers **ext4, btrfs, vfat, exFAT et NTFS** en
 lecture/écriture (ADR-015). Le chiffrement **LUKS** est **hors** périmètre de v0.2.
 
+## REQ-SW-026 — Installation et persistance
+Le système DOIT s'installer sur disque suivant un schéma GPT (ESP, deux slots racine A/B,
+partition de données) et DOIT préserver les données de `/var` à travers les mises à jour
+et les retours arrière (ADR-003, ADR-015).
+

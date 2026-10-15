@@ -10,6 +10,24 @@ Construire l'image, démarrer dans QEMU et vérifier que le noyau démarre.
 
 Examiner les composants sélectionnés et vérifier qu'une solution existante adaptée est utilisée lorsqu'elle est disponible.
 
+## TEST-ARCH-002 — Préférence Rust
+**Vérifie :** REQ-SW-003
+
+Recenser les composants retenus et vérifier que, pour chaque besoin où une implémentation
+Rust mature existe, celle-ci est privilégiée ou le choix contraire est justifié par un ADR.
+
+## TEST-ARCH-003 — Justification des réimplémentations
+**Vérifie :** REQ-SW-004
+
+Recenser les composants développés par YAOR et vérifier que chacun remplace une solution
+existante de façon documentée et justifiée (ADR, `component-selection`).
+
+## TEST-ARCH-004 — Remplaçabilité
+**Vérifie :** REQ-SW-014
+
+Remplacer un composant externe (par exemple le fournisseur DNS) et vérifier qu'aucune autre
+couche ne nécessite de modification majeure.
+
 ## TEST-GFX-001 — Compositor
 **Vérifie :** REQ-SW-005
 
@@ -91,4 +109,69 @@ en lecture/écriture.
 
 Formater puis monter en lecture/écriture des volumes **ext4, btrfs, vfat, exFAT et NTFS**,
 et vérifier la création puis la relecture d'un fichier sur chacun.
+
+## TEST-INST-001 — Démarrage installé (BIOS et UEFI)
+**Vérifie :** REQ-SW-019
+
+Installer le système sur un disque (virtuel) via `yaor-install`, retirer le média live et
+démarrer le disque en **BIOS** puis en **UEFI** : le système installé atteint `multi-user.target`.
+
+## TEST-INST-002 — Persistance des données
+**Vérifie :** REQ-SW-026
+
+Créer des données dans `/var` (et `/home`), appliquer une mise à jour par image, puis
+vérifier que les données sont **intactes** et que la nouvelle version est active.
+
+## TEST-UPD-001 — Mise à jour A/B et retour arrière
+**Vérifie :** REQ-SW-020
+
+Appliquer une mise à jour (slot inactif), démarrer le nouveau slot et vérifier la promotion ;
+provoquer ensuite un échec de confirmation et vérifier le **retour arrière automatique** vers
+le slot précédent.
+
+## TEST-SEC-001 — Intégrité des sources et des images
+**Vérifie :** REQ-SW-022
+
+Altérer une source (empreinte SHA-256) puis une image de mise à jour (signature) et vérifier
+que le build et `systemd-sysupdate` **refusent** l'élément non conforme, sans modifier le système.
+
+## TEST-CONFIG-001 — Configuration déclarative
+**Vérifie :** REQ-SW-015
+
+Modifier un fichier de configuration déclarative, recharger et vérifier que le changement
+prend effet sans recompilation.
+
+## TEST-BUILD-001 — Reproductibilité fonctionnelle
+**Vérifie :** REQ-SW-016
+
+Vérifier que chaque source est épinglée (version et empreinte SHA-256) au manifeste et que,
+pour une même révision, le build reproduit un système fonctionnellement identique.
+
+## TEST-BOOT-001 — Démarrage de l'ISO (BIOS et UEFI)
+**Vérifie :** REQ-SW-017
+
+Démarrer l'ISO live dans QEMU en **BIOS** puis en **UEFI** et vérifier que le système atteint
+`multi-user.target`.
+
+## TEST-TRACE-001 — Traçabilité
+**Vérifie :** REQ-SW-018
+
+Vérifier que chaque exigence de la matrice pointe un cas de test défini et que chaque cas de
+test référence une exigence (analyse croisée des deux documents).
+
+## TEST-UI-001 — Profil classique
+**Vérifie :** REQ-SW-008
+
+Activer le profil classique et vérifier l'organisation de bureau attendue (barre des tâches,
+menu de démarrage).
+
+## TEST-UI-002 — Profil macOS-like
+**Vérifie :** REQ-SW-009
+
+Activer le profil « barre de menus supérieure + dock » et vérifier la disposition.
+
+## TEST-UI-003 — Profil tiling
+**Vérifie :** REQ-SW-010
+
+Activer le profil en mosaïque, ouvrir plusieurs fenêtres et vérifier leur disposition.
 

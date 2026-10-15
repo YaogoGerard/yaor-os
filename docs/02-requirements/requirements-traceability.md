@@ -28,3 +28,7 @@
 | REQ-SW-023 | System services (ADR-014) | TEST-SESS-003 |
 | REQ-SW-025 | Component selection (ADR-015) | TEST-STOR-001 |
 | REQ-SW-025 | Component selection (ADR-015) | TEST-STOR-002 |
+| REQ-SW-019 | Installer & updates (ADR-015) | TEST-INST-001 |
+| REQ-SW-020 | Installer & updates (ADR-015) | TEST-UPD-001 |
+| REQ-SW-022 | Security (ADR-007) | TEST-SEC-001 |
+| REQ-SW-026 | Installer & updates (ADR-015) | TEST-INST-002 |
