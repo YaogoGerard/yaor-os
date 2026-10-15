@@ -278,8 +278,10 @@ sera supprimée (`/tools`) une fois le système final bâti.
 - Chaque source est vérifiée par empreinte **SHA-256** et les empreintes sont épinglées
   (ADR-007).
 - Le fichier `sources/manifest.tsv` liste les sources (colonnes `groupe`, `nom`,
-  `version`, `url`, `sha256`). Seul ce fichier est versionné ; les archives elles-mêmes
-  sont ignorées par Git.
+  `version`, `url`, `sha256`, `fichier`). Seul ce fichier est versionné ; les archives
+  elles-mêmes sont ignorées par Git.
+- Les dépendances cargo des composants Rust ne sont pas versionnées : elles sont
+  **vendues** au téléchargement (étape 01, voir « Chaîne Rust » et ADR-018/ADR-019).
 - Le téléchargement utilise les URL canoniques des amonts (upstream). Un miroir GNU peut être fourni
   pour accélérer sans changer les empreintes :
   `GNU_MIRROR=https://mirrors.kernel.org/gnu ./scripts/01_download.sh`.

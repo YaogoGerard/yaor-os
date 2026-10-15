@@ -63,12 +63,14 @@ installé et mises à jour par image. Correspond à la Phase 1 « System ».
 
 - [ ] La toolchain Rust (`rustc`/`cargo` de l'hôte) est un **prérequis de build** vérifié à
   l'étape 00 ; aucun `rustc`/LLVM n'est embarqué (ADR-019, remplace en partie ADR-012).
-- [ ] `uutils/coreutils` remplace GNU coreutils dans l'image finale ; GNU reste les outils
-  temporaires de construction (ADR-012).
-- [ ] `uutils/findutils` remplace GNU findutils ; aucun outil n'est fourni deux fois
-  (principe de non-duplication, ADR-017).
-- [ ] Les dépendances cargo sont **vendues** et les composants Rust se compilent
-  **hors-ligne** (ADR-018).
+- [ ] `uutils/coreutils` remplace GNU coreutils dans l'image finale (ADR-012) : aucun
+  binaire portant la chaîne « GNU coreutils » ne subsiste dans `/usr/bin` (contrôlé aux
+  étapes 04 et 06).
+- [ ] `uutils/findutils` remplace GNU findutils (ADR-017) : aucun binaire portant
+  « GNU findutils » ne subsiste ; un besoin n'a **qu'un seul fournisseur**.
+- [ ] Les dépendances cargo sont **vendues au téléchargement** (`cargo vendor`, étape 01)
+  et les composants Rust se compilent **hors-ligne** (`CARGO_NET_OFFLINE=true`,
+  ADR-018/ADR-019).
 - [ ] Le build est **reproductible au sens fonctionnel** : versions et empreintes épinglées,
   même résultat pour une même révision (ADR-016, REQ-SW-016).
 

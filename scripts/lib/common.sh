@@ -48,16 +48,20 @@ need_cmd() {
 }
 
 # manifest_field <nom> <colonne> : lit une colonne du manifeste.
-# Colonnes : 1=groupe, 2=nom, 3=version, 4=url, 5=sha256.
+# Colonnes : 1=groupe, 2=nom, 3=version, 4=url, 5=sha256, 6=fichier (nom local,
+# optionnel). Une colonne absente est renvoyée vide.
 manifest_field() {
     awk -F'\t' -v n="$1" -v c="$2" '$2 == n { print $c; exit }' "$SOURCES_DIR/manifest.tsv"
 }
 
-# source_archive <nom> : chemin local de l'archive téléchargée.
+# source_archive <nom> : chemin local de l'archive téléchargée. Le nom du
+# fichier est celui de la colonne 6 s'il est fourni, sinon celui de l'URL.
 source_archive() {
-    local url
+    local url file
     url="$(manifest_field "$1" 4)"
-    printf '%s\n' "$SOURCES_DIR/$(basename "$url")"
+    file="$(manifest_field "$1" 6)"
+    [[ -n "$file" ]] || file="$(basename "$url")"
+    printf '%s\n' "$SOURCES_DIR/$file"
 }
 
 # stamp_done <étape> : marque une étape terminée (idempotence).

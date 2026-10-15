@@ -21,7 +21,10 @@
 #   - bibliothèques requises : zlib, libcap, libxcrypt, util-linux, kmod, pcre2 ;
 #   - libelf (Elfutils) pour objtool, flex pour le kconfig du noyau et zstd
 #     pour la compression de l'image du noyau (CONFIG_KERNEL_ZSTD) ;
-#   - systemd (PID 1) puis le noyau Linux.
+#   - systemd (PID 1) puis le noyau Linux ;
+#   - composants Rust (uutils coreutils et findutils) compilés EN DERNIER, dans
+#     le chroot, avec la toolchain Rust de l'hôte montée en lecture seule
+#     (ADR-019) : elle n'est jamais embarquée dans l'image.
 #
 # Usage :
 #   sudo ./scripts/04_chroot_build.sh                 # enchaîne toutes les phases
@@ -76,6 +79,11 @@ ALL_PHASES=(
     # il doit être présent dans le chroot au moment de la phase kernel.
     zstd
     kernel
+    # Composants Rust, en dernier : ils écrasent leurs homologues GNU dans
+    # /usr/bin, une fois que plus aucune phase C n'en dépend (ADR-017). La
+    # toolchain de l'hôte sert seule à les compiler (ADR-019).
+    rust-findutils
+    rust-coreutils
 )
 
 # --- Outillage --------------------------------------------------------------
@@ -94,6 +102,71 @@ chroot_env=(
 # environnement propre, et abandonne à la première erreur.
 chroot_run() {
     chroot "$LFS" /usr/bin/env -i "${chroot_env[@]}" /usr/bin/bash -e -c "$1"
+}
+
+# --- Toolchain Rust de l'hôte (ADR-019) -------------------------------------
+# Point de montage, dans le chroot, du « sysroot » de rustc.
+RUST_BIND="$LFS/opt/host-rust/toolchain"
+
+# host_rust_dir : dossier de la toolchain Rust de l'hôte, c'est-à-dire le
+# « sysroot » de rustc. La toolchain est un OUTIL DE BUILD (ADR-019) : on
+# cherche celle de l'utilisateur qui a lancé sudo (rustup ou path hérité). Une
+# installation de distribution (sysroot = /usr) est refusée : son bin/ contient
+# des outils de l'hôte (cc…) qui masqueraient ceux du chroot.
+host_rust_dir() {
+    local user home cand root rr=""
+    user="${SUDO_USER:-$(id -un)}"
+    home="$(getent passwd "$user" 2>/dev/null | cut -d: -f6)"
+    [[ -n "$home" ]] || home="${HOME:-/root}"
+
+    if command -v rustc >/dev/null 2>&1; then
+        rr="$(rustc --print sysroot 2>/dev/null || true)"
+    elif [[ -x "$home/.cargo/bin/rustc" ]]; then
+        rr="$("$home/.cargo/bin/rustc" --print sysroot 2>/dev/null || true)"
+    else
+        for root in "${RUSTUP_HOME:-$home/.rustup}" "$home/.rustup" /root/.rustup; do
+            for cand in "$root"/toolchains/*; do
+                if [[ -x "$cand/bin/rustc" ]]; then rr="$cand"; break 2; fi
+            done
+        done
+    fi
+
+    [[ -n "$rr" && -x "$rr/bin/rustc" ]] || return 1
+    rr="$(readlink -f "$rr")"
+    case "$rr" in
+        /|/usr|/usr/local) return 1 ;;   # installation de distribution
+    esac
+    printf '%s\n' "$rr"
+}
+
+# ensure_host_rust : monte (une seule fois) la toolchain de l'hôte, en lecture
+# seule, dans le chroot. Idempotent : peut être rappelé par une phase Rust même
+# si « setup » a déjà été exécuté.
+ensure_host_rust() {
+    local src
+    src="$(host_rust_dir)" \
+        || die "toolchain Rust introuvable : installe rustc/cargo via rustup (ADR-019)"
+    mkdir -pv "$RUST_BIND"
+    if ! mountpoint -q "$RUST_BIND"; then
+        mount -v --bind "$src" "$RUST_BIND"
+        mount -o remount,ro,bind "$RUST_BIND" 2>/dev/null \
+            || log "remontage lecture seule impossible : $RUST_BIND"
+    fi
+}
+
+# chroot_rust <snippet shell> : exécute du Rust dans le chroot avec la toolchain
+# de l'hôte et un CARGO_HOME dédié, en mode hors-ligne (ADR-018/019). Le
+# CARGO_HOME et les « target/ » vivent sous /build/work : jamais dans le dépôt.
+chroot_rust() {
+    chroot "$LFS" /usr/bin/env -i \
+        HOME=/root \
+        TERM=xterm-256color \
+        PATH="/opt/host-rust/toolchain/bin:/usr/bin:/usr/sbin" \
+        LC_ALL=POSIX \
+        CARGO_HOME=/build/work/.cargo-home \
+        CARGO_NET_OFFLINE=true \
+        CARGO_BUILD_JOBS="$JOBS" \
+        /usr/bin/bash -e -c "$1"
 }
 
 require_archive() {
@@ -260,6 +333,8 @@ EOF
     mount_if "$LFS/sources"       --bind "$SOURCES_DIR"
     mount_if "$LFS/build/work"    --bind "$WORK"
     mount_if "$LFS/build/config"  --bind "$CONFIG_DIR"
+    # Toolchain Rust de l'hôte, montée en lecture seule (ADR-019).
+    ensure_host_rust
     mkdir -pv "$LFS/run/lock"
 
     section "Vérification du chroot"
@@ -270,7 +345,8 @@ phase_teardown() {
     section "Démontage de la cible"
     local mp
     for mp in "$LFS/run" "$LFS/dev/pts" "$LFS/dev" "$LFS/proc" "$LFS/sys" \
-              "$LFS/sources" "$LFS/build/work" "$LFS/build/config"; do
+              "$LFS/sources" "$LFS/build/work" "$LFS/build/config" \
+              "$RUST_BIND"; do
         if mountpoint -q "$mp"; then
             umount -v "$mp" || log "échec du démontage de $mp"
         fi
@@ -591,6 +667,46 @@ phase_kernel() {
     log "installation des modules"
     run chroot_run "cd '$d' && make modules_install"
     run chroot_run "cd '$d' && cp -v arch/x86/boot/bzImage /boot/vmlinuz-$ver && cp -v System.map /boot/System.map-$ver && cp -v .config /boot/config-$ver"
+}
+
+# --- Phases : composants Rust (uutils) --------------------------------------
+# Les binaires Rust remplacent leurs homologues GNU (ADR-017) ; ils sont
+# compilés avec la toolchain Rust de l'hôte (ADR-019) et hors-ligne (ADR-018).
+# SKIP_UTILS écarte les programmes que util-linux fournit déjà (more, kill) :
+# un besoin n'a qu'un seul fournisseur (ADR-017).
+
+phase_rust_findutils() {
+    require_archive uutils-findutils
+    ensure_host_rust
+    local d; d="$(ci_work uutils-findutils)"
+    log "compilation uutils/findutils (Rust, remplace GNU findutils)"
+    run chroot_rust "cd '$d' && cargo build --release --locked"
+    # findutils n'a pas de cible « install » : on pose les quatre binaires
+    # (GNU find, xargs, locate, updatedb sont écrasés).
+    log "installation findutils (find, xargs, locate, updatedb)"
+    run chroot_run "cd '$d/target/release' && cp -v find xargs locate updatedb /usr/bin/ && chmod 755 /usr/bin/find /usr/bin/xargs /usr/bin/locate /usr/bin/updatedb"
+}
+
+phase_rust_coreutils() {
+    require_archive uutils-coreutils
+    ensure_host_rust
+    local d; d="$(ci_work uutils-coreutils)"
+    # GNU « install » est sur le point d'être remplacé : on en garde une copie
+    # hors de /usr/bin pour que « make install » l'utilise jusqu'au bout.
+    run chroot_run "cp -v /usr/bin/install /build/work/.gnu-install && chmod 755 /build/work/.gnu-install"
+    log "compilation et installation uutils/coreutils (Rust, remplace GNU coreutils)"
+    # PROFILE=release est implicite pour « install ». SKIP_UTILS écarte more/kill
+    # (fournis par util-linux). Ne PAS surcharger CARGOFLAGS : le GNUmakefile y
+    # ajoute feat_external_libstdbuf (exigé par le binaire stdbuf). Le hors-ligne
+    # passe par l'environnement (CARGO_NET_OFFLINE), pas par une variable de make.
+    run chroot_rust "cd '$d' && make install PREFIX=/usr MULTICALL=n SKIP_UTILS='more kill' MANPAGES=n COMPLETIONS=n LOCALES=n INSTALL=/build/work/.gnu-install"
+    # « make install » couvre aussi « [ » (copie de « test »), comme GNU.
+    # Contrôle de non-duplication : aucun binaire GNU ne doit subsister dans le
+    # PATH (la chaîne « GNU coreutils »/« GNU findutils » figure dans leur
+    # --version, et jamais dans les binaires Rust).
+    log "vérification : plus aucun binaire GNU coreutils/findutils dans /usr/bin"
+    run chroot_run "if grep -rl -e 'GNU coreutils' -e 'GNU findutils' /usr/bin /usr/sbin 2>/dev/null; then echo 'ERREUR : binaires GNU résiduels ci-dessus' >&2; exit 1; fi"
+    run chroot_run "ls --version | head -1; find --version | head -1"
 }
 
 # --- Exécution --------------------------------------------------------------

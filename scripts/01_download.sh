@@ -2,14 +2,20 @@
 # 01_download.sh — télécharge les sources du manifeste et vérifie leur SHA-256.
 #
 # Le manifeste (sources/manifest.tsv) liste, séparés par tabulation :
-#     groupe, nom, version, url, sha256
-# Un champ sha256 « - » demande à épingler l'empreinte : le script affiche la
-# valeur calculée au lieu d'échouer (utile lors de l'ajout d'un paquet).
+#     groupe, nom, version, url, sha256, fichier
+# La colonne « fichier » (optionnelle) impose le nom local de l'archive ; laissée
+# vide, c'est le nom de base de l'URL qui est retenu. Un champ sha256 « - »
+# demande à épingler l'empreinte : le script affiche la valeur calculée au lieu
+# d'échouer (utile lors de l'ajout d'un paquet).
 #
 # Les archives manquantes sont téléchargées EN PARALLÈLE (JOBS connexions, 8 par
 # défaut) : les miroirs limitent souvent le débit d'une connexion unique, et le
 # parallélisme augmente fortement le débit agrégé. La vérification des empreintes
 # reste séquentielle (rapide).
+#
+# Les composants Rust (groupe « rust ») voient leurs dépendances cargo figées ici
+# (section 3) : « cargo vendor » remplit le cache de build pour un build
+# hors-ligne dans le chroot (ADR-018 et ADR-019).
 
 set -euo pipefail
 STEP=01_download
@@ -54,9 +60,9 @@ dl_list="$(mktemp)"
 dl_worker=""
 trap 'rm -f "$dl_list" "$dl_worker"' EXIT
 
-while IFS=$'\t' read -r group name version url expected; do
+while IFS=$'\t' read -r group name version url expected fname; do
     [[ -z "$name" || "$group" == "groupe" || "$group" == \#* ]] && continue
-    file="$SOURCES_DIR/$(basename "$url")"
+    file="$SOURCES_DIR/${fname:-$(basename "$url")}"
     [[ -f "$file" ]] && continue
     printf '%s\t%s\t%s\n' "$(resolve_url "$url")" "$file" "$name" >> "$dl_list"
 done < "$MANIFEST"
@@ -93,11 +99,11 @@ section "Vérification des sources"
 
 fail=0
 count=0
-while IFS=$'\t' read -r group name version url expected; do
+while IFS=$'\t' read -r group name version url expected fname; do
     [[ -z "$name" || "$group" == "groupe" || "$group" == \#* ]] && continue
     count=$((count + 1))
 
-    file="$SOURCES_DIR/$(basename "$url")"
+    file="$SOURCES_DIR/${fname:-$(basename "$url")}"
     log "--- $name $version ($group) ---"
 
     if [[ ! -f "$file" ]]; then
@@ -123,3 +129,46 @@ done < "$MANIFEST"
 ((count > 0)) || die "aucune entrée lue dans $MANIFEST"
 ((fail == 0)) || die "une ou plusieurs archives sont invalides"
 log "Terminé : $count archive(s) vérifiée(s)."
+
+# --- 3) Vendoring des dépendances cargo -------------------------------------
+#
+# Le build Rust du chroot est hors-ligne (ADR-018) : les dépendances sont figées
+# ici. « cargo vendor » remplit build/work/<source>/vendor/ à partir des
+# Cargo.lock épinglés, et la configuration de remplacement est ajoutée à
+# <source>/.cargo/config.toml. L'arbre vendu vit dans le cache de build
+# (build/work/), jamais dans le dépôt ; sources/ ne contient que les archives.
+
+if awk -F'\t' '$1 == "rust" { found = 1 } END { exit !found }' "$MANIFEST"; then
+    need_cmd cargo
+fi
+
+while IFS=$'\t' read -r group name version url expected fname; do
+    [[ -z "$name" || "$group" == "groupe" || "$group" == \#* ]] && continue
+    [[ "$group" == "rust" ]] || continue
+
+    srcdir="$(src_dir "$name")"
+    cfg="$srcdir/.cargo/config.toml"
+
+    if [[ -f "$cfg" ]] && grep -q 'vendored-sources' "$cfg"; then
+        log "dépendances déjà vendues : $name"
+        continue
+    fi
+
+    section "Vendoring $name ($version)"
+    if [[ ! -d "$srcdir/vendor" ]]; then
+        ( cd "$srcdir" && cargo vendor --versioned-dirs vendor ) \
+            || die "cargo vendor : échec pour $name"
+    fi
+    # Toutes les sources n'ont pas de dossier .cargo/ (findutils, par exemple).
+    mkdir -p "$(dirname "$cfg")"
+    cat >> "$cfg" <<'EOF'
+
+# Dépendances vendues (YAOR, ADR-018) : compilation hors-ligne.
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
+EOF
+    log "dépendances vendues : $name"
+done < "$MANIFEST"

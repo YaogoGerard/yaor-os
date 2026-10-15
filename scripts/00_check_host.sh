@@ -16,9 +16,11 @@ arch="$(uname -m)"
 log "système : $(uname -srm)"
 [[ "$arch" == "x86_64" ]] || log "AVERTISSEMENT : cible attendue x86_64, hôte '$arch'"
 
-# Outils nécessaires pour construire la toolchain et le système.
+# Outils nécessaires pour construire la toolchain et le système. La toolchain
+# Rust (rustc/cargo) est un OUTIL DE BUILD, jamais embarquée (ADR-019).
+MIN_RUST=1.99.0
 NOW=(gcc make bison flex m4 patch perl python3 tar xz gzip sed grep awk
-     sha256sum cpio zstd find xargs)
+     sha256sum cpio zstd find xargs rustc cargo)
 
 # Outils nécessaires pour l'assemblage et le test de l'image live.
 LATER=(xorriso mkfs.erofs limine qemu-system-x86_64 gpg)
@@ -35,6 +37,15 @@ for c in "${DOWNLOAD[@]}"; do
     if command -v "$c" >/dev/null 2>&1; then have_dl=1; fi
 done
 ((have_dl == 1)) || missing_now+=("wget|curl")
+
+# La toolchain Rust doit être assez récente pour compiler les composants
+# (ADR-019) ; le minimum correspond au vendoring et aux éditions employées.
+if command -v rustc >/dev/null 2>&1; then
+    rust_ver="$(rustc --version | awk '{print $2}')"
+    log "toolchain Rust : rustc $rust_ver (minimum $MIN_RUST)"
+    printf '%s\n%s\n' "$MIN_RUST" "$rust_ver" | sort -V -C \
+        || missing_now+=("rustc>=$MIN_RUST")
+fi
 
 if ((${#missing_now[@]} == 0)); then
     log "Outils requis : OK"

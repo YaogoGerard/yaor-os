@@ -51,5 +51,9 @@ Existe-t-il une solution ?
 > composant Rust retenu **remplace** son homologue C/GNU, qui n'est pas embarqué
 > (ADR-017). Non retenus pour v0.2 (maturité) : `uutils/diffutils`, `grep`, `sed`,
 > `util-linux`.
+>
+> **Doublons écartés à l'installation :** `uutils/coreutils` livre aussi `more` et `kill`,
+> déjà assurés par `util-linux` (non remplacé en v0.2) ; ils sont écartés (`SKIP_UTILS`).
+> `uutils` installe en revanche `arch` et `[`, dont il devient le seul fournisseur.
 
 Les décisions définitives doivent être enregistrées avec version et justification.

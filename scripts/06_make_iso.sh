@@ -64,6 +64,7 @@ rsync -a --delete \
   --exclude='/run/*'  --exclude='/tmp/*' \
   --exclude='/build/work/*' --exclude='/build/config/*' \
   --exclude='/sources/*' --exclude='/tools/*' \
+  --exclude='/opt/*' \
   --exclude='/.cache/*' --exclude='*.log' \
   --exclude='/boot/*' \
   --exclude='/usr/libexec/gcc/*' \
@@ -98,6 +99,19 @@ rsync -a --delete \
   "$LFS/" "$ROOTFS_CLEAN/"
 
 mkdir -p "$ROOTFS_CLEAN"/{proc,sys,dev,run,tmp,mnt,build,sources}
+
+section "Vérification : fournisseurs non dupliqués (ADR-017)"
+# Les composants Rust (uutils) remplacent GNU coreutils/findutils (étape 04).
+# Aucun binaire GNU ne doit subsister : les chaînes « GNU coreutils » /
+# « GNU findutils » figurent dans leur --version et jamais dans les binaires Rust.
+leftovers="$(grep -rl -e 'GNU coreutils' -e 'GNU findutils' \
+    "$ROOTFS_CLEAN"/usr/bin "$ROOTFS_CLEAN"/usr/sbin 2>/dev/null || true)"
+if [[ -n "$leftovers" ]]; then
+    log "binaires GNU coreutils/findutils résiduels :"
+    printf '%s\n' "$leftovers" | sed "s#$ROOTFS_CLEAN/##" >&2
+    die "intégration Rust incomplète : des binaires GNU subsistent (ADR-017)"
+fi
+log "aucun binaire GNU coreutils/findutils résiduel"
 
 section "Stripping des binaires"
 find "$ROOTFS_CLEAN" -type f -executable 2>/dev/null | while read -r f; do

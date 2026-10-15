@@ -1,4 +1,4 @@
-groupe	nom	version	url	sha256
+groupe	nom	version	url	sha256	fichier
 toolchain	gmp	6.3.0	https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz	a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898
 toolchain	mpfr	4.2.2	https://ftp.gnu.org/gnu/mpfr/mpfr-4.2.2.tar.xz	b67ba0383ef7e8a8563734e2e889ef5ec3c3b898a01d00fa0a6869ad81c6ce01
 toolchain	mpc	1.4.1	https://ftp.gnu.org/gnu/mpc/mpc-1.4.1.tar.xz	91204cd32f164bd3b7c992d4a6a8ce6519511aadab30f78b6982d0bf8d73e931
@@ -41,3 +41,5 @@ base	libelf	0.193	https://sourceware.org/ftp/elfutils/0.193/elfutils-0.193.tar.b
 base	bison	3.8.2	https://ftp.gnu.org/gnu/bison/bison-3.8.2.tar.xz	9bba0214ccf7f1079c5d59210045227bcf619519840ebfa80cd3849cff5a5bf2
 base	flex	2.6.4	https://github.com/westes/flex/releases/download/v2.6.4/flex-2.6.4.tar.gz	e87aae032bf07c26f85ac0ed3250998c37621d95f8bd748b31f15b33c45ee995
 base	zstd	1.5.7	https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz	eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3
+rust	uutils-coreutils	0.12.0	https://github.com/uutils/coreutils/archive/refs/tags/0.12.0.tar.gz	4fb327655cb4ffcbf2f16550cf9234079ffe839692f7aa1a6eda104af684e122	coreutils-0.12.0.tar.gz
+rust	uutils-findutils	0.10.0	https://github.com/uutils/findutils/releases/download/0.10.0/source.tar.gz	0df3f270ddbaa9be443abad0f122b526b01f7576ed0195d481dcac766e64fd5e	findutils-0.10.0.tar.gz
