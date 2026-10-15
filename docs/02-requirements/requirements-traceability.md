@@ -26,3 +26,5 @@
 | REQ-SW-021 | System services (ADR-014) | TEST-SESS-001 |
 | REQ-SW-023 | System services (ADR-014) | TEST-SESS-002 |
 | REQ-SW-023 | System services (ADR-014) | TEST-SESS-003 |
+| REQ-SW-025 | Component selection (ADR-015) | TEST-STOR-001 |
+| REQ-SW-025 | Component selection (ADR-015) | TEST-STOR-002 |

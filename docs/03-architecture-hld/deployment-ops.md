@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.19
+**Version :** 0.20
 **Dernière mise à jour :** 2026-10-15
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011, ADR-012, ADR-013, ADR-014, ADR-015, ADR-016, ADR-017, ADR-018, ADR-019, ADR-020
 
@@ -128,6 +128,31 @@ Deux reconfigurations suffisent, sans source nouvelle :
 - **util-linux** : retirer `--disable-login` pour fournir **`agetty`** et **`login`** ;
   `su`/`nologin`/`runuser`/`setpriv` restent désactivés, l'élévation passant par
   `sudo-rs` (un besoin, un fournisseur).
+
+### Composants stockage (v0.2)
+
+Le montage automatique des volumes amovibles (ADR-015) s'appuie sur **`udisks2`**
+2.11.2, qui tire une partie de l'écosystème GLib :
+
+- **`glib`** 2.88.4 (sur **`libffi`** 3.8.0) et **`libgudev`** 238 ;
+- **`polkit`** 124 pour l'autorisation des actions privilégiées, avec **`duktape`**
+  2.7.0 comme moteur de règles (`js_engine=duktape`) ;
+- **`libblockdev`** 3.5.0 (sur **`libbytesize`** 2.12), construit avec un **jeu de
+  greffons minimal** : `part`, `fs`, `loop`, `swap`, `btrfs`. Les greffons `lvm`, `dm`,
+  `crypto`, `nvme`, `smart`, `nvdimm`, `mpath` et `tools` sont **désactivés** : LUKS est
+  hors périmètre et `tools` tirerait `libparted`.
+
+Les systèmes de fichiers exigent leurs outils :
+
+- **`e2fsprogs`** 1.47.4 (ext4 ; fournit aussi `libext2fs` requise par le greffon `fs`),
+  **`btrfs-progs`** 7.1, **`dosfstools`** 4.2 (vfat) et **`exfatprogs`** 1.4.3 (exFAT).
+- **NTFS** est assuré par le **noyau `ntfs3`** (lecture/écriture) : `ntfs-3g` n'est
+  **pas** embarqué (aucun besoin de formatage en v0.2 ; un besoin, un fournisseur).
+
+Côté noyau, il faut activer `CONFIG_EXT4_FS`, `CONFIG_BTRFS_FS`, `CONFIG_VFAT_FS`
+(avec `CONFIG_NLS_CODEPAGE_437`/`CONFIG_NLS_ISO8859_1`), `CONFIG_EXFAT_FS` et
+`CONFIG_NTFS3_FS`. Le greffon `fs` de `libblockdev` exige que les outils `mkfs`/`fsck`
+correspondants soient présents au runtime.
 
 ### Adaptations de compilation croisée
 

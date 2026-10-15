@@ -91,3 +91,8 @@ Le système DOIT fournir un réseau **filaire** opérationnel (configuration aut
 DHCP et résolution de noms) et DOIT prendre en charge le **Wi-Fi** lorsque le matériel et
 le microprogramme correspondants sont disponibles, **sans second démon réseau** (ADR-013).
 
+## REQ-SW-025 — Stockage
+Le système DOIT assurer le **montage automatique des volumes amovibles** (`udisks2`) et
+DOIT prendre en charge les systèmes de fichiers **ext4, btrfs, vfat, exFAT et NTFS** en
+lecture/écriture (ADR-015). Le chiffrement **LUKS** est **hors** périmètre de v0.2.
+

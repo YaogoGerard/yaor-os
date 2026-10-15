@@ -79,3 +79,16 @@ session par `loginctl`.
 Depuis un compte non privilégié, exécuter une commande via `sudo` (sudo-rs) et vérifier
 que l'élévation est effective après authentification.
 
+## TEST-STOR-001 — Montage automatique
+**Vérifie :** REQ-SW-025
+
+Attacher un volume amovible (clé USB ou périphérique virtuel) formaté : `udisks2` le monte
+automatiquement sous `/run/media/<utilisateur>/<étiquette>` et son contenu est accessible
+en lecture/écriture.
+
+## TEST-STOR-002 — Systèmes de fichiers
+**Vérifie :** REQ-SW-025
+
+Formater puis monter en lecture/écriture des volumes **ext4, btrfs, vfat, exFAT et NTFS**,
+et vérifier la création puis la relecture d'un fichier sur chacun.
+
