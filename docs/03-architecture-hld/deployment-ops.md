@@ -171,13 +171,35 @@ Le montage automatique des volumes amovibles (ADR-015) s'appuie sur **`udisks2`*
   fusion de la politique (`i18n.merge_file`, type XML) par une copie, écartant
   `itstool` et `libxml2`. Son binaire **`pkexec`** (setuid-root) est **retiré** :
   l'élévation de privilèges reste le seul fait de `sudo-rs` (ADR-012/014) ;
-- **`libblockdev`** 3.5.0 (sur **`libbytesize`** 2.12), construit avec un **jeu de
-  greffons minimal** : `part`, `fs`, `loop`, `swap`, `btrfs`. Les greffons `lvm`, `dm`,
-  `crypto`, `nvme`, `smart`, `nvdimm`, `mpath` et `tools` sont **désactivés** : LUKS est
-  hors périmètre et `tools` tirerait `libparted`.
+- **`libblockdev`** 3.5.0 (sur **`libbytesize`** 2.12). Construit `--enable-daemon`,
+  `udisks` appelle sans garde les symboles `bd_md_`, `bd_crypto_`, `bd_nvme_`,
+  `bd_smart_`, `bd_fs_`, `bd_part_`, `bd_loop_` et `bd_swap_` : le **jeu de greffons
+  est donc imposé**, et non choisi — `part`, `fs`, `loop`, `swap`, `mdraid`, `crypto`,
+  `nvme`, `smart` sont **obligatoires** (chacun manquant fait échouer le `configure`
+  de `udisks`). Seuls `lvm`, `dm`, `mpath`, `nvdimm` et `tools` sont désactivés
+  (`udisks` n'emploie ni `bd_dm_` ni `bd_lvm_` ni `bd_btrfs_` ; `tools` tirerait
+  `libparted`).
 - **`gettext`** 1.0 : seuls ses outils (`msgfmt`, `xgettext`, `msgmerge`) sont utiles,
-  mais `polkit` (`i18n.gettext`), `libbytesize` et `udisks` les réclament **en dur**
-  au configure. Les traductions restent désactivées (`--disable-nls`) partout ailleurs.
+  mais `polkit` (`i18n.gettext`), `libbytesize`, `udisks` et `cryptsetup` les réclament
+  **en dur** au configure. Les traductions restent désactivées (`--disable-nls`) partout
+  ailleurs.
+
+Le greffon `crypto` de `libblockdev` (et son build `--enable-daemon`) entraîne une
+**chaîne de dépendances cryptographiques** supplémentaire, indépendante du périmètre
+LUKS (hors v0.2) :
+
+- **`openssl`** 3.6.5 : backend crypto de `libcryptsetup` (`--with-crypto_backend=openssl`),
+  et brique de signature de `systemd-sysupdate` (mode installé) ;
+- **`json-c`** 0.19 et **`popt`** 1.19 : exigés **en dur** par le `configure` de
+  `libcryptsetup` (`PKG_CHECK_MODULES([JSON_C], [json-c])`, `popt`) ; `json-c` sert
+  aussi à `libnvme` ;
+- **`LVM2`** 2.03.43 : seul **`libdevmapper`** est construit et installé ; `libcryptsetup`
+  en fait une dépendance dure (`AC_CHECK_HEADER(libdevmapper.h)`) ;
+- **`libcryptsetup`** 2.8.8 : construit en **bibliothèque seule** (les outils
+  `cryptsetup`/`veritysetup`/`integritysetup` restent désactivés, LUKS étant hors v0.2) ;
+- **`keyutils`** 1.6.3 : le greffon `crypto` inclut `<keyutils.h>` et lie `-lkeyutils`
+  sans garde ; les aides *upcall* (`request-key`, `key.dns_resolver`) sont écartées ;
+- **`libnvme`** 1.16.2 (greffon `nvme`) et **`libatasmart`** 0.19 (greffon `smart`).
 
 Les systèmes de fichiers exigent leurs outils :
 
@@ -310,6 +332,18 @@ voie d'élévation de privilèges. ADR-012/014 font de `sudo-rs` le **seul** fou
 d'élévation : `phase_polkit` supprime `/usr/bin/pkexec` après installation.
 `polkit-agent-helper-1` (setuid lui aussi) est conservé : il n'assure que la
 conversation PAM d'authentification polkit, pas l'exécution d'une commande arbitraire.
+
+### Correctif appliqué à json-c 0.19
+
+`json-c` 0.19 est livré avec un `meson.build` (les versions antérieures ne
+connaissaient que CMake). Ce script compile bien la bibliothèque mais **n'installe
+pas une arborescence exploitable** : `install_headers()` dépose les en-têtes à plat
+dans `/usr/include` (alors que tout le monde les inclut sous `<json-c/json.h>`, comme
+le fait le CMake amont) et **aucun `json-c.pc` n'est généré** — or `cryptsetup` exige
+ce fichier pkg-config, et `libnvme` s'en sert. Le correctif
+`patches/json-c-0.19-meson-pc.patch` installe les en-têtes sous `<json-c/>`, génère
+`json-c.pc` (mêmes drapeaux que le `json-c.pc.in` amont) et rétablit au passage la
+version du projet, restée à `0.18.99` dans le fichier meson.
 
 ### Utilisateurs et groupes du système de base (étape 04)
 
