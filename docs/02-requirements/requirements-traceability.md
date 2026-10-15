@@ -23,3 +23,6 @@
 | REQ-SW-024 | Component selection (ADR-013) | TEST-NET-001 |
 | REQ-SW-024 | Component selection (ADR-013) | TEST-NET-002 |
 | REQ-SW-024 | Component selection (ADR-013) | TEST-NET-003 |
+| REQ-SW-021 | System services (ADR-014) | TEST-SESS-001 |
+| REQ-SW-023 | System services (ADR-014) | TEST-SESS-002 |
+| REQ-SW-023 | System services (ADR-014) | TEST-SESS-003 |

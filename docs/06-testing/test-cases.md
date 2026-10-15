@@ -60,3 +60,22 @@ Sur du matériel Wi-Fi dont le microprogramme est présent, connecter une interf
 `iwctl` (`station <iface> connect <SSID>`) puis vérifier l'obtention d'une adresse et la
 connectivité.
 
+## TEST-SESS-001 — Bus système et logind
+**Vérifie :** REQ-SW-021
+
+Démarrer le système et vérifier que `dbus` et `systemd-logind` sont `active (running)` ;
+après une connexion, `loginctl` liste la session correspondante.
+
+## TEST-SESS-002 — Multi-utilisateur
+**Vérifie :** REQ-SW-023
+
+Créer un compte (`useradd -m`), ouvrir une session via `getty`/`login` sur une console,
+puis vérifier le répertoire personnel, les permissions du compte et l'enregistrement de la
+session par `loginctl`.
+
+## TEST-SESS-003 — Élévation de privilèges
+**Vérifie :** REQ-SW-023
+
+Depuis un compte non privilégié, exécuter une commande via `sudo` (sudo-rs) et vérifier
+que l'élévation est effective après authentification.
+

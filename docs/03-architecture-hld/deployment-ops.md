@@ -1,7 +1,7 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.18
+**Version :** 0.19
 **Dernière mise à jour :** 2026-10-15
 **Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011, ADR-012, ADR-013, ADR-014, ADR-015, ADR-016, ADR-017, ADR-018, ADR-019, ADR-020
 
@@ -106,6 +106,28 @@ Le **Wi-Fi** (ADR-013, ADR-020) ajoute deux sources, épinglées au manifeste :
 Le Wi-Fi exige enfin d'**activer le noyau**, que le jalon 0.1 écartait entièrement :
 `CONFIG_CFG80211=y` avec **`CONFIG_CFG80211_REQUIRE_SIGNED_REGDB=n`** (ADR-020),
 `CONFIG_MAC80211`, `CONFIG_FW_LOADER` et les pilotes sans fil retenus.
+
+### Composants sessions (v0.2)
+
+Les sessions et comptes (ADR-014) reposent sur la pile Linux standard :
+
+- **D-Bus** (`dbus` 1.16.2), bus système et utilisateur, sur **`expat`** 2.9.0
+  (analyse XML) ; nécessaire à `systemd-logind` et aux services de session.
+- **`linux-pam`** 1.7.3 (meson) : modules d'authentification. Les fonctionnalités
+  optionnelles sont coupées (`-Daudit=disabled -Dselinux=disabled -Ddocs=disabled
+  -Di18n=disabled`) ; `libeconf` reste optionnel (`-Deconf=auto`), aucune source en plus.
+- **`shadow`** 4.20.3 : `useradd`/`usermod`/`passwd` et `/etc/shadow` (comptes,
+  répertoires personnels).
+- **`sudo-rs`** 0.2.15 (Rust, ADR-012) : élévation de privilèges, liée à `libpam` ;
+  la source est épinglée au manifeste (les archives de release ne sont que des binaires).
+
+Deux reconfigurations suffisent, sans source nouvelle :
+
+- **systemd** : ajouter `-Dlogind=true -Dpam=enabled` (systemd est bâti
+  `-Dauto_features=disabled`).
+- **util-linux** : retirer `--disable-login` pour fournir **`agetty`** et **`login`** ;
+  `su`/`nologin`/`runuser`/`setpriv` restent désactivés, l'élévation passant par
+  `sudo-rs` (un besoin, un fournisseur).
 
 ### Adaptations de compilation croisée
 
