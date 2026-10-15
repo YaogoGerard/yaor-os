@@ -85,3 +85,9 @@ distribuée DOIT être signée (ADR-007).
 ## REQ-SW-023 — Comptes et sessions
 Le système DOIT supporter plusieurs utilisateurs POSIX (comptes, répertoires personnels,
 permissions, élévation de privilèges) et des sessions gérées par `logind`.
+
+## REQ-SW-024 — Réseau
+Le système DOIT fournir un réseau **filaire** opérationnel (configuration automatique par
+DHCP et résolution de noms) et DOIT prendre en charge le **Wi-Fi** lorsque le matériel et
+le microprogramme correspondants sont disponibles, **sans second démon réseau** (ADR-013).
+

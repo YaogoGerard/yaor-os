@@ -20,3 +20,6 @@
 | REQ-SW-016 | Deployment/build | TEST-BUILD-001 |
 | REQ-SW-017 | Deployment/build | TEST-BOOT-001 |
 | REQ-SW-018 | Testing strategy | TEST-TRACE-001 |
+| REQ-SW-024 | Component selection (ADR-013) | TEST-NET-001 |
+| REQ-SW-024 | Component selection (ADR-013) | TEST-NET-002 |
+| REQ-SW-024 | Component selection (ADR-013) | TEST-NET-003 |

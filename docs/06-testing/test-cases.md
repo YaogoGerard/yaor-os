@@ -39,3 +39,24 @@ Activer l'accessibilité, cibler un élément accessible et vérifier que ses in
 **Vérifie :** REQ-SW-013
 
 Fournir un texte compatible, activer la sortie Mooré et vérifier la génération vocale lorsque le moteur TTS est disponible.
+
+## TEST-NET-001 — Réseau filaire (DHCP)
+**Vérifie :** REQ-SW-024
+
+Démarrer le système avec une interface filaire (virtio-net ou carte réelle) reliée à un
+réseau DHCP : `networkctl status` signale l'interface `routable`, l'adresse obtenue est
+joignable et la passerelle répond.
+
+## TEST-NET-002 — Résolution de noms
+**Vérifie :** REQ-SW-024
+
+Avec `systemd-resolved` actif, résoudre un nom d'hôte (`resolvectl query <nom>`) et
+vérifier que l'adresse retournée est correcte.
+
+## TEST-NET-003 — Wi-Fi (iwd)
+**Vérifie :** REQ-SW-024
+
+Sur du matériel Wi-Fi dont le microprogramme est présent, connecter une interface via
+`iwctl` (`station <iface> connect <SSID>`) puis vérifier l'obtention d'une adresse et la
+connectivité.
+
