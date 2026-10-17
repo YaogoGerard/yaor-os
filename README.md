@@ -26,6 +26,12 @@ Rust lorsqu'il est adapté.
 Les jalons suivants (bureau, compositor, sessions) sont décrits dans
 `docs/01-product/roadmap.md`.
 
+**Jalon 0.2 — « mode installé » : en cours.** Le userland v0.2 (réseau,
+sessions, stockage amovible) et le **mode installé** (schéma GPT, slots A/B,
+retour arrière Limine, mises à jour par image, publication) sont implémentés ;
+la validation de bout en bout (construction complète 00→06, test QEMU BIOS et
+UEFI) reste à effectuer.
+
 ## Prérequis
 
 Cible **x86_64**. L'hôte doit fournir :
@@ -35,6 +41,8 @@ Cible **x86_64**. L'hôte doit fournir :
   `zstd`, `find`, `xargs`, et `wget` **ou** `curl`.
 - **Assemblage / test de l'image** : `xorriso`, `mkfs.erofs`, `limine`,
   `qemu-system-x86_64` (et `gpg` pour signer l'ISO).
+- **Publication** (étape 07, facultative) : `e2fsprogs` (`mkfs.ext4`), `xz`,
+  `sha256sum` ; `gpg` pour signer les manifestes de mise à jour.
 
 `scripts/00_check_host.sh` vérifie ces outils et s'arrête si un outil requis
 manque.
@@ -75,6 +83,7 @@ Chaque étape est un script autonome, également utilisable seul :
 | `04_chroot_build.sh` | système de base + systemd + noyau, dans un chroot | **root** |
 | `05_initramfs.sh` | initramfs shell (script POSIX `/init`) | utilisateur |
 | `06_make_iso.sh` | EROFS + Limine → ISO (BIOS/UEFI) | **root** |
+| `07_publish.sh` | images de mise à jour + manifestes signés (hors pipeline) | **root** |
 
 ```bash
 ./scripts/00_check_host.sh
@@ -84,6 +93,7 @@ Chaque étape est un script autonome, également utilisable seul :
 sudo ./scripts/04_chroot_build.sh
 ./scripts/05_initramfs.sh
 sudo ./scripts/06_make_iso.sh
+sudo ./scripts/07_publish.sh   # facultatif : publier une mise à jour
 ```
 
 Le pipeline suit les grandes étapes de LFS. La **toolchain croisée** (02) puis
@@ -91,6 +101,10 @@ les **outils temporaires** (03) sont bâtis hors `chroot` par l'utilisateur ;
 seule l'étape 04, qui bascule dans la racine cible (`chroot`), requiert root.
 Une fois le système construit, la toolchain et les outils temporaires ne sont
 plus nécessaires.
+
+La **version produit** vit dans le fichier `VERSION` à la racine du dépôt
+(ADR-022) : elle nomme l'ISO, devient `IMAGE_VERSION=` dans `/etc/os-release` et
+apparie l'image racine et son noyau lors d'une mise à jour.
 
 ## Idempotence et reprise
 
@@ -130,6 +144,9 @@ Le système démarre sur une console root (`bash-5.3#`). `poweroff` pour quitter
 |---|---|
 | `out/yaor-live-x86_64-<version>.iso` | ISO live (BIOS + UEFI) |
 | `out/yaor-live-x86_64-<version>.iso.sha256` | empreinte SHA-256 (ADR-007) |
+| `out/update/root/yaor-root_x86-64_<v>.raw.xz` | image racine de mise à jour (étape 07) |
+| `out/update/boot/vmlinuz-<v>` | noyau de mise à jour (étape 07) |
+| `out/update/{root,boot}/SHA256SUMS[.gpg]` | manifestes et signatures (ADR-007) |
 | `out/initrd.img-<version>` | initramfs |
 | `out/rootfs.erofs` | image racine EROFS |
 | `build/rootfs/` | racine cible (système construit) |
@@ -143,11 +160,13 @@ manifeste `sources/manifest.tsv` l'est.
 ## Structure du dépôt
 
 ```text
+components/      composants internes Rust (yaor-install, yaor-slot)
 config/          option fragment du noyau live (config/kernel-live.fragment)
 docs/            documentation industrielle (voir docs/README.md)
 patches/         correctifs appliqués aux sources amont
-scripts/         pipeline de construction (00 → 06) + lib/ + build.sh
+scripts/         pipeline de construction (00 → 07) + lib/ + build.sh
 sources/         manifeste des sources (versions + empreintes épinglées)
+VERSION          version produit (ADR-022)
 ```
 
 ## Documentation

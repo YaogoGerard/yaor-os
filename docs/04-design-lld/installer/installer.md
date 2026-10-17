@@ -3,7 +3,7 @@
 **Statut :** Accepté
 **Version :** 0.2
 **Dernière mise à jour :** 2026-10-17
-**Décisions liées :** ADR-002, ADR-003, ADR-007, ADR-011, ADR-015, ADR-016, ADR-020, ADR-021
+**Décisions liées :** ADR-002, ADR-003, ADR-007, ADR-011, ADR-015, ADR-016, ADR-020, ADR-021, ADR-022, ADR-023
 
 Ce document précise la **forme de l'installateur**, le **schéma de partitionnement** et le
 **mécanisme de retour arrière** exigés par le suivi d'ADR-015.
@@ -43,8 +43,9 @@ Règles :
 - chaque **slot racine** porte une image de système de fichiers **complète**, écrite d'un
   bloc par `systemd-sysupdate`, **montée en lecture seule** au démarrage (modèle immuable,
   ADR-003) ; la couche inscriptible est `/var` ;
-- le **noyau et l'initramfs vivent sur l'ESP** : une mise à jour peut remplacer le noyau
-  sans réécrire une racine ;
+- le **noyau vit sur l'ESP**, **versionné** (`yaor/vmlinuz-<version>`) : chaque version de
+  racine a son noyau, écrit à part, ce qui permet de remplacer l'un sans réécrire l'autre
+  (ADR-022, voir « transfert noyau » plus bas) ;
 - `/var` n'est **jamais** dans un slot : il **survit** aux mises à jour et aux retours
   arrière ;
 - `ext4` est le système de fichiers **par défaut** ; `btrfs` est une alternative (ADR-015).
@@ -80,16 +81,18 @@ Règles :
      disque cible. La version effectivement écrite est relue sur les étiquettes de
      partition ;
   4. montage de l'ESP, de la racine et de `/var` du disque cible ; copie du **noyau**
-     sur l'ESP ; **peuplement de `/var`** depuis l'image ; écriture d'**`/etc/fstab`** ;
+     sous `yaor/vmlinuz-<version>` sur l'ESP ; **peuplement de `/var`** depuis l'image ;
+     écriture d'**`/etc/fstab`** ;
   5. installation de **Limine** : `EFI/BOOT/BOOTX64.EFI` et `limine.conf` sur l'ESP,
      `limine bios-install` sur la partition « BIOS boot » ;
   6. écriture de l'**état des slots** (`/boot/yaor/slots.state`) : le slot écrit est
      **actif et confirmé** ; son entrée est celle par défaut de `limine.conf` ;
   7. démontage et `sync`.
 
-- **Limine :** c'est un **outil de build de l'hôte** (ADR-010, ADR-011). Le média live
-  doit embarquer `/usr/bin/limine` et `/usr/share/limine/` pour que `yaor-install`
-  écrive le chargeur sur le disque cible (voir « points ouverts »).
+- **Limine :** c'est un **outil de build de l'hôte** (ADR-010, ADR-011), **embarqué dans le
+  média live** (ADR-023) : `06_make_iso.sh` copie `/usr/bin/limine` et
+  `/usr/share/limine/` depuis l'hôte, ce qui permet à `yaor-install` d'écrire le chargeur
+  sur le disque cible.
 
 - **`/etc/fstab` et `/var` :** `systemd-gpt-auto-generator` ne monte **pas** une
   partition dont le point de montage contient déjà des fichiers — c'est le cas de
@@ -104,7 +107,10 @@ Règles :
 ## Mises à jour `systemd-sysupdate`
 
 Définitions dans `/etc/sysupdate.d/` (fournies par le système, voir
-`config/rootfs/etc/sysupdate.d/10-root.transfer`) :
+`config/rootfs/etc/sysupdate.d/`) : `10-root.transfer` pour l'image racine et
+`20-boot.transfer` pour le noyau.
+
+**Racine** (`10-root.transfer`) :
 
 ```ini
 [Transfer]
@@ -126,19 +132,45 @@ ReadOnly=1
 InstancesMax=2
 ```
 
+**Noyau** (`20-boot.transfer`) : écrit le noyau d'une version sur l'ESP, à côté de
+l'état des slots.
+
+```ini
+[Transfer]
+Verify=signature
+ProtectVersion=%A
+
+[Source]
+Type=url-file
+Path=https://updates.yaor.example/boot/
+MatchPattern=vmlinuz-@v
+
+[Target]
+Type=regular-file
+Path=/yaor
+PathRelativeTo=boot
+MatchPattern=vmlinuz-@v
+Mode=0644
+InstancesMax=2
+```
+
 - la cible **racine** est une **partition** : `Path=auto` désigne le disque qui porte
   la racine en cours ; `MatchPartitionType=root-x86-64` sélectionne les slots A/B ;
   `MatchPattern=yaor-root_@v` apparie leur **étiquette**, qui porte la version `@v` ;
   `InstancesMax=2` borne à deux versions simultanées ;
+- la cible **noyau** est un **fichier de l'ESP** (`Type=regular-file`,
+  `PathRelativeTo=boot` = `$BOOT`, l'ESP) : le noyau est écrit sous `yaor/vmlinuz-<v>`,
+  avec la **même** version `@v` que la racine. `20-` est traité **après** `10-` : le point
+  d'entrée (la racine que Limine démarre) est écrit avant le noyau qui l'accompagne ;
 - `systemd-sysupdate` ne **crée ni ne supprime** de partition : il écrit dans un slot
   **libre** — étiquette `_empty`, posée par `systemd-repart` — puis le réétiquette
   selon la version ; le slot rempli n'est donc pas repéré par une lettre fixe mais par
   sa **version**, et le suivi « actif / à essayer » incombe à `yaor-slot` (voir plus
   bas) ;
 - `ProtectVersion=%A` empêche d'écraser la version en cours (celle qui tourne) : `%A`
-  lit `IMAGE_VERSION=` d'`/etc/os-release` (voir « points ouverts ») ;
-- `Verify=signature` : l'image et son manifeste doivent être **signés** (ADR-007) ; une
-  vérification qui échoue **n'écrit aucun slot**.
+  lit `IMAGE_VERSION=` d'`/etc/os-release` (ADR-022) ;
+- `Verify=signature` : l'image, le noyau et leurs manifestes doivent être **signés**
+  (ADR-007) ; une vérification qui échoue **n'écrit aucun slot**.
 
 `systemd-sysupdate` et `systemd-repart` sont des **fonctions optionnelles** de systemd.
 systemd étant bâti `-Dauto_features=disabled`, elles exigent d'être activées :
@@ -182,8 +214,9 @@ version_b=2026.10.12
 1. `yaor-slot update` ordonne `systemd-sysupdate update`, puis identifie le slot écrit
    (par différence d'étiquettes de partition : celle qui n'est plus `_empty` et porte une
    nouvelle version) et enregistre `version_<slot>` ; il pose `trying=<slot>`,
-   `attempts_left=N` et fait pointer le `default_entry` de `limine.conf` sur le nouveau
-   slot ;
+   `attempts_left=N` et repointe l'entrée `limine.conf` du nouveau slot : `path:` vers le
+   noyau de sa version (`boot():/yaor/vmlinuz-<v>`) et `cmdline: root=` vers sa partition
+   (`yaor-root_<v>`), puis en fait l'entrée par défaut ;
 2. à chaque démarrage, `yaor-slot.service` (avant `sysinit`) décrémente `attempts_left` ;
 3. si le système atteint `yaor-slot-confirm.service` (après `multi-user.target`, test de
    santé : cible `sysupdate` active, réseau, montage de `/var`), `yaor-slot ok` promeut le
@@ -194,7 +227,8 @@ version_b=2026.10.12
 **Invariants :**
 
 - hors mise à jour, **exactement un** slot est `confirmed` ;
-- `default_entry` de `limine.conf` désigne toujours, au repos, le slot `confirmed` ;
+- l'entrée Limine d'un slot pointe **toujours** le noyau et la partition de la version
+  enregistrée pour ce slot ; au repos, `default_entry` désigne le slot `confirmed` ;
 - un retour arrière **ne touche pas** `/var`.
 
 **Implémentation.** `yaor-install` et `yaor-slot` sont des binaires Rust **sans
@@ -211,29 +245,45 @@ essai du nouveau slot), `try <A|B>` (essai d'un slot), `startup` (décrément au
 démarrage, `yaor-slot.service`), `ok` (confirmation, `yaor-slot-confirm.service`),
 `revert` (retour au slot confirmé puis redémarrage).
 
+## Publication des images
+
+L'étape **07** (`scripts/07_publish.sh`, hors pipeline par défaut 00→06) assemble le jeu
+d'artefacts servi par le dépôt de mises à jour (ADR-007) :
+
+| Artefact | URL (transfert) |
+|---|---|
+| `out/update/root/yaor-root_x86-64_<v>.raw.xz` | `https://updates.yaor.example/root/` (`10-root`) |
+| `out/update/boot/vmlinuz-<v>` | `https://updates.yaor.example/boot/` (`20-boot`) |
+| `SHA256SUMS`, `SHA256SUMS.gpg` (par répertoire) | manifeste et signature |
+
+- l'**image racine** est un système de fichiers ext4 peuplé depuis le rootfs livré
+  (`mkfs.ext4 -d`, mêmes exclusions que l'image live, `/boot` conservé), dimensionné pour
+  tenir exactement dans un slot de 2 Gio ;
+- l'image installable porte un **`/etc/fstab`** (ESP + `/var`) : une racine écrite par une
+  mise à jour doit déjà monter ces partitions (REQ-SW-026), au même titre qu'après
+  l'installation ;
+- `<v>` est la **version produit** (`VERSION`, ADR-022), qui **apparie** l'image racine et
+  son noyau ; une publication doit **incrémenter** cette version (sinon `systemd-sysupdate`
+  considère l'image comme déjà installée) ;
+- les manifestes sont produits en `sha256sum --binary` et **signés** lorsque
+  `YAOR_GPG_KEY` est défini.
+
 ## Points ouverts
 
 Ces points ne sont **pas** encore tranchés et devront l'être pour clore le mode installé :
 
-- **démarrage installé sans initramfs ?** En QEMU, `ext4` (`CONFIG_EXT4_FS=y`) et le
-  disque (`CONFIG_VIRTIO_BLK=y`) sont intégrés : `root=PARTLABEL=yaor-root_<v>
-  rootfstype=ext4` suffit donc sans initramfs. Sur matériel réel (NVMe, AHCI/SATA), il
-  faudra soit intégrer ces pilotes, soit un **initramfs** dédié — l'initramfs de
-  l'étape 05 est **live** (EROFS + overlay) et ne convient pas tel quel ;
-- **version d'image produit** : `ProtectVersion=%A` et l'appariement des versions
-  reposent sur `IMAGE_VERSION=` dans `/etc/os-release`, aujourd'hui absent (`VERSION_ID`
-  porte la version du noyau). Un schéma de version produit (et sa correspondance avec
-  `@v`) reste à définir ;
-- **transfert noyau/initramfs** (cible **ESP**, `Type=regular-file`,
-  `PathRelativeTo=boot`) : à écrire, pour que les mises à jour remplacent aussi le noyau
-  sans réécrire la racine ;
-- **Limine embarqué** : `yaor-install` attend `/usr/bin/limine` et
-  `/usr/share/limine/`, mais **la copie de Limine dans l'image n'est pas encore
-  faite** (étape 04/06). Limine étant un outil d'hôte (ADR-010/ADR-011), cela
-  suppose de décider comment le média live se le procure (copie depuis l'hôte ou
-  construction depuis les sources) ;
-- **publication des images** : dépôt (URL), génération de `SHA256SUMS` et signature
-  (`SHA256SUMS.gpg`, ADR-007).
+- **démarrage installé sur matériel réel** : en QEMU, `ext4` (`CONFIG_EXT4_FS=y`) et le
+  disque (`CONFIG_VIRTIO_BLK=y`) sont intégrés, donc `root=PARTLABEL=yaor-root_<v>
+  rootfstype=ext4` suffit **sans initramfs**. Sur matériel réel (NVMe, AHCI/SATA), il faut
+  un **initramfs dédié** — l'initramfs de l'étape 05 est **live** (EROFS + overlay) et ne
+  convient pas tel quel ; l'installateur ne le copie donc **pas** sur l'ESP aujourd'hui.
+  Le transfert du noyau (ESP) **n'embarque pas** non plus d'initramfs pour cette raison :
+  il faudra l'étendre (`initramfs-<v>`) le jour où l'initramfs installé existera ;
+- **installation hors-ligne** : le transfert `10-root` lit une **URL** ; installer sans
+  réseau suppose de prévoir une source locale (`Type=regular-file`) — non retenu pour
+  l'instant, la distribution live restant légère (≤ ~150 Mio) ;
+- **politique de clés** (ADR-007) : la clé publique de vérification des mises à jour doit
+  être provisionnée dans le système.
 
 ## Erreurs et défaillances
 

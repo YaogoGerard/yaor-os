@@ -21,7 +21,8 @@ configuration fournie par YAOR prime sur les fichiers par défaut des paquets.
 | `etc/sudoers`, `etc/sudoers.d/00-wheel` | administration par le groupe `wheel` | ADR-012, ADR-014 |
 | `etc/polkit-1/rules.d/49-yaor-udisks.rules` | actions `udisks2` pour `wheel` | ADR-014 |
 | `etc/repart.d/*.conf` | schéma GPT (ESP, BIOS boot, slots A/B, `/var`) | ADR-015, REQ-SW-026 |
-| `etc/sysupdate.d/*.transfer` | mises à jour par image, slots A/B | ADR-015, REQ-SW-020 |
+| `etc/sysupdate.d/10-root.transfer` | mise à jour de la racine par image (slots A/B) | ADR-015, REQ-SW-020 |
+| `etc/sysupdate.d/20-boot.transfer` | mise à jour du **noyau** sur l'ESP (`yaor/vmlinuz-<v>`) | ADR-015, ADR-022 |
 | `etc/systemd/system/yaor-slot.service` | essai du slot / retour arrière au démarrage | ADR-015 |
 | `etc/systemd/system/yaor-slot-confirm.service` | confirmation du slot démarré | ADR-015 |
 

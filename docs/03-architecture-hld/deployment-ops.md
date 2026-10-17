@@ -1,9 +1,9 @@
 # Deployment & Operations
 
 **Statut :** Accepté
-**Version :** 0.23
-**Dernière mise à jour :** 2026-10-15
-**Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011, ADR-012, ADR-013, ADR-014, ADR-015, ADR-016, ADR-017, ADR-018, ADR-019, ADR-020, ADR-021
+**Version :** 0.24
+**Dernière mise à jour :** 2026-10-17
+**Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011, ADR-012, ADR-013, ADR-014, ADR-015, ADR-016, ADR-017, ADR-018, ADR-019, ADR-020, ADR-021, ADR-022, ADR-023
 
 ## Modèle de construction
 
@@ -30,10 +30,14 @@ scripts/03_temp_tools.sh   -> outils temporaires cross-compilés (chapitre 6, sa
 scripts/04_chroot_build.sh -> chroot : système de base + systemd + noyau (root)
 scripts/05_initramfs.sh    -> initramfs shell (script POSIX, ADR-011)
 scripts/06_make_iso.sh     -> EROFS + Limine (BIOS/UEFI) -> ISO (empreinte SHA-256 ; signature ADR-007)
+scripts/07_publish.sh      -> images de mise à jour + manifestes signés (hors pipeline par défaut)
 ```
 
 L'ensemble s'enchaîne avec `scripts/build.sh`, qui exécute ces étapes dans
 l'ordre (en élevant les droits pour 04 et 06) et s'arrête à la première erreur.
+L'étape **07** (publication, ADR-007) n'est **pas** dans le pipeline par défaut :
+elle ne sert qu'à produire une mise à jour et s'invoque explicitement
+(`sudo scripts/07_publish.sh`).
 
 La construction suit les grandes étapes de LFS : la **toolchain croisée** (étape 02)
 puis les **outils temporaires** (étape 03) sont bâtis hors `chroot` par l'utilisateur ;
@@ -92,12 +96,20 @@ puis `switch_root` vers le systemd du système réel (ADR-004). Les modules `ero
 `overlayfs`, `loop`, `iso9660`, `sr` et `virtio` sont compilés **en dur** dans le noyau :
 l'initramfs n'a aucun module à charger.
 
-L'image racine livrée est allégée au staging (étape 06) : l'image live est un
+L'image racine livrée est allégée au staging : l'image live est un
 **système minimal amorçable**, pas un environnement de développement. Les outils
 de compilation (gcc, binutils, python3, perl, bison, flex, `file`) et les copies
 de `/boot` — déjà portées par l'ISO — en sont écartés, ce qui retire l'essentiel
 du volume. Ni systemd, ni glibc, ni les bibliothèques de base n'en dépendent au
 démarrage.
+
+**Limine** est un outil de build de l'hôte (ADR-010/ADR-011) : l'étape 06 copie
+`/usr/bin/limine` et `/usr/share/limine/` dans le média live, de sorte que
+`yaor-install`, exécuté depuis le live, puisse écrire le chargeur sur le disque
+cible (ADR-023). Ces deux images — live et installable — partagent la **même
+liste d'exclusions** (`YAOR_IMAGE_EXCLUDES`, `yaor_rsync_image()`), seul `/boot`
+différant : l'image installable le conserve (le noyau y est copié vers l'ESP par
+l'installateur), le live le retire.
 
 ### Système installé, réseau et mises à jour
 
@@ -105,11 +117,16 @@ Le mode **installé** (ADR-015) dépose le système sur disque et configure **Li
 BIOS et UEFI ; les mises à jour se font par **image**, avec deux slots A/B et retour
 arrière, via **`systemd-sysupdate`**. Deux composants internes en Rust (ADR-002,
 `components/`) portent ce mode : **`yaor-install`** (schéma GPT par `systemd-repart`,
-écriture de l'image par `systemd-sysupdate --image=<disque>`, `/etc/fstab`, Limine) et
-**`yaor-slot`** (état des slots sur l'ESP, sélection A/B, retour arrière), ce dernier
-étant piloté par `yaor-slot.service` et `yaor-slot-confirm.service`. Les systèmes de
-fichiers supportés sont `ext4` (racine par défaut), `btrfs`, `vfat`, `exFAT` et `NTFS`
-(rw) ; le chiffrement LUKS est reporté.
+écriture de l'image par `systemd-sysupdate --image=<disque>`, noyau sur l'ESP,
+`/etc/fstab`, Limine) et **`yaor-slot`** (état des slots sur l'ESP, sélection A/B,
+retour arrière), ce dernier étant piloté par `yaor-slot.service` et
+`yaor-slot-confirm.service`. Le **noyau est versionné** sur l'ESP (`yaor/vmlinuz-<v>`,
+autant de fois que de slots) : `yaor-slot` repointe ensemble le noyau (`path:`) et la
+racine (`root=`) de l'entrée Limine à chaque changement de slot (ADR-022). Les systèmes
+de fichiers supportés sont `ext4` (racine par défaut), `btrfs`, `vfat`, `exFAT` et `NTFS`
+(rw) ; le chiffrement LUKS est reporté. La **publication des images** de mise à jour
+(racine ext4 compressée, noyau, manifestes `SHA256SUMS` signés) est assurée par l'étape
+07, hors pipeline par défaut.
 
 Le réseau est assuré par **`systemd-networkd`** et **`systemd-resolved`** (filaire) et par
 **`iwd`** avec `linux-firmware` (Wi-Fi), voir ADR-013.
@@ -480,7 +497,7 @@ build/rootfs/tools/   toolchain temporaire (deviendra /tools) — cf. ci-dessous
 build/work/           sources extraites
 build/stamps/         marqueurs d'idempotence par étape
 build/logs/           journaux de build
-out/                  artefacts produits (image, ISO)
+out/                  artefacts produits (ISO, images de mise à jour)
 ```
 
 La toolchain temporaire (chapitre 5) est installée **dans** la racine cible
@@ -517,6 +534,9 @@ sera supprimée (`/tools`) une fois le système final bâti.
 - Vérification par empreinte de toutes les sources avant usage.
 - Aucun binaire non vérifié n'entre dans le build.
 - L'image ISO finale est **signée** (ADR-007).
+- Les **images de mise à jour** (racine, noyau) sont publiées avec un manifeste
+  **`SHA256SUMS`** et sa **signature détachée** `SHA256SUMS.gpg` (étape 07, ADR-007) ;
+  `systemd-sysupdate` les vérifie (`Verify=signature`) avant écriture.
 
 ## Mises à jour
 
@@ -524,6 +544,9 @@ sera supprimée (`/tools`) une fois le système final bâti.
   de paquets classique (ADR-003).
 - Mécanisme : **`systemd-sysupdate`**, deux slots A/B et retour arrière (ADR-015,
   REQ-SW-020).
+- La version d'image est la **version produit** (`VERSION`, ADR-022), reportée en
+  `IMAGE_VERSION=` ; elle apparie l'image racine et son noyau et se **incrémente** à
+  chaque publication. L'étape 07 produit ces artefacts (`out/update/{root,boot}/`).
 
 ## CI (ultérieure)
 

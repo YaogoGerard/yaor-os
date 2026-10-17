@@ -2,8 +2,8 @@
 
 **Statut :** Accepté
 **Version :** 0.1
-**Dernière mise à jour :** 2026-10-14
-**Décisions liées :** ADR-000 (#21), ADR-003, ADR-011
+**Dernière mise à jour :** 2026-10-17
+**Décisions liées :** ADR-000 (#21), ADR-003, ADR-011, ADR-015, ADR-022
 
 ## Objet
 

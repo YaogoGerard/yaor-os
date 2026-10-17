@@ -127,7 +127,9 @@ vérifier que les données sont **intactes** et que la nouvelle version est acti
 
 Appliquer une mise à jour (slot inactif), démarrer le nouveau slot et vérifier la promotion ;
 provoquer ensuite un échec de confirmation et vérifier le **retour arrière automatique** vers
-le slot précédent.
+le slot précédent. Vérifier aussi que le **noyau** de chaque slot (`yaor/vmlinuz-<v>` sur
+l'ESP) a été mis à jour avec son image et que l'entrée Limine repointe à la fois `path:` et
+`cmdline: root=` vers la version du slot démarré.
 
 ## TEST-SEC-001 — Intégrité des sources et des images
 **Vérifie :** REQ-SW-022
