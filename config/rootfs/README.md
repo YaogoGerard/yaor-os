@@ -20,6 +20,8 @@ configuration fournie par YAOR prime sur les fichiers par défaut des paquets.
 | `etc/pam.d/*` | chaînes PAM, dont `pam_systemd` | ADR-014 |
 | `etc/sudoers`, `etc/sudoers.d/00-wheel` | administration par le groupe `wheel` | ADR-012, ADR-014 |
 | `etc/polkit-1/rules.d/49-yaor-udisks.rules` | actions `udisks2` pour `wheel` | ADR-014 |
+| `etc/repart.d/*.conf` | schéma GPT (ESP, BIOS boot, slots A/B, `/var`) | ADR-015, REQ-SW-026 |
+| `etc/sysupdate.d/*.transfer` | mises à jour par image, slots A/B | ADR-015, REQ-SW-020 |
 
 ## Compléments de la phase de configuration
 

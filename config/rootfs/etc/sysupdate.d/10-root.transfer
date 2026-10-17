@@ -1,0 +1,35 @@
+# YAOR — transfert de la racine (slots A/B, ADR-015, REQ-SW-020).
+#
+# systemd-sysupdate écrit l'image du système dans l'une des deux partitions
+# « root-x86-64 » (les slots A/B créés par /etc/repart.d) : la partition libre
+# (étiquette « _empty ») est remplie, puis réétiquetée « yaor-root_<v> » où
+# « <v> » est la version de l'image. Deux versions coexistent au plus
+# (InstancesMax=2) ; `yaor-slot` choisit celle que Limine démarre.
+#
+# Source « url-file » : l'étape 03 télécharge le manifeste « SHA256SUMS »
+# (et sa signature « SHA256SUMS.gpg ») sous « Path », puis l'image listée.
+[Transfer]
+# Vérification cryptographique de l'image téléchargée (ADR-007, REQ-SW-022) :
+# la clé publique d'import doit être provisionnée (voir systemd-sysupdate).
+Verify=signature
+# Protection de la version en cours : « %A » se développe en « IMAGE_VERSION= »
+# d'/etc/os-release. La version protégée n'est jamais écrasée, ce qui évite de
+# corrompre la racine en cours d'exécution. Prérequis : définir IMAGE_VERSION=
+# dans /etc/os-release (voir le LLD, « points ouverts »).
+ProtectVersion=%A
+
+[Source]
+Type=url-file
+Path=https://updates.yaor.example/root/
+MatchPattern=yaor-root_x86-64_@v.raw.xz
+
+[Target]
+Type=partition
+Path=auto
+MatchPartitionType=root-x86-64
+MatchPattern=yaor-root_@v
+# Les slots sont marqués « NoAuto » et « ReadOnly » (mêmes attributs que dans
+# /etc/repart.d) ; systemd-sysupdate les applique à l'écriture.
+PartitionNoAuto=1
+ReadOnly=1
+InstancesMax=2
