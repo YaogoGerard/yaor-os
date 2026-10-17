@@ -14,7 +14,7 @@ use yaor_common::limine::Config;
 use yaor_common::partitions;
 use yaor_common::paths;
 use yaor_common::state::SlotState;
-use yaor_common::{Slot, DEFAULT_ATTEMPTS, ESP_MOUNT, ROOT_LABEL_PREFIX};
+use yaor_common::{limine_kernel_path, Slot, DEFAULT_ATTEMPTS, ESP_MOUNT, ROOT_LABEL_PREFIX};
 
 const USAGE: &str = "\
 yaor-slot — sélection du slot A/B et retour arrière (YAOR-OS)
@@ -158,6 +158,18 @@ fn load_limine(esp: &std::path::Path) -> Result<Config, String> {
     Ok(Config::parse(&text))
 }
 
+/// Pointe l'entrée Limine d'un slot sur la version donnée — chemin du noyau
+/// (`path:`) et partition racine (`cmdline: root=`) — et en fait l'entrée par
+/// défaut. Les deux doivent être réécrits ensemble : à chaque version de racine
+/// correspond un noyau sur l'ESP (`yaor/vmlinuz-<version>`), écrit par le
+/// transfert `systemd-sysupdate` de la cible ESP.
+fn pointer_entree(cfg: &mut Config, slot: Slot, version: &str) {
+    let i = slot.index();
+    cfg.set_entry_path(i, &limine_kernel_path(version));
+    cfg.set_entry_cmdline_root(i, &format!("{ROOT_LABEL_PREFIX}{version}"));
+    cfg.set_default_entry(i + 1);
+}
+
 fn save_limine(esp: &std::path::Path, cfg: &Config, dry_run: bool) -> Result<(), String> {
     let path = paths::limine_conf(esp);
     if dry_run {
@@ -262,13 +274,17 @@ fn record_and_promote_default(
     state.attempts_left = opts.attempts;
 
     let mut cfg = load_limine(&opts.esp)?;
+    if !cfg.entry_has_path(slot.index()) {
+        return Err(format!(
+            "limine.conf : l'entrée du slot {slot} n'a pas de ligne « path: »"
+        ));
+    }
     if !cfg.entry_has_cmdline(slot.index()) {
         return Err(format!(
             "limine.conf : l'entrée du slot {slot} n'a pas de ligne « cmdline: »"
         ));
     }
-    cfg.set_entry_cmdline_root(slot.index(), &format!("{ROOT_LABEL_PREFIX}{version}"));
-    cfg.set_default_entry(slot.index() + 1);
+    pointer_entree(&mut cfg, slot, &version);
 
     if !opts.dry_run {
         state.save(&opts.esp).map_err(|e| format!("écriture de l'état impossible : {e}"))?;
@@ -315,7 +331,12 @@ fn confirm(opts: &Opts) -> Result<(), String> {
     state.attempts_left = 0;
 
     let mut cfg = load_limine(&opts.esp)?;
-    cfg.set_default_entry(state.confirmed.index() + 1);
+    let version = state.version_of(state.confirmed).to_string();
+    if version.is_empty() {
+        cfg.set_default_entry(state.confirmed.index() + 1);
+    } else {
+        pointer_entree(&mut cfg, state.confirmed, &version);
+    }
 
     if !opts.dry_run {
         state.save(&opts.esp).map_err(|e| format!("écriture de l'état impossible : {e}"))?;
@@ -333,7 +354,12 @@ fn revert(opts: &Opts) -> Result<(), String> {
     state.attempts_left = 0;
 
     let mut cfg = load_limine(&opts.esp)?;
-    cfg.set_default_entry(state.confirmed.index() + 1);
+    let version = state.version_of(state.confirmed).to_string();
+    if version.is_empty() {
+        cfg.set_default_entry(state.confirmed.index() + 1);
+    } else {
+        pointer_entree(&mut cfg, state.confirmed, &version);
+    }
 
     if !opts.dry_run {
         state.save(&opts.esp).map_err(|e| format!("écriture de l'état impossible : {e}"))?;

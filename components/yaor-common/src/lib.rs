@@ -25,6 +25,21 @@ pub const DEFAULT_ATTEMPTS: u32 = 3;
 /// **version** : `yaor-root_<version>` (voir le LLD installateur).
 pub const ROOT_LABEL_PREFIX: &str = "yaor-root_";
 
+/// Sous-répertoire de l'ESP regroupant les fichiers de démarrage YAOR : noyaux,
+/// initramfs et état des slots (`/boot/yaor`).
+pub const ESP_YAOR_DIR: &str = "yaor";
+
+/// Protocole Limine désignant la partition d'amorçage — `$BOOT`, c'est-à-dire
+/// l'ESP dans le schéma YAOR (`boot():`).
+pub const LIMINE_BOOT: &str = "boot():";
+
+/// Chemin du noyau d'une version, tel qu'écrit dans `limine.conf` :
+/// `boot():/yaor/vmlinuz-<version>`. Le noyau d'un slot porte la **version**
+/// du slot, comme son étiquette de partition (voir le LLD installateur).
+pub fn limine_kernel_path(version: &str) -> String {
+    format!("{LIMINE_BOOT}/{ESP_YAOR_DIR}/vmlinuz-{version}")
+}
+
 /// Emplacement conventionnel du répertoire des étiquettes de partition, peuplé
 /// par udev.
 pub const PARTLABEL_DIR: &str = "/dev/disk/by-partlabel";
@@ -49,5 +64,21 @@ pub mod paths {
     /// `/boot/limine.conf` pour une racine d'ESP donnée.
     pub fn limine_conf(esp: &Path) -> PathBuf {
         esp.join(LIMINE_CONF)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chemin_noyau_limine() {
+        assert_eq!(limine_kernel_path("0.2"), "boot():/yaor/vmlinuz-0.2");
+    }
+
+    #[test]
+    fn fichier_etat_sous_yaor() {
+        assert_eq!(paths::STATE, "yaor/slots.state");
+        assert_eq!(paths::state_file(std::path::Path::new("/boot")), std::path::PathBuf::from("/boot/yaor/slots.state"));
     }
 }

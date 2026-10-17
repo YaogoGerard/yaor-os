@@ -1,0 +1,32 @@
+# YAOR — transfert du noyau vers l'ESP (ADR-015, ADR-023, REQ-SW-020).
+#
+# Le noyau ne vit PAS dans le slot racine : il est écrit à part sur l'ESP, ce qui
+# permet de le remplacer sans réécrire une racine entière (voir le LLD
+# installateur). Chaque version porte son noyau, sous « yaor/vmlinuz-<v> » :
+# `yaor-slot` fait pointer l'entrée Limine du slot sur le noyau de sa version.
+#
+# La cible est un fichier ordinaire de l'ESP (« $BOOT », PathRelativeTo=boot) ;
+# MatchPattern comporte « @v » (obligatoire) et « InstancesMax=2 » conserve au
+# plus deux noyaux, comme pour les racines.
+#
+# Ce transfert est traité APRÈS la racine (10-root.transfer) : le nom de fichier
+# « 20- » garantit que le point d'entrée (la racine que Limine démarre) est écrit
+# avant le noyau qui l'accompagne.
+[Transfer]
+# Vérification cryptographique de la source (ADR-007, REQ-SW-022).
+Verify=signature
+# Protection de la version en cours (« %A » = IMAGE_VERSION, ADR-022).
+ProtectVersion=%A
+
+[Source]
+Type=url-file
+Path=https://updates.yaor.example/boot/
+MatchPattern=vmlinuz-@v
+
+[Target]
+Type=regular-file
+Path=/yaor
+PathRelativeTo=boot
+MatchPattern=vmlinuz-@v
+Mode=0644
+InstancesMax=2

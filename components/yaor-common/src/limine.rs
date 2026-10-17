@@ -95,13 +95,14 @@ impl Config {
         self.preamble.push(line);
     }
 
-    /// Valeur de `cmdline:` d'une entrée (sans le préfixe), si présente.
-    pub fn entry_cmdline(&self, index: usize) -> Option<&str> {
+    /// Valeur d'un champ du corps d'une entrée (ex. `path`, `cmdline`), sans le
+    /// préfixe, si présente.
+    pub fn entry_field(&self, index: usize, key: &str) -> Option<&str> {
         let body = &self.entries.get(index)?.body;
         body.iter().find_map(|l| {
             let t = l.trim();
             let (k, v) = t.split_once(':')?;
-            if k.trim().eq_ignore_ascii_case("cmdline") {
+            if k.trim().eq_ignore_ascii_case(key) {
                 Some(v.trim())
             } else {
                 None
@@ -109,9 +110,62 @@ impl Config {
         })
     }
 
+    /// Indique si une entrée déclare un champ donné.
+    pub fn entry_has_field(&self, index: usize, key: &str) -> bool {
+        self.entry_field(index, key).is_some()
+    }
+
+    /// Remplace (ou ajoute) un champ du corps d'une entrée, en conservant
+    /// l'indentation des lignes existantes.
+    pub fn set_entry_field(&mut self, index: usize, key: &str, value: &str) {
+        let Some(entry) = self.entries.get_mut(index) else {
+            return;
+        };
+        for line in entry.body.iter_mut() {
+            let indent_len = line.len() - line.trim_start().len();
+            let t = line.trim_start();
+            let Some((k, _)) = t.split_once(':') else {
+                continue;
+            };
+            if k.trim().eq_ignore_ascii_case(key) {
+                *line = format!("{}{}: {}", &line[..indent_len], key, value);
+                return;
+            }
+        }
+        // Champ absent : on l'ajoute à la fin du corps, avec l'indentation des
+        // lignes déjà présentes (4 espaces par défaut).
+        let indent = entry
+            .body
+            .iter()
+            .find(|l| !l.trim().is_empty())
+            .map(|l| l.len() - l.trim_start().len())
+            .unwrap_or(4);
+        entry.body.push(format!("{}{}: {}", " ".repeat(indent), key, value));
+    }
+
+    /// Valeur de `cmdline:` d'une entrée (sans le préfixe), si présente.
+    pub fn entry_cmdline(&self, index: usize) -> Option<&str> {
+        self.entry_field(index, "cmdline")
+    }
+
     /// Indique si une entrée déclare un `cmdline:`.
     pub fn entry_has_cmdline(&self, index: usize) -> bool {
-        self.entry_cmdline(index).is_some()
+        self.entry_has_field(index, "cmdline")
+    }
+
+    /// Chemin du noyau d'une entrée (`path:`), si présent.
+    pub fn entry_path(&self, index: usize) -> Option<&str> {
+        self.entry_field(index, "path")
+    }
+
+    /// Indique si une entrée déclare un `path:`.
+    pub fn entry_has_path(&self, index: usize) -> bool {
+        self.entry_has_field(index, "path")
+    }
+
+    /// Impose le chemin du noyau (`path:`) d'une entrée.
+    pub fn set_entry_path(&mut self, index: usize, path: &str) {
+        self.set_entry_field(index, "path", path);
     }
 
     /// Réécrit le `root=…` du `cmdline:` de l'entrée pour pointer la partition
@@ -242,5 +296,33 @@ default_entry: 1
             rewrite_root("    cmdline: rootfstype=ext4 root=/dev/sda3", "L"),
             "    cmdline: rootfstype=ext4 root=PARTLABEL=L"
         );
+    }
+
+    #[test]
+    fn entry_path_et_set_entry_path() {
+        let c = Config::parse(EXEMPLE);
+        assert_eq!(c.entry_path(0), Some("boot():/vmlinuz-a"));
+        assert!(c.entry_has_path(0));
+        assert_eq!(c.entry_path(9), None);
+
+        let mut c = Config::parse(EXEMPLE);
+        c.set_entry_path(1, "boot():/yaor/vmlinuz-0.2");
+        assert_eq!(c.entry_path(1), Some("boot():/yaor/vmlinuz-0.2"));
+        // préserve l'indentation d'origine
+        assert!(c.render().contains("    path: boot():/yaor/vmlinuz-0.2\n"));
+        // l'entrée 0 n'a pas bougé
+        assert_eq!(c.entry_path(0), Some("boot():/vmlinuz-a"));
+    }
+
+    #[test]
+    fn set_entry_field_ajoute_si_absent() {
+        let mut c = Config::parse("/A\n    protocol: linux\n    cmdline: quiet\n");
+        assert_eq!(c.entry_path(0), None);
+        c.set_entry_path(0, "boot():/vmlinuz");
+        assert_eq!(c.entry_path(0), Some("boot():/vmlinuz"));
+        // ajouté avec l'indentation des lignes existantes (4 espaces)
+        assert!(c.render().contains("\n    path: boot():/vmlinuz\n"));
+        // les champs existants sont conservés
+        assert_eq!(c.entry_cmdline(0), Some("quiet"));
     }
 }

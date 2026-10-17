@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use yaor_common::state::SlotState;
-use yaor_common::{Slot, ROOT_LABEL_PREFIX};
+use yaor_common::{limine_kernel_path, Slot, ESP_YAOR_DIR, ROOT_LABEL_PREFIX};
 
 /// Outil Limine (outil de build de l'hôte embarqué dans le média, ADR-010).
 const LIMINE: &str = "/usr/bin/limine";
@@ -288,7 +288,7 @@ fn install(opts: &Opts) -> Result<(), String> {
     let resultat = (|| -> Result<(), String> {
         exec("mount", &[&root_dev, ROOT_TMP])?;
         exec("mount", &[&var_dev, VAR_TMP])?;
-        copier_noyau(&root, &esp)?;
+        copier_noyau(&root, &esp, &version)?;
         populer_var(&root, &var)?;
         ecrire_fstab(&root)?;
         let _ = exec("umount", &[VAR_TMP]);
@@ -332,8 +332,10 @@ fn verifier_disque_cible(disk: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Copie le noyau de l'image installée vers l'ESP.
-fn copier_noyau(root: &Path, esp: &Path) -> Result<(), String> {
+/// Copie le noyau de l'image installée vers l'ESP sous `yaor/vmlinuz-<version>`.
+/// Le noyau porte la version du slot ; `yaor-slot` repointe l'entrée Limine
+/// correspondante à chaque changement de slot (voir le LLD installateur).
+fn copier_noyau(root: &Path, esp: &Path, version: &str) -> Result<(), String> {
     let boot = root.join("boot");
     let mut noyau: Option<PathBuf> = None;
     let entries =
@@ -347,7 +349,9 @@ fn copier_noyau(root: &Path, esp: &Path) -> Result<(), String> {
         }
     }
     let noyau = noyau.ok_or_else(|| format!("aucun noyau dans {}", boot.display()))?;
-    let dest = esp.join("vmlinuz");
+    let dir = esp.join(ESP_YAOR_DIR);
+    creer_dossier(&dir)?;
+    let dest = dir.join(format!("vmlinuz-{version}"));
     std::fs::copy(&noyau, &dest)
         .map_err(|e| format!("copie du noyau vers {} : {e}", dest.display()))?;
     eprintln!("noyau installé : {}", dest.display());
@@ -402,15 +406,16 @@ PARTLABEL=yaor-var /var  ext4 defaults                    0 2
 }
 
 /// Écrit `limine.conf` sur l'ESP : deux entrées (slot A puis slot B). Le slot B
-/// n'a pas encore d'image ; son entrée reprend la racine du slot A (repli) et
-/// sera repointée par `yaor-slot` à la première mise à jour.
+/// n'a pas encore d'image ; son entrée reprend le noyau et la racine du slot A
+/// (repli) et sera repointée par `yaor-slot` à la première mise à jour.
 fn ecrire_limine_conf(esp: &Path, version: &str) -> Result<(), String> {
     let label = format!("{ROOT_LABEL_PREFIX}{version}");
     let cmdline = format!("root=PARTLABEL={label} ro rootfstype=ext4");
+    let noyau = limine_kernel_path(version);
     let contenu = format!(
         "timeout: 3\ndefault_entry: 1\n\n\
-         /YAOR-OS (slot A)\n    protocol: linux\n    path: boot():/vmlinuz\n    cmdline: {cmdline}\n\n\
-         /YAOR-OS (slot B)\n    protocol: linux\n    path: boot():/vmlinuz\n    cmdline: {cmdline}\n"
+         /YAOR-OS (slot A)\n    protocol: linux\n    path: {noyau}\n    cmdline: {cmdline}\n\n\
+         /YAOR-OS (slot B)\n    protocol: linux\n    path: {noyau}\n    cmdline: {cmdline}\n"
     );
     let path = esp.join("limine.conf");
     std::fs::write(&path, contenu)
