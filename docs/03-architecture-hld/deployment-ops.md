@@ -3,7 +3,7 @@
 **Statut :** Accepté
 **Version :** 0.23
 **Dernière mise à jour :** 2026-10-15
-**Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011, ADR-012, ADR-013, ADR-014, ADR-015, ADR-016, ADR-017, ADR-018, ADR-019, ADR-020
+**Décisions liées :** ADR-001, ADR-003, ADR-004, ADR-007, ADR-009, ADR-011, ADR-012, ADR-013, ADR-014, ADR-015, ADR-016, ADR-017, ADR-018, ADR-019, ADR-020, ADR-021
 
 ## Modèle de construction
 
@@ -207,7 +207,8 @@ entraîne une **chaîne de dépendances cryptographiques** supplémentaire, ind�
 périmètre LUKS (hors v0.2) :
 
 - **`openssl`** 3.6.5 : backend crypto de `libcryptsetup` (`--with-crypto_backend=openssl`),
-  et brique de signature de `systemd-sysupdate` (mode installé) ;
+  et — voir ADR-021 — brique TLS/signature de `systemd-sysupdate` et
+  `systemd-importd` (mode installé). Il est donc bâti **tôt**, avant systemd ;
 - **`json-c`** 0.19 et **`popt`** 1.19 : exigés **en dur** par le `configure` de
   `libcryptsetup` (`PKG_CHECK_MODULES([JSON_C], [json-c])`, `popt`) ; `json-c` sert
   aussi à `libnvme` ;
@@ -237,11 +238,25 @@ La conception détaillée (installateur, schéma GPT, transferts `systemd-sysupd
 à états A/B et retour arrière avec Limine) est décrite dans
 [`../04-design-lld/installer/installer.md`](../04-design-lld/installer/installer.md).
 
-Sans **source nouvelle** — l'installateur (`yaor-install`) et la sélection de slot
-(`yaor-slot`) sont des composants **internes en Rust** — le mode installé exige d'**activer
-deux fonctions de systemd**, bâti `-Dauto_features=disabled` : **`-Drepart=true`**
-(partitionnement idempotent) et **`-Dsysupdate=true`**. La signature des images de mise à
-jour ramène OpenSSL (ADR-007, ADR-020).
+Sans **source nouvelle** pour l'installateur et la sélection de slot — `yaor-install` et
+`yaor-slot` sont des composants **internes en Rust** — le mode installé ajoute toutefois
+**deux sources** au socle (ADR-021), exigées par les fonctions de systemd mobilisées :
+
+- **`openssl`** 3.6.5 — requis par `systemd-sysupdate` (transport TLS et vérification de
+  signature), en plus d'être le backend crypto de `libcryptsetup` ;
+- **`curl`** 8.23.0 — fournit **`libcurl`**, exigé par **`systemd-importd`** dont dépend
+  `systemd-sysupdate` (source « url-file »).
+
+Ces deux sources, ainsi que `zlib` et `liblzma` (déjà présents), sont bâties **avant**
+systemd. systemd 262 est ensuite bâti avec **`-Dimportd=enabled -Dsysupdate=enabled
+-Drepart=enabled`** (dont les dépendances de compilation sont respectivement
+`libcurl` + `openssl` + `zlib` + `liblzma`, plus `libfdisk` pour les deux derniers) et
+**`-Dlibcurl=enabled -Dopenssl=enabled -Dzlib=enabled -Dxz=enabled -Dfdisk=enabled`** ;
+`libfdisk` est fourni par `util-linux` (`fdisk.pc`). `libcryptsetup` reste coupé : LUKS est
+hors v0.2 (ADR-015) et `systemd-repart` n'en a pas besoin pour le partitionnement de base.
+
+La configuration associée (`/etc/repart.d/*.conf`, `/etc/sysupdate.d/*.transfer`, unités de
+`yaor-slot`) est fournie dans `config/rootfs/`, voir le LLD.
 
 ### Adaptations de compilation croisée
 
@@ -398,17 +413,22 @@ compilation ; on les traite explicitement pour garder le lot minimal :
   `SYSTEM_TRUSTED_KEYRING`, ce qui ferait construire les certificats du noyau
   avec **OpenSSL**. Depuis ADR-020 il est **désactivé** — son invite n'existe que
   si `CONFIG_CFG80211_CERTIFICATION_ONUS=y`, activé précisément pour cela — et le
-  Wi-Fi (`CFG80211`, `MAC80211`, pilotes) fonctionne **sans OpenSSL** ; le réseau
+  Wi-Fi (`CFG80211`, `MAC80211`, pilotes) est donc construit **sans qu'OpenSSL
+  soit requis par le noyau** (OpenSSL est désormais présent côté espace
+  utilisateur pour le mode installé, ADR-021, ce qui est indépendant) ; le réseau
   filaire (virtio-net) reste disponible.
 - `CONFIG_WERROR` (avertissements = erreurs) est désactivé : un compilateur plus
   récent que celui des développeurs du noyau peut introduire de nouveaux
   avertissements, ce qui casserait la compilation — recommandation explicite de
   LFS.
 - **kmod** 34.2 expose ses compressions et la signature OpenSSL en options
-  « feature » (actives par défaut) : `zstd` et `xz` sont désactivés faute de
-  `libzstd` et `liblzma`, `openssl` faute de `libcrypto` (OpenSSL écarté) ;
-  `zlib` reste actif et les manpages sont désactivées (`scdoc` absent). Seuls
-  les modules gzip et non compressés sont donc gérés au jalon 0.1.
+  « feature » (actives par défaut) : `zstd`, `xz` et `openssl` sont
+  **explicitement désactivés**. Les modules du noyau sont livrés **non
+  compressés** (défaut `CONFIG_MODULE_COMPRESS_NONE`) et la signature de modules
+  est coupée (`CONFIG_MODULE_SIG=n`, ADR-020) : kmod n'a donc besoin d'aucun
+  backend de décompression ni de `libcrypto`, même si `liblzma` et OpenSSL sont
+  désormais présents dans le socle v0.2 (ADR-021). `zlib` reste actif et les
+  manpages sont désactivées (`scdoc` absent).
 - **gperf** est requis sans condition par systemd 262 (détermination de
   `GPERF_LEN_TYPE` et génération des tables `.gperf` de udev, networkd, etc.) :
   il est donc ajouté au lot, construit juste avant systemd.
@@ -420,8 +440,8 @@ compilation ; on les traite explicitement pour garder le lot minimal :
   n'est pas compilée, son repli `_native` suffisant.
 - **systemd** 262 est configuré en « minimal » : `-Dauto_features=disabled`
   coupe toutes les fonctions optionnelles (`auto`) dont la dépendance est
-  absente du lot (selinux, seccomp, openssl, pam, networkd, `bootloader`, etc.) ;
-  seules `blkid`, `kmod`, `pcre2` et **`libmount`** sont explicitement activées.
+  absente du lot (selinux, seccomp, `bootloader`, etc.) ; `blkid`, `kmod`,
+  `pcre2` et **`libmount`** sont explicitement activées.
   `libmount` est une *fonctionnalité* touchée par `auto_features=disabled` ; sans
   elle, le montage des systèmes de fichiers d'API (`/dev`, `/run`, `cgroup2`…)
   échoue au démarrage et systemd s'arrête sur « Failed to mount API
@@ -429,8 +449,10 @@ compilation ; on les traite explicitement pour garder le lot minimal :
   `-Dman=false` la documentation, `-Dhwdb=false` la base matérielle et
   `-Dtests=false` les tests.
   **En v0.2**, ces fonctions sont activées : `-Dnetworkd=true -Dresolve=true`
-  (réseau), `-Dlogind=true -Dpam=enabled` (sessions) et
-  `-Drepart=true -Dsysupdate=true` (mode installé).
+  (réseau), `-Dlogind=true -Dpam=enabled` (sessions) et, pour le mode installé
+  (ADR-015, ADR-021), `-Dimportd=enabled -Dsysupdate=enabled -Drepart=enabled`
+  avec `-Dlibcurl=enabled -Dopenssl=enabled -Dzlib=enabled -Dxz=enabled
+  -Dfdisk=enabled`.
 - **D-Bus** n'est pas encore construit : `systemd-logind` ne peut donc pas
   s'attacher au bus système et échoue en boucle. Comme une console root unique
   ne requiert pas de gestion de sessions, l'unité est **masquée**
