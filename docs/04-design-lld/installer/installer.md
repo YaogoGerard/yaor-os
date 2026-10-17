@@ -51,43 +51,55 @@ Règles :
 
 ## Installateur `yaor-install`
 
-- **Forme :** binaire en ligne de commande. Sans argument, mode **guidé** (invites sur la
-  console) ; avec arguments, mode **non interactif** (automatisation et tests). Aucune
+- **Forme :** binaire en ligne de commande. Il exige ses paramètres (automatisation et
+  tests) ; un mode **guidé** (invites sur la console) reste un suivi possible. Aucune
   bibliothèque d'interface graphique n'est introduite.
 - **Interface :**
 
   ```text
-  yaor-install [--disk <périphérique>] [--fs ext4|btrfs] [--source <dir|url>]
+  yaor-install --disk <périphérique> --version <version> [--source <dir|url>]
                [--yes] [--dry-run]
   ```
 
-  Codes de sortie : `0` succès ; `1` paramètre invalide ; `2` disque trop petit ;
-  `3` échec de partitionnement ; `4` échec de mise en place du système ; `5` échec
-  d'installation de l'amorçage.
+  `--version` (obligatoire) est la version de l'image à installer ; elle devient
+  l'étiquette du slot et l'identifiant de l'état des slots. Le système de fichiers est
+  fixé par `/etc/repart.d/*.conf` (`ext4`), ce qui évite une option et un second
+  fournisseur. Codes de sortie : `0` succès ; `1` échec (paramètre, disque ou étape).
 
 - **Séquence :**
 
-  1. choisir le disque cible et le système de fichiers ;
-  2. **`systemd-repart --dry-run`** pour l'aperçu, puis **`systemd-repart`** crée le
-     schéma GPT d'après `/etc/repart.d/*.conf` (idempotent) ;
-  3. formatage de l'ESP (`mkfs.vfat`) et de `/var` (`mkfs.ext4`/`mkfs.btrfs`) ; les
-     deux slots racine restent **vides** (étiquette `_empty`) ;
-  4. écriture de l'image du système dans un slot **libre** via **`systemd-sysupdate`**
-     (source `--source`) ;
+  1. contrôles préalables : privilèges root, disque cible présent et **distinct** du
+     disque qui porte le système en cours (`findmnt -no SOURCE /`) ;
+  2. **`systemd-repart --dry-run=yes --empty=allow`** pour l'aperçu, puis
+     **`systemd-repart --dry-run=no --empty=allow`** crée le schéma GPT d'après
+     `/etc/repart.d/*.conf` (idempotent) et formate l'ESP (`vfat`) et `/var` (`ext4`) ;
+     les deux slots racine restent **vides** (étiquette `_empty`, sans système de
+     fichiers) ;
+  3. écriture de l'image racine dans un slot **libre** via **`systemd-sysupdate
+     --image=<disque> update`** : `--image=` fait opérer l'outil **à l'intérieur** du
+     disque cible. La version effectivement écrite est relue sur les étiquettes de
+     partition ;
+  4. montage de l'ESP, de la racine et de `/var` du disque cible ; copie du **noyau**
+     sur l'ESP ; **peuplement de `/var`** depuis l'image ; écriture d'**`/etc/fstab`** ;
   5. installation de **Limine** : `EFI/BOOT/BOOTX64.EFI` et `limine.conf` sur l'ESP,
      `limine bios-install` sur la partition « BIOS boot » ;
-  6. écriture de l'**état des slots** (`/boot/yaor/slots.state`) ; les transferts
-     `/etc/sysupdate.d/*.transfer`, déjà présents dans le système, sont utilisés tels
-     quels ;
-  7. marquage du slot écrit comme **actif et confirmé** ; son entrée devient celle par
-     défaut de `limine.conf`.
+  6. écriture de l'**état des slots** (`/boot/yaor/slots.state`) : le slot écrit est
+     **actif et confirmé** ; son entrée est celle par défaut de `limine.conf` ;
+  7. démontage et `sync`.
 
-- **Limine :** c'est un **outil de build de l'hôte** (ADR-010, ADR-011) : le média live
-  embarque `/usr/bin/limine` et `/usr/share/limine/` pour que `yaor-install` écrive le
-  chargeur sur le disque cible.
+- **Limine :** c'est un **outil de build de l'hôte** (ADR-010, ADR-011). Le média live
+  doit embarquer `/usr/bin/limine` et `/usr/share/limine/` pour que `yaor-install`
+  écrive le chargeur sur le disque cible (voir « points ouverts »).
 
-- **Invariant :** l'installation n'écrit **jamais** dans le disque avant l'accord de
-  l'utilisateur (mode guidé) ou la présence de `--yes`.
+- **`/etc/fstab` et `/var` :** `systemd-gpt-auto-generator` ne monte **pas** une
+  partition dont le point de montage contient déjà des fichiers — c'est le cas de
+  `/boot` (noyau) et de `/var`. `yaor-install` écrit donc un `fstab` explicite
+  (`PARTLABEL=yaor-esp`, `PARTLABEL=yaor-var`) et **peuple `/var`** avec le contenu
+  initial de l'image : sans cela, `/var` serait vide et la racine ne monterait pas sa
+  partition de données (REQ-SW-026).
+
+- **Invariant :** l'installation n'écrit **jamais** dans le disque avant la présence de
+  `--yes` (hors `--dry-run`).
 
 ## Mises à jour `systemd-sysupdate`
 
@@ -185,6 +197,20 @@ version_b=2026.10.12
 - `default_entry` de `limine.conf` désigne toujours, au repos, le slot `confirmed` ;
 - un retour arrière **ne touche pas** `/var`.
 
+**Implémentation.** `yaor-install` et `yaor-slot` sont des binaires Rust **sans
+dépendance externe** (bibliothèque standard seule : pas de vendoring, ADR-018),
+compilés par la toolchain de l'hôte (ADR-019). Leurs sources vivent dans
+`components/` du dépôt (`components/yaor-common` pour l'état des slots, `limine.conf`
+et la découverte des partitions ; `components/yaor-install` et
+`components/yaor-slot` pour les binaires). La phase `yaor-components` de
+`scripts/04_chroot_build.sh` les compile (`cargo build --release --locked`, cible et
+`CARGO_HOME` sous `/build/work`) et les installe dans `/usr/bin`.
+
+Sous-commandes de `yaor-slot` : `status` (état courant), `update` (mise à jour puis
+essai du nouveau slot), `try <A|B>` (essai d'un slot), `startup` (décrément au
+démarrage, `yaor-slot.service`), `ok` (confirmation, `yaor-slot-confirm.service`),
+`revert` (retour au slot confirmé puis redémarrage).
+
 ## Points ouverts
 
 Ces points ne sont **pas** encore tranchés et devront l'être pour clore le mode installé :
@@ -201,9 +227,11 @@ Ces points ne sont **pas** encore tranchés et devront l'être pour clore le mod
 - **transfert noyau/initramfs** (cible **ESP**, `Type=regular-file`,
   `PathRelativeTo=boot`) : à écrire, pour que les mises à jour remplacent aussi le noyau
   sans réécrire la racine ;
-- **Limine embarqué** : le média live doit contenir `/usr/bin/limine` et
-  `/usr/share/limine/` (outil d'hôte, ADR-010/ADR-011) ; la copie dans l'image reste à
-  faire à l'étape 04/06 ;
+- **Limine embarqué** : `yaor-install` attend `/usr/bin/limine` et
+  `/usr/share/limine/`, mais **la copie de Limine dans l'image n'est pas encore
+  faite** (étape 04/06). Limine étant un outil d'hôte (ADR-010/ADR-011), cela
+  suppose de décider comment le média live se le procure (copie depuis l'hôte ou
+  construction depuis les sources) ;
 - **publication des images** : dépôt (URL), génération de `SHA256SUMS` et signature
   (`SHA256SUMS.gpg`, ADR-007).
 

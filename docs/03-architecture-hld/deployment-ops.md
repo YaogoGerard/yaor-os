@@ -74,6 +74,12 @@ ADR-018). Ils **remplacent** leurs homologues GNU dans l'image finale : un besoi
 **qu'un seul fournisseur**, conformément à ADR-017 ; les binaires GNU remplacés sont
 écrasés à l'installation, dans le chroot, après les compilations C.
 
+Les **composants internes** `yaor-install` et `yaor-slot` (mode installé, ADR-002/015)
+suivent la même chaîne : sources du dépôt (`components/`), sans **aucune** dépendance
+externe (donc sans vendoring), compilées en dernier par la phase `yaor-components` —
+`cargo build --release --locked`, cible et `CARGO_HOME` sous `/build/work` — puis
+installées dans `/usr/bin`.
+
 ### Chaîne de démarrage live
 
 L'image racine est une **EROFS** compressée en zstd et l'image du noyau est
@@ -97,9 +103,13 @@ démarrage.
 
 Le mode **installé** (ADR-015) dépose le système sur disque et configure **Limine** en
 BIOS et UEFI ; les mises à jour se font par **image**, avec deux slots A/B et retour
-arrière, via **`systemd-sysupdate`**. Les systèmes de fichiers supportés sont `ext4`
-(racine par défaut), `btrfs`, `vfat`, `exFAT` et `NTFS` (rw) ; le chiffrement LUKS est
-reporté.
+arrière, via **`systemd-sysupdate`**. Deux composants internes en Rust (ADR-002,
+`components/`) portent ce mode : **`yaor-install`** (schéma GPT par `systemd-repart`,
+écriture de l'image par `systemd-sysupdate --image=<disque>`, `/etc/fstab`, Limine) et
+**`yaor-slot`** (état des slots sur l'ESP, sélection A/B, retour arrière), ce dernier
+étant piloté par `yaor-slot.service` et `yaor-slot-confirm.service`. Les systèmes de
+fichiers supportés sont `ext4` (racine par défaut), `btrfs`, `vfat`, `exFAT` et `NTFS`
+(rw) ; le chiffrement LUKS est reporté.
 
 Le réseau est assuré par **`systemd-networkd`** et **`systemd-resolved`** (filaire) et par
 **`iwd`** avec `linux-firmware` (Wi-Fi), voir ADR-013.
