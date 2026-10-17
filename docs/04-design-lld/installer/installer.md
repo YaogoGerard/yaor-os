@@ -1,9 +1,9 @@
 # Installer & Updates — LLD
 
 **Statut :** Accepté
-**Version :** 0.1
-**Dernière mise à jour :** 2026-10-15
-**Décisions liées :** ADR-002, ADR-003, ADR-007, ADR-011, ADR-015, ADR-016
+**Version :** 0.2
+**Dernière mise à jour :** 2026-10-17
+**Décisions liées :** ADR-002, ADR-003, ADR-007, ADR-011, ADR-015, ADR-016, ADR-020, ADR-021
 
 Ce document précise la **forme de l'installateur**, le **schéma de partitionnement** et le
 **mécanisme de retour arrière** exigés par le suivi d'ADR-015.
@@ -24,13 +24,17 @@ existante adaptée ne couvre ce besoin propre à YAOR.
 
 ## Schéma de partitionnement (GPT)
 
-| # | Partition | Type GPT (UUID) | FS | Taille | Rôle |
+| # | Partition | Type GPT (identifiant) | FS | Taille | Rôle |
 |---|---|---|---|---|---|
-| 1 | ESP | `c12a7328-f81f-11d2-ba4b-00a0c93ec93b` | vfat | 512 Mio | Limine (UEFI + BIOS), noyaux, initramfs, `limine.cfg`, état des slots |
+| 1 | ESP | `esp` (`c12a7328-f81f-11d2-ba4b-00a0c93ec93b`) | vfat | 512 Mio | Limine (UEFI), noyaux, initramfs, `limine.conf`, état des slots |
 | 2 | BIOS boot | `21686148-6449-6e6f-744e-656564454649` | — | 1 Mio | seconde étape de Limine en BIOS sur GPT |
-| 3 | Root A | `4f68bce3-e8cd-4db1-96e7-fbcaf984b709` | ext4 / btrfs | 2 Gio | racine, slot A |
-| 4 | Root B | `4f68bce3-e8cd-4db1-96e7-fbcaf984b709` | ext4 / btrfs | 2 Gio | racine, slot B |
-| 5 | Data | `0fc63daf-8483-4772-8e79-3d69d8477de4` | ext4 / btrfs | reste | `/var` persistant (`/home` en dessous) |
+| 3 | Root A | `root-x86-64` (`4f68bce3-e8cd-4db1-96e7-fbcaf984b709`) | ext4 / btrfs | 2 Gio | racine, slot A |
+| 4 | Root B | `root-x86-64` (`4f68bce3-e8cd-4db1-96e7-fbcaf984b709`) | ext4 / btrfs | 2 Gio | racine, slot B |
+| 5 | Var | `var` (`4d21b016-b534-45c2-a9fb-5c16e091fd2d`) | ext4 / btrfs | reste | `/var` persistant (`/home` en dessous) |
+
+Les identifiants (`esp`, `root-x86-64`, `var`) sont ceux de `systemd-repart`
+(`Type=`) et de `systemd-sysupdate` (`MatchPartitionType=`) ; « BIOS boot », sans
+identifiant symbolique, est donnée par son UUID littéral.
 
 Règles :
 
@@ -64,56 +68,83 @@ Règles :
 - **Séquence :**
 
   1. choisir le disque cible et le système de fichiers ;
-  2. **`systemd-repart`** crée le schéma GPT (aperçu avec `--dry-run`) ;
-  3. création des systèmes de fichiers (`mkfs.ext4`/`mkfs.btrfs`, `mkfs.vfat`) ;
-  4. écriture de l'image du système dans le **slot A** (`systemd-sysupdate`, source
-     `--source`) ;
-  5. installation de **Limine** (UEFI : `EFI/BOOT/BOOTX64.EFI` ; BIOS : `limine bios-install`) ;
-  6. écriture de `limine.cfg`, des transferts `/etc/sysupdate.d/*.transfer` et de l'**état
-     des slots** ;
-  7. marquage du slot A **actif et confirmé** ; première entrée par défaut.
+  2. **`systemd-repart --dry-run`** pour l'aperçu, puis **`systemd-repart`** crée le
+     schéma GPT d'après `/etc/repart.d/*.conf` (idempotent) ;
+  3. formatage de l'ESP (`mkfs.vfat`) et de `/var` (`mkfs.ext4`/`mkfs.btrfs`) ; les
+     deux slots racine restent **vides** (étiquette `_empty`) ;
+  4. écriture de l'image du système dans un slot **libre** via **`systemd-sysupdate`**
+     (source `--source`) ;
+  5. installation de **Limine** : `EFI/BOOT/BOOTX64.EFI` et `limine.conf` sur l'ESP,
+     `limine bios-install` sur la partition « BIOS boot » ;
+  6. écriture de l'**état des slots** (`/boot/yaor/slots.state`) ; les transferts
+     `/etc/sysupdate.d/*.transfer`, déjà présents dans le système, sont utilisés tels
+     quels ;
+  7. marquage du slot écrit comme **actif et confirmé** ; son entrée devient celle par
+     défaut de `limine.conf`.
+
+- **Limine :** c'est un **outil de build de l'hôte** (ADR-010, ADR-011) : le média live
+  embarque `/usr/bin/limine` et `/usr/share/limine/` pour que `yaor-install` écrive le
+  chargeur sur le disque cible.
 
 - **Invariant :** l'installation n'écrit **jamais** dans le disque avant l'accord de
   l'utilisateur (mode guidé) ou la présence de `--yes`.
 
 ## Mises à jour `systemd-sysupdate`
 
-Définitions dans `/etc/sysupdate.d/` (forme visée) :
+Définitions dans `/etc/sysupdate.d/` (fournies par le système, voir
+`config/rootfs/etc/sysupdate.d/10-root.transfer`) :
 
 ```ini
-# /etc/sysupdate.d/10-root.transfer
 [Transfer]
 Verify=signature
-Source=https://updates.yaor.example/
+ProtectVersion=%A
 
 [Source]
 Type=url-file
-Path=@v
-MatchPattern=yaor-root-x86-64-*.raw.xz
+Path=https://updates.yaor.example/root/
+MatchPattern=yaor-root_x86-64_@v.raw.xz
 
 [Target]
 Type=partition
-MatchPartitionType=yaor-root
-PartitionFlags=0
+Path=auto
+MatchPartitionType=root-x86-64
+MatchPattern=yaor-root_@v
+PartitionNoAuto=1
 ReadOnly=1
-Path=/dev/disk/by-partlabel/yaor-root-@v
+InstancesMax=2
 ```
 
-- `Verify=signature` : l'image doit être **signée** (ADR-007) ; une vérification qui échoue
-  **n'écrit aucun slot** ;
-- le transfert **racine** cible une **partition** ; le transfert **noyau/initramfs** cible
-  l'**ESP** (`Type=regular-file`) ;
-- `systemd-sysupdate update` écrit dans le slot **inactif** puis le marque « à essayer ».
+- la cible **racine** est une **partition** : `Path=auto` désigne le disque qui porte
+  la racine en cours ; `MatchPartitionType=root-x86-64` sélectionne les slots A/B ;
+  `MatchPattern=yaor-root_@v` apparie leur **étiquette**, qui porte la version `@v` ;
+  `InstancesMax=2` borne à deux versions simultanées ;
+- `systemd-sysupdate` ne **crée ni ne supprime** de partition : il écrit dans un slot
+  **libre** — étiquette `_empty`, posée par `systemd-repart` — puis le réétiquette
+  selon la version ; le slot rempli n'est donc pas repéré par une lettre fixe mais par
+  sa **version**, et le suivi « actif / à essayer » incombe à `yaor-slot` (voir plus
+  bas) ;
+- `ProtectVersion=%A` empêche d'écraser la version en cours (celle qui tourne) : `%A`
+  lit `IMAGE_VERSION=` d'`/etc/os-release` (voir « points ouverts ») ;
+- `Verify=signature` : l'image et son manifeste doivent être **signés** (ADR-007) ; une
+  vérification qui échoue **n'écrit aucun slot**.
 
-`systemd-sysupdate` et `systemd-repart` sont des **fonctions optionnelles** de systemd :
-systemd est bâti `-Dauto_features=disabled`, il faut donc ajouter
-**`-Drepart=true -Dsysupdate=true`** (la signature des images ramène OpenSSL/ADR-020,
-cf. ADR-007).
+`systemd-sysupdate` et `systemd-repart` sont des **fonctions optionnelles** de systemd.
+systemd étant bâti `-Dauto_features=disabled`, elles exigent d'être activées :
+**`-Dimportd=enabled -Dsysupdate=enabled -Drepart=enabled`**, avec leurs dépendances
+`-Dlibcurl=enabled -Dopenssl=enabled -Dzlib=enabled -Dxz=enabled -Dfdisk=enabled`
+(openssl et curl sont entrés au socle v0.2 pour cela, ADR-021 ; voir
+`deployment-ops.md`).
 
 ## Sélection A/B et retour arrière (`yaor-slot`)
 
 `systemd-sysupdate` ne connaît pas Limine : `yaor-slot` assure la **sélection** et le
 **retour arrière**.
+
+**Slots et versions :** les deux slots sont **physiquement** les deux partitions
+`root-x86-64` du schéma GPT ; ils sont repérés par leur **ordre sur le disque**
+(A = première, B = seconde). Comme leur étiquette porte la **version** (posée par
+`systemd-sysupdate`, voir plus haut), `yaor-slot` enregistre la version hébergée par
+chaque slot, afin de savoir lequel démarre et à quelle image revenir.
 
 **État** (sur l'ESP, `/boot/yaor/slots.state`) :
 
@@ -122,6 +153,8 @@ active=A
 trying=
 attempts_left=0
 confirmed=A
+version_a=2026.10.17
+version_b=2026.10.12
 ```
 
 **Machine à états :**
@@ -134,8 +167,11 @@ confirmed=A
 
 **Séquence de mise à jour :**
 
-1. après `systemd-sysupdate update`, `yaor-slot try <slot>` : `trying=<slot>`,
-   `attempts_left=N`, le `default_entry` de `limine.cfg` pointe le nouveau slot ;
+1. `yaor-slot update` ordonne `systemd-sysupdate update`, puis identifie le slot écrit
+   (par différence d'étiquettes de partition : celle qui n'est plus `_empty` et porte une
+   nouvelle version) et enregistre `version_<slot>` ; il pose `trying=<slot>`,
+   `attempts_left=N` et fait pointer le `default_entry` de `limine.conf` sur le nouveau
+   slot ;
 2. à chaque démarrage, `yaor-slot.service` (avant `sysinit`) décrémente `attempts_left` ;
 3. si le système atteint `yaor-slot-confirm.service` (après `multi-user.target`, test de
    santé : cible `sysupdate` active, réseau, montage de `/var`), `yaor-slot ok` promeut le
@@ -146,8 +182,30 @@ confirmed=A
 **Invariants :**
 
 - hors mise à jour, **exactement un** slot est `confirmed` ;
-- `default_entry` de `limine.cfg` désigne toujours, au repos, le slot `confirmed` ;
+- `default_entry` de `limine.conf` désigne toujours, au repos, le slot `confirmed` ;
 - un retour arrière **ne touche pas** `/var`.
+
+## Points ouverts
+
+Ces points ne sont **pas** encore tranchés et devront l'être pour clore le mode installé :
+
+- **démarrage installé sans initramfs ?** En QEMU, `ext4` (`CONFIG_EXT4_FS=y`) et le
+  disque (`CONFIG_VIRTIO_BLK=y`) sont intégrés : `root=PARTLABEL=yaor-root_<v>
+  rootfstype=ext4` suffit donc sans initramfs. Sur matériel réel (NVMe, AHCI/SATA), il
+  faudra soit intégrer ces pilotes, soit un **initramfs** dédié — l'initramfs de
+  l'étape 05 est **live** (EROFS + overlay) et ne convient pas tel quel ;
+- **version d'image produit** : `ProtectVersion=%A` et l'appariement des versions
+  reposent sur `IMAGE_VERSION=` dans `/etc/os-release`, aujourd'hui absent (`VERSION_ID`
+  porte la version du noyau). Un schéma de version produit (et sa correspondance avec
+  `@v`) reste à définir ;
+- **transfert noyau/initramfs** (cible **ESP**, `Type=regular-file`,
+  `PathRelativeTo=boot`) : à écrire, pour que les mises à jour remplacent aussi le noyau
+  sans réécrire la racine ;
+- **Limine embarqué** : le média live doit contenir `/usr/bin/limine` et
+  `/usr/share/limine/` (outil d'hôte, ADR-010/ADR-011) ; la copie dans l'image reste à
+  faire à l'étape 04/06 ;
+- **publication des images** : dépôt (URL), génération de `SHA256SUMS` et signature
+  (`SHA256SUMS.gpg`, ADR-007).
 
 ## Erreurs et défaillances
 
@@ -156,7 +214,7 @@ confirmed=A
 | Disque plus petit que le schéma | refus **avant** toute écriture (code `2`) |
 | Signature de mise à jour invalide | abandon, **aucun slot** modifié |
 | Slot essayé non confirmé après `N` démarrages | retour automatique au slot `confirmed` |
-| `limine.cfg` illisible | `yaor-slot` s'arrête en erreur ; Limine retombe sur son entrée par défaut |
+| `limine.conf` illisible | `yaor-slot` s'arrête en erreur ; Limine retombe sur son entrée par défaut |
 | Échec du test de santé | le slot n'est **pas** promu (retour arrière au terme des essais) |
 
 ## Tests
