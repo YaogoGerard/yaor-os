@@ -19,6 +19,70 @@ CONFIG_DIR="$ROOT/config"
 COMPONENTS_DIR="$ROOT/components"
 LOG_DIR="$BUILD_DIR/logs"
 
+# Identité du produit. La version vit dans le fichier VERSION à la racine du
+# dépôt (source unique, ADR-022) ; elle devient IMAGE_VERSION dans
+# /etc/os-release et sert à nommer l'ISO et les images de mise à jour.
+YAOR_IMAGE_ID="yaor"
+yaor_version() {
+    local f="$ROOT/VERSION" v
+    [[ -f "$f" ]] || die "fichier VERSION introuvable : $f"
+    v="$(tr -d '[:space:]' < "$f")"
+    [[ -n "$v" ]] || die "fichier VERSION vide : $f"
+    printf '%s\n' "$v"
+}
+
+# Motifs exclus de l'arborescence livrée : tout ce qui relève de la construction
+# (toolchain, sources, artefacts de compilation, outils de développement) et non
+# du système en fonctionnement. Partagés par l'étape 06 (image live EROFS) et
+# l'étape 07 (image installable), qui livrent le MÊME système. Seul /boot diffère
+# (présent dans l'image installable, retiré du live où Limine charge le noyau
+# depuis l'ISO).
+YAOR_IMAGE_EXCLUDES=(
+    '/proc/*' '/sys/*' '/dev/*' '/run/*' '/tmp/*'
+    '/build/work/*' '/build/config/*' '/build/components/*'
+    '/sources/*' '/tools/*' '/opt/*'
+    '/.cache/*' '*.log'
+    '/usr/libexec/gcc/*' '/usr/lib/gcc/*'
+    '/usr/x86_64-lfs-linux-gnu/*'
+    '/usr/include/*'
+    '/usr/share/doc/*' '/usr/share/man/*' '/usr/share/info/*'
+    '/usr/share/gtk-doc/*' '/usr/share/locale/*' '/usr/share/i18n/*'
+    '/usr/share/aclocal/*' '/usr/share/gettext/*'
+    '/usr/share/vim/*'
+    '/usr/lib/meson/*'
+    '/usr/bin/meson*' '/usr/bin/ninja*'
+    '*.a' '*.la'
+    '/usr/bin/*gcc*' '/usr/bin/*g++*'
+    '/usr/bin/*cpp*' '/usr/bin/*c++*'
+    '/usr/bin/cc' '/usr/bin/c99'
+    '/usr/bin/x86_64-pc-linux-gnu-*'
+    '/usr/bin/x86_64-lfs-linux-gnu-*'
+    '/usr/bin/ld' '/usr/bin/ld.bfd' '/usr/bin/ld.gold'
+    '/usr/bin/as' '/usr/bin/ar' '/usr/bin/ranlib'
+    '/usr/bin/nm' '/usr/bin/objcopy' '/usr/bin/objdump'
+    '/usr/bin/readelf' '/usr/bin/strip' '/usr/bin/size'
+    '/usr/bin/strings' '/usr/bin/addr2line' '/usr/bin/elfedit'
+    '/usr/bin/gprof*' '/usr/bin/c++filt'
+    '/usr/lib/bfd-plugins/*'
+    '/usr/bin/bison' '/usr/bin/yacc' '/usr/share/bison/*'
+    '/usr/bin/flex' '/usr/bin/lex'
+    '/usr/bin/python3*' '/usr/lib/python3.13/*'
+    '/usr/bin/perl*' '/usr/lib/perl5/*'
+    '/usr/bin/file' '/usr/lib/libmagic*'
+    '/usr/share/misc/magic.mgc'
+)
+
+# yaor_rsync_image <src> <dst> [keep|drop] — synchronise l'arborescence livrée en
+# appliquant YAOR_IMAGE_EXCLUDES. « drop » retire en outre /boot (image live) ;
+# « keep » (défaut) le conserve (image installable).
+yaor_rsync_image() {
+    local src="$1" dst="$2" boot="${3:-keep}" e
+    local args=(-a --delete)
+    for e in "${YAOR_IMAGE_EXCLUDES[@]}"; do args+=(--exclude="$e"); done
+    [[ "$boot" == "drop" ]] && args+=(--exclude='/boot/*')
+    rsync "${args[@]}" "$src/" "$dst/"
+}
+
 # Nom de l'étape courante (surchargé avant le source) et son journal.
 STEP="${STEP:-pipeline}"
 LOG_FILE="$LOG_DIR/${STEP}.log"

@@ -18,7 +18,9 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
 LFS="$(realpath "$BUILD_DIR/rootfs")"
 KVER="$(manifest_field linux 3)"
-ISO_NAME="yaor-live-x86_64-${KVER}.iso"
+# Nom de l'ISO par la version produit (fichier VERSION, ADR-022) ; la version du
+# noyau reste consignée dans l'image (/etc/os-release, /boot).
+ISO_NAME="yaor-live-x86_64-$(yaor_version).iso"
 ISO_OUT="$OUT_DIR/$ISO_NAME"
 EROFS_IMG="$OUT_DIR/rootfs.erofs"
 INITRD="$OUT_DIR/initrd.img-$KVER"
@@ -58,45 +60,9 @@ mkdir -p "$ROOTFS_CLEAN"
 # développement : les outils de compilation sont écartés (gcc et binutils,
 # python3, perl, bison, flex, file), de même que les copies de /boot, déjà
 # portées séparément par l'ISO. Ni systemd, ni glibc, ni les bibliothèques de
-# base n'en dépendent au démarrage.
-rsync -a --delete \
-  --exclude='/proc/*' --exclude='/sys/*' --exclude='/dev/*' \
-  --exclude='/run/*'  --exclude='/tmp/*' \
-  --exclude='/build/work/*' --exclude='/build/config/*' \
-  --exclude='/sources/*' --exclude='/tools/*' \
-  --exclude='/opt/*' \
-  --exclude='/.cache/*' --exclude='*.log' \
-  --exclude='/boot/*' \
-  --exclude='/usr/libexec/gcc/*' \
-  --exclude='/usr/lib/gcc/*' \
-  --exclude='/usr/x86_64-lfs-linux-gnu/*' \
-  --exclude='/usr/include/*' \
-  --exclude='/usr/share/doc/*' --exclude='/usr/share/man/*' --exclude='/usr/share/info/*' \
-  --exclude='/usr/share/gtk-doc/*' --exclude='/usr/share/locale/*' --exclude='/usr/share/i18n/*' \
-  --exclude='/usr/share/aclocal/*' --exclude='/usr/share/gettext/*' \
-  --exclude='/usr/share/vim/*' \
-  --exclude='/usr/lib/meson/*' \
-  --exclude='/usr/bin/meson*' --exclude='/usr/bin/ninja*' \
-  --exclude='*.a' --exclude='*.la' \
-  --exclude='/usr/bin/*gcc*' --exclude='/usr/bin/*g++*' \
-  --exclude='/usr/bin/*cpp*' --exclude='/usr/bin/*c++*' \
-  --exclude='/usr/bin/cc' --exclude='/usr/bin/c99' \
-  --exclude='/usr/bin/x86_64-pc-linux-gnu-*' \
-  --exclude='/usr/bin/x86_64-lfs-linux-gnu-*' \
-  --exclude='/usr/bin/ld' --exclude='/usr/bin/ld.bfd' --exclude='/usr/bin/ld.gold' \
-  --exclude='/usr/bin/as' --exclude='/usr/bin/ar' --exclude='/usr/bin/ranlib' \
-  --exclude='/usr/bin/nm' --exclude='/usr/bin/objcopy' --exclude='/usr/bin/objdump' \
-  --exclude='/usr/bin/readelf' --exclude='/usr/bin/strip' --exclude='/usr/bin/size' \
-  --exclude='/usr/bin/strings' --exclude='/usr/bin/addr2line' --exclude='/usr/bin/elfedit' \
-  --exclude='/usr/bin/gprof*' --exclude='/usr/bin/c++filt' \
-  --exclude='/usr/lib/bfd-plugins/*' \
-  --exclude='/usr/bin/bison' --exclude='/usr/bin/yacc' --exclude='/usr/share/bison/*' \
-  --exclude='/usr/bin/flex' --exclude='/usr/bin/lex' \
-  --exclude='/usr/bin/python3*' --exclude='/usr/lib/python3.13/*' \
-  --exclude='/usr/bin/perl*' --exclude='/usr/lib/perl5/*' \
-  --exclude='/usr/bin/file' --exclude='/usr/lib/libmagic*' \
-  --exclude='/usr/share/misc/magic.mgc' \
-  "$LFS/" "$ROOTFS_CLEAN/"
+# base n'en dépendent au démarrage. La liste des exclusions est partagée avec
+# l'image installable (étape 07) — voir YAOR_IMAGE_EXCLUDES dans common.sh.
+yaor_rsync_image "$LFS/" "$ROOTFS_CLEAN/" drop
 
 mkdir -p "$ROOTFS_CLEAN"/{proc,sys,dev,run,tmp,mnt,build,sources}
 
@@ -121,6 +87,16 @@ find "$ROOTFS_CLEAN" -type f -executable 2>/dev/null | while read -r f; do
             ;;
     esac
 done
+
+section "Limine embarqué dans le média live (ADR-010/ADR-011, ADR-023)"
+# Limine est un outil de build de l'hôte : il n'est pas construit par le
+# pipeline. Le média live doit l'embarquer pour que `yaor-install` (exécuté
+# depuis le live) écrive le chargeur sur le disque cible : le binaire, qui sert
+# au `bios-install`, et ses fichiers de démarrage (BOOTX64.EFI, limine-bios.sys).
+install -Dm755 "$(command -v limine)" "$ROOTFS_CLEAN/usr/bin/limine"
+mkdir -p "$ROOTFS_CLEAN/usr/share/limine"
+cp -a "$LIMINE_DIR/." "$ROOTFS_CLEAN/usr/share/limine/"
+log "limine embarqué : /usr/bin/limine + $(ls "$LIMINE_DIR" | wc -l) fichiers dans /usr/share/limine"
 
 section "Création de l'image EROFS (zstd)"
 rm -f "$EROFS_IMG"

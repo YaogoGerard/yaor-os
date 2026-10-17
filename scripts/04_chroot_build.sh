@@ -371,14 +371,19 @@ set output-meta on
 EOF
     # Identité du produit (systemd, /etc/os-release). Volontairement minimale :
     # les distributions et outils tiers s'appuient sur ID/ID_LIKE/VERSION_ID.
-    local osver; osver="$(manifest_field linux 3)"
+    # IMAGE_ID/IMAGE_VERSION (ADR-022) identifient l'image pour systemd :
+    # « %A » dans les transferts sysupdate se développe en IMAGE_VERSION, ce qui
+    # protège la version en cours (ProtectVersion=) et apparie les slots A/B.
+    local prodver; prodver="$(yaor_version)"
     cat > "$LFS/etc/os-release" <<EOF
 NAME="YAOR-OS"
-PRETTY_NAME="YAOR-OS (live)"
+PRETTY_NAME="YAOR-OS $prodver"
 ID=yaor
 ID_LIKE="linux"
-VERSION_ID="$osver"
-VERSION="$osver"
+VERSION_ID="$prodver"
+VERSION="$prodver"
+IMAGE_ID=$YAOR_IMAGE_ID
+IMAGE_VERSION="$prodver"
 HOME_URL="https://example.invalid/yaor-os"
 ANSI_COLOR="0;36"
 EOF
@@ -1284,7 +1289,15 @@ phase_rust_coreutils() {
 # restent sous /build/work, jamais dans le dépôt.
 phase_yaor_components() {
     ensure_host_rust
-    log "compilation des composants internes YAOR (yaor-install, yaor-slot)"
+    # Cohérence de version (ADR-022) : le fichier VERSION (version produit,
+    # reportée en IMAGE_VERSION) et le workspace cargo des composants doivent
+    # concorder — sans quoi l'image et ses binaires s'annonceraient différemment.
+    local prodver cargover
+    prodver="$(yaor_version)"
+    cargover="$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$COMPONENTS_DIR/Cargo.toml")"
+    [[ "$cargover" == "$prodver" ]] \
+        || die "version des composants ($cargover) ≠ VERSION ($prodver) — ADR-022"
+    log "compilation des composants internes YAOR (yaor-install, yaor-slot) version $prodver"
     run chroot_rust "cd /build/components && CARGO_TARGET_DIR=/build/work/yaor-target cargo build --release --locked"
     log "installation de yaor-install et yaor-slot dans /usr/bin"
     run chroot_run "install -m 0755 /build/work/yaor-target/release/yaor-install /build/work/yaor-target/release/yaor-slot /usr/bin/"
