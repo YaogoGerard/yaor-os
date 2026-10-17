@@ -1,0 +1,19 @@
+# Composants internes YAOR (ADR-002), bâtis avec la toolchain Rust de l'hôte
+# (ADR-019). Aucune dépendance externe : le build est hors-ligne et ne
+# nécessite donc aucun vendoring (ADR-018).
+[workspace]
+resolver = "2"
+members = ["yaor-common", "yaor-slot", "yaor-install"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.99"
+license = "MIT"
+
+[profile.release]
+# Binaires compacts : l'image live doit rester légère (ADR-016).
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

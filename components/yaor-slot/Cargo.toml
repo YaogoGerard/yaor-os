@@ -1,0 +1,14 @@
+[package]
+name = "yaor-slot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Sélection A/B et retour arrière avec Limine (ADR-015)"
+
+[[bin]]
+name = "yaor-slot"
+path = "src/main.rs"
+
+[dependencies]
+yaor-common = { path = "../yaor-common" }

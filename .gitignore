@@ -5,3 +5,6 @@ sources/*
 # Zone de travail et artefacts de build
 build/
 out/
+
+# Artefacts de compilation des composants internes Rust
+components/target/

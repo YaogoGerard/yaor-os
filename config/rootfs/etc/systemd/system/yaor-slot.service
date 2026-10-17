@@ -1,0 +1,20 @@
+[Unit]
+Description=YAOR-OS — sélection du slot A/B (essai ou retour arrière)
+Documentation=man:yaor-slot(8)
+# N'a de sens que sur un système installé : /boot est alors l'ESP monté, porteur
+# de l'état des slots. Sur le média live, /boot n'est pas un point de montage et
+# le service est ignoré.
+ConditionPathIsMountPoint=/boot
+ConditionPathExists=/boot/yaor/slots.state
+After=local-fs.target
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Décrémente le compteur d'essais du slot en cours d'essai et, s'il est épuisé,
+# déclenche le retour arrière vers le slot confirmé (ADR-015).
+ExecStart=/usr/bin/yaor-slot startup
+
+[Install]
+WantedBy=sysinit.target

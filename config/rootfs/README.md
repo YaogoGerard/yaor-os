@@ -22,6 +22,8 @@ configuration fournie par YAOR prime sur les fichiers par défaut des paquets.
 | `etc/polkit-1/rules.d/49-yaor-udisks.rules` | actions `udisks2` pour `wheel` | ADR-014 |
 | `etc/repart.d/*.conf` | schéma GPT (ESP, BIOS boot, slots A/B, `/var`) | ADR-015, REQ-SW-026 |
 | `etc/sysupdate.d/*.transfer` | mises à jour par image, slots A/B | ADR-015, REQ-SW-020 |
+| `etc/systemd/system/yaor-slot.service` | essai du slot / retour arrière au démarrage | ADR-015 |
+| `etc/systemd/system/yaor-slot-confirm.service` | confirmation du slot démarré | ADR-015 |
 
 ## Compléments de la phase de configuration
 
@@ -29,9 +31,9 @@ La phase de configuration système assure aussi ce qui n'est pas un simple
 fichier :
 
 - **activer les services** : `systemctl enable systemd-networkd
-  systemd-resolved iwd udisks2` ; `dbus.socket` et `systemd-logind.service` n'ont
-  pas de section `[Install]` : leurs paquets les activent par des liens
-  symboliques posés à l'installation ;
+  systemd-resolved iwd yaor-slot.service yaor-slot-confirm.service` ;
+  `dbus.socket` et `systemd-logind.service` n'ont pas de section `[Install]` :
+  leurs paquets les activent par des liens symboliques posés à l'installation ;
 - faire pointer **`/etc/resolv.conf`** vers
   `/run/systemd/resolve/stub-resolv.conf` ;
 - créer le groupe **`wheel`** et le dossier **`/var/lib/iwd`** (profils Wi-Fi).

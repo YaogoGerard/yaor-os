@@ -14,6 +14,9 @@ SOURCES_DIR="$ROOT/sources"
 BUILD_DIR="$ROOT/build"
 OUT_DIR="$ROOT/out"
 CONFIG_DIR="$ROOT/config"
+# Composants internes (Rust) livrés par le dépôt : sources, pas des archives
+# téléchargées.
+COMPONENTS_DIR="$ROOT/components"
 LOG_DIR="$BUILD_DIR/logs"
 
 # Nom de l'étape courante (surchargé avant le source) et son journal.

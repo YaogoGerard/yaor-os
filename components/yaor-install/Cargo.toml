@@ -1,0 +1,14 @@
+[package]
+name = "yaor-install"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Installation du système sur disque (mode installé, ADR-015)"
+
+[[bin]]
+name = "yaor-install"
+path = "src/main.rs"
+
+[dependencies]
+yaor-common = { path = "../yaor-common" }

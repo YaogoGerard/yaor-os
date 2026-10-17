@@ -1,0 +1,17 @@
+[Unit]
+Description=YAOR-OS — confirmation du slot A/B démarré
+Documentation=man:yaor-slot(8)
+# Après un démarrage réussi (multi-user.target atteint), le slot en cours d'essai
+# est déclaré sain : il devient le slot confirmé, cible du retour arrière
+# (ADR-015). Conditionné comme yaor-slot.service (système installé uniquement).
+ConditionPathIsMountPoint=/boot
+ConditionPathExists=/boot/yaor/slots.state
+After=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/yaor-slot ok
+
+[Install]
+WantedBy=multi-user.target

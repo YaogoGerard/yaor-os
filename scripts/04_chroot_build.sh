@@ -141,6 +141,10 @@ ALL_PHASES=(
     # toolchain de l'hôte sert seule à les compiler (ADR-019).
     rust-findutils
     rust-coreutils
+    # Composants internes YAOR (yaor-install, yaor-slot), en tout dernier :
+    # sources du dépôt (components/), bâties par la toolchain de l'hôte
+    # (ADR-002, ADR-019), sans dépendance externe (ADR-018).
+    yaor-components
 )
 
 # --- Outillage --------------------------------------------------------------
@@ -390,6 +394,8 @@ EOF
     mount_if "$LFS/sources"       --bind "$SOURCES_DIR"
     mount_if "$LFS/build/work"    --bind "$WORK"
     mount_if "$LFS/build/config"  --bind "$CONFIG_DIR"
+    # Composants internes (Rust) : sources du dépôt, montées pour compilation.
+    mount_if "$LFS/build/components" --bind "$COMPONENTS_DIR"
     # Toolchain Rust de l'hôte, montée en lecture seule (ADR-019).
     ensure_host_rust
     mkdir -pv "$LFS/run/lock"
@@ -403,6 +409,7 @@ phase_teardown() {
     local mp
     for mp in "$LFS/run" "$LFS/dev/pts" "$LFS/dev" "$LFS/proc" "$LFS/sys" \
               "$LFS/sources" "$LFS/build/work" "$LFS/build/config" \
+              "$LFS/build/components" \
               "$RUST_BIND"; do
         if mountpoint -q "$mp"; then
             umount -v "$mp" || log "échec du démontage de $mp"
@@ -1214,6 +1221,13 @@ phase_configure_system() {
     # s'activent donc par « systemctl enable ».
     chroot_run "systemctl enable systemd-networkd systemd-resolved iwd"
 
+    section "Activation des services (mode installé)"
+    # yaor-slot.service (essai/retour arrière, avant sysinit) et
+    # yaor-slot-confirm.service (confirmation, après multi-user) portent
+    # [Install] ; ils restent inactifs sur le média live grâce à leurs
+    # conditions (ADR-015). yaor-install est une commande, pas un service.
+    chroot_run "systemctl enable yaor-slot.service yaor-slot-confirm.service"
+
     section "Résolution de noms et profils Wi-Fi"
     # systemd-resolved expose son résolveur local : /etc/resolv.conf doit y
     # pointer (le fichier n'est fourni par aucun paquet).
@@ -1260,6 +1274,21 @@ phase_rust_coreutils() {
     log "vérification : plus aucun binaire GNU coreutils/findutils dans /usr/bin"
     run chroot_run "if grep -rl -e 'GNU coreutils' -e 'GNU findutils' /usr/bin /usr/sbin 2>/dev/null; then echo 'ERREUR : binaires GNU résiduels ci-dessus' >&2; exit 1; fi"
     run chroot_run "ls --version | head -1; find --version | head -1"
+}
+
+# --- Phase : composants internes YAOR (Rust) --------------------------------
+# `yaor-install` et `yaor-slot` (ADR-002) : leurs sources vivent dans le dépôt
+# (components/), montées dans le chroot sur /build/components. Ils sont bâtis
+# par la toolchain Rust de l'hôte (ADR-019), hors-ligne (ADR-018) — sans aucune
+# dépendance externe, donc sans vendoring. Les « target/ » et le CARGO_HOME
+# restent sous /build/work, jamais dans le dépôt.
+phase_yaor_components() {
+    ensure_host_rust
+    log "compilation des composants internes YAOR (yaor-install, yaor-slot)"
+    run chroot_rust "cd /build/components && CARGO_TARGET_DIR=/build/work/yaor-target cargo build --release --locked"
+    log "installation de yaor-install et yaor-slot dans /usr/bin"
+    run chroot_run "install -m 0755 /build/work/yaor-target/release/yaor-install /build/work/yaor-target/release/yaor-slot /usr/bin/"
+    run chroot_run "yaor-slot --help >/dev/null && yaor-install --help >/dev/null && echo 'composants YAOR opérationnels'"
 }
 
 # --- Exécution --------------------------------------------------------------
