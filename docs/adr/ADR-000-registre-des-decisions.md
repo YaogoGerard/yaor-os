@@ -3,7 +3,7 @@
 **Statut :** Accepté
 **Date :** 2026-10-13
 **Décisionnaire(s) :** Équipe YAOR
-**Décisions liées :** ADR-001 à ADR-021
+**Décisions liées :** ADR-001 à ADR-023
 
 ## Contexte
 
@@ -63,6 +63,8 @@ ADR dédié.
 | 42 | Chaîne Rust au build | **toolchain hôte (outil de build, non livrée) ; vendoring au téléchargement** — voir ADR-019 |
 | 43 | Wi-Fi et signature | **`CFG80211_REQUIRE_SIGNED_REGDB=n`** — voir ADR-020 |
 | 44 | Socle cryptographique v0.2 | **OpenSSL et curl intégrés au socle (mode installé : `sysupdate`/`repart`)** — voir ADR-021 |
+| 45 | Version de produit/d'image | **fichier `VERSION` (source unique) → `IMAGE_VERSION` ; apparie racine et noyau** — voir ADR-022 |
+| 46 | Limine dans le média | **Limine copié depuis l'hôte dans l'image live (outil de build, ADR-010/011)** — voir ADR-023 |
 
 ## Conséquences
 

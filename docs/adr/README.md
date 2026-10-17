@@ -45,6 +45,8 @@ Ce dossier consigne les **décisions structurantes** du projet : pourquoi un cho
 | [ADR-019](ADR-019-chaine-rust-build-toolchain-hote-et-vendoring.md) | Chaîne Rust : toolchain hôte et vendoring au téléchargement | Accepté |
 | [ADR-020](ADR-020-wifi-sans-regdb-signe.md) | Wi-Fi : cfg80211 sans registre réglementaire signé | Accepté (clause OpenSSL remplacée par ADR-021) |
 | [ADR-021](ADR-021-openssl-et-curl-dans-le-socle-v0-2.md) | OpenSSL et curl dans le socle v0.2 (mode installé) | Accepté |
+| [ADR-022](ADR-022-version-de-produit-et-d-image.md) | Version de produit et version d'image | Accepté |
+| [ADR-023](ADR-023-limine-embarque-dans-le-media-live.md) | Limine embarqué dans le média live | Accepté |
 
 ## Principe de décision
 
