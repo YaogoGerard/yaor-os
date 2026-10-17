@@ -30,6 +30,9 @@
 #   - sessions : expat et linux-pam, D-Bus (expat + libsystemd), shadow (comptes)
 #     et sudo-rs (élévation) ; util-linux fournit login/agetty et systemd est
 #     bâti avec PAM et logind (plus de session root « nue ») ;
+#   - mode installé : openssl et curl (bâtis avant systemd) puis systemd avec
+#     « importd », « sysupdate » et « repart » activés, ce qui fournit
+#     systemd-repart et systemd-sysupdate pour le schéma A/B (ADR-015) ;
 #   - la phase « configure-system » (en fin de liste) copie l'arborescence
 #     config/rootfs et active les services, une fois tous les paquets installés.
 #
@@ -72,6 +75,13 @@ ALL_PHASES=(
     perl
     ninja meson pkgconf
     libcap libxcrypt
+    # Mode installé (ADR-015) : openssl puis curl sont bâtis AVANT systemd, qui
+    # les exige pour ses fonctions « sysupdate » et « repart ». systemd-importd
+    # (dont dépend systemd-sysupdate) réclame libcurl, openssl, zlib et liblzma ;
+    # systemd-sysupdate réclame en outre libfdisk. openssl n'exige que perl (déjà
+    # bâti) et zlib ; curl n'exige qu'openssl et zlib.
+    openssl
+    curl
     # Sessions (ADR-014) : expat (analyse XML de D-Bus) et linux-pam doivent
     # précéder util-linux (dont « login » s'appuie sur PAM) et systemd, bâti
     # -Dpam=enabled (la fonctionnalité « pam » est coupée par
@@ -109,8 +119,9 @@ ALL_PHASES=(
     # Lot stockage (3/3) : autorisation des actions privilégiées (polkit), puis
     # les bibliothèques de bloc et le démon de montage.
     polkit
-    # Lot stockage (3/3, suite) : bibliothèques de bloc et dépendances
-    openssl json-c popt keyutils
+    # Lot stockage (3/3, suite) : bibliothèques de bloc et dépendances (openssl
+    # et curl ont été bâtis plus tôt, avant systemd).
+    json-c popt keyutils
     lvm2
     libcryptsetup
     libnvme
@@ -641,7 +652,16 @@ phase_systemd() {
     # systemd s'arrête sur « Failed to mount API filesystems ». « pam » est une
     # fonctionnalité : on l'active pour logind et les sessions (ADR-014).
     # networkd/resolve/logind sont des booléens : on les fixe explicitement.
-    run chroot_run "rm -rf '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release -Dmode=release -Dauto_features=disabled -Dlibmount=enabled -Dblkid=enabled -Dkmod=enabled -Dpcre2=enabled -Dpam=enabled -Dnetworkd=true -Dresolve=true -Dlogind=true -Dman=false -Dtranslations=false -Dtests=false -Dhwdb=false"
+    # Mode installé (ADR-015) : « importd », « sysupdate » et « repart » sont des
+    # fonctionnalités, donc coupées par auto_features=disabled. systemd-importd
+    # (dont dépend systemd-sysupdate, y compris pour la source « url-file ») exige
+    # libcurl, openssl, zlib et liblzma ; systemd-sysupdate et systemd-repart
+    # exigent en outre libfdisk. openssl et curl sont bâtis plus tôt (voir
+    # ALL_PHASES) ; zlib est bâti en tête de cette étape 04, liblzma est fourni
+    # par l'étape 03 (xz du chapitre 6), libfdisk par util-linux (fdisk.pc).
+    # « libcryptsetup » reste coupé : le chiffrement LUKS est hors v0.2 et repart
+    # n'en a pas besoin pour le partitionnement de base.
+    run chroot_run "rm -rf '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release -Dmode=release -Dauto_features=disabled -Dlibmount=enabled -Dblkid=enabled -Dkmod=enabled -Dpcre2=enabled -Dpam=enabled -Dzlib=enabled -Dxz=enabled -Dfdisk=enabled -Dlibcurl=enabled -Dopenssl=enabled -Dimportd=enabled -Dsysupdate=enabled -Drepart=enabled -Dnetworkd=true -Dresolve=true -Dlogind=true -Dman=false -Dtranslations=false -Dtests=false -Dhwdb=false"
     log "compilation systemd"
     run chroot_run "cd '$d' && ninja -C build7"
     log "installation systemd"
@@ -970,10 +990,15 @@ phase_polkit() {
     run chroot_run "rm -f /usr/bin/pkexec"
 }
 
-# === Lot stockage (3/3, suite) : bibliothèques de bloc et dépendances =======
+# === Mode installé : cryptographie (openssl) et HTTP (curl) =================
+# Ces deux composants servent aussi bien le lot stockage (openssl pour
+# libcryptsetup) que le mode installé (curl/openssl pour systemd-sysupdate).
+# Ils sont BÂTIS TÔT (voir ALL_PHASES) car systemd les exige ; l'ordre du
+# fichier suit l'historique, pas l'ordre d'exécution.
 
-# openssl : bibliothèque cryptographique, backend de libcryptsetup et requis
-# par systemd-sysupdate. Shared, sans tests, pages de man écartées.
+# openssl : bibliothèque cryptographique, backend de libcryptsetup et de
+# systemd-sysupdate. Bâtie TÔT (avant systemd, qui l'exige pour sysupdate et
+# DNSSEC) ; partagée, sans tests, pages de man écartées.
 phase_openssl() {
     require_archive openssl
     local d; d="$(ci_work openssl)"
@@ -985,6 +1010,20 @@ phase_openssl() {
     run chroot_run "cd '$d' && make install_sw"
     run chroot_run "mkdir -p /etc/ssl/certs /etc/ssl/private"
     run chroot_run "rm -f /usr/lib/libcrypto.a /usr/lib/libssl.a 2>/dev/null; true"
+}
+
+# curl : client HTTP(S) exigé par systemd-importd et systemd-sysupdate (source
+# « url-file », ADR-015). Bâti sur OpenSSL (TLS) et zlib ; les protocoles et
+# backends inutiles sont écartés pour garder l'empreinte minimale.
+phase_curl() {
+    require_archive curl
+    local d; d="$(ci_work curl)"
+    log "configure curl"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --libdir=/usr/lib --disable-static --disable-docs --disable-manual --disable-ldap --disable-ldaps --with-openssl --with-zlib --without-libpsl --without-brotli --without-zstd --without-nghttp2 --without-libidn2 --without-librtmp --without-libssh2"
+    log "compilation curl"
+    run chroot_run "cd '$d' && make -j$JOBS"
+    log "installation curl"
+    run chroot_run "cd '$d' && make install"
 }
 
 # json-c 0.19 : requis par cryptsetup et libnvme. Correctif pour headers/pkg-config.
