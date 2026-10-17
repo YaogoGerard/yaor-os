@@ -3,7 +3,7 @@
 **Statut :** Accepté
 **Date :** 2026-10-13
 **Décisionnaire(s) :** Équipe YAOR
-**Décisions liées :** ADR-001 à ADR-020
+**Décisions liées :** ADR-001 à ADR-021
 
 ## Contexte
 
@@ -61,7 +61,8 @@ ADR dédié.
 | 40 | Lot Rust et non-duplication | **`uutils/findutils` remplace GNU ; un besoin = un seul fournisseur** — voir ADR-017 |
 | 41 | Dépendances cargo | **vendoring (`cargo vendor`), build hors-ligne** — voir ADR-018 |
 | 42 | Chaîne Rust au build | **toolchain hôte (outil de build, non livrée) ; vendoring au téléchargement** — voir ADR-019 |
-| 43 | Wi-Fi et signature | **`CFG80211_REQUIRE_SIGNED_REGDB=n` ; OpenSSL hors du lot v0.2** — voir ADR-020 |
+| 43 | Wi-Fi et signature | **`CFG80211_REQUIRE_SIGNED_REGDB=n`** — voir ADR-020 |
+| 44 | Socle cryptographique v0.2 | **OpenSSL et curl intégrés au socle (mode installé : `sysupdate`/`repart`)** — voir ADR-021 |
 
 ## Conséquences
 
