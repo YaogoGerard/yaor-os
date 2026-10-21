@@ -59,9 +59,8 @@ yaor_rsync_image "$LFS/" "$STAGE/" keep
 
 section "Vérification : fournisseurs non dupliqués (ADR-017)"
 # Comme l'étape 06 : aucun binaire GNU coreutils/findutils ne doit subsister.
-leftovers="$(grep -rl -e 'GNU coreutils' -e 'GNU findutils' \
-    "$STAGE"/usr/bin "$STAGE"/usr/sbin 2>/dev/null || true)"
-[[ -z "$leftovers" ]] || die "binaires GNU coreutils/findutils résiduels : $leftovers"
+# Contrôle par marqueurs discriminants (check_uutils_replacement, common.sh).
+check_uutils_replacement "$STAGE" || die "binaires GNU coreutils/findutils résiduels"
 
 section "fstab de l'image installable"
 # Contrairement à l'image live (où ces partitions n'existent pas), l'image
