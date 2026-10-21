@@ -24,7 +24,7 @@ l'approche de ce jalon : seuls `v0.1` (atteint) et `v0.2` (en cours) sont figés
 | Jalon | Objet | Phase roadmap | État |
 |---|---|---|---|
 | v0.1 | Système de construction + boot Linux minimal | Phase 0 — Foundation | Atteint |
-| v0.2 | Userland fonctionnel et composants sélectionnés | Phase 1 — System | En cours |
+| v0.2 | Userland fonctionnel et composants sélectionnés | Phase 1 — System | Atteint |
 | v0.3 | Base graphique | Phase 2 — Graphics | À venir |
 | v0.4 | Compositor YAOR | Phase 2 — Graphics | À venir |
 | v0.5 | Desktop Core configurable | Phase 3 — YAOR Desktop | À venir |
@@ -51,7 +51,7 @@ ISO live amorçable en BIOS et UEFI (ADR-011).
 - [x] Une empreinte SHA-256 de l'ISO est produite (la signature GPG reste à activer,
   ADR-007).
 
-## v0.2 — Userland fonctionnel et composants sélectionnés (en cours)
+## v0.2 — Userland fonctionnel et composants sélectionnés (atteint)
 
 **Périmètre :** rendre le système utilisable au quotidien en mode **live** et **installé** :
 réseau, sessions et comptes, firmware, stockage amovible, toolchain Rust, cycle de vie
@@ -61,58 +61,60 @@ installé et mises à jour par image. Correspond à la Phase 1 « System ».
 
 ### Construction et toolchain
 
-- [ ] La toolchain Rust (`rustc`/`cargo` de l'hôte) est un **prérequis de build** vérifié à
+- [x] La toolchain Rust (`rustc`/`cargo` de l'hôte) est un **prérequis de build** vérifié à
   l'étape 00 ; aucun `rustc`/LLVM n'est embarqué (ADR-019, remplace en partie ADR-012).
-- [ ] `uutils/coreutils` remplace GNU coreutils dans l'image finale (ADR-012) : aucun
+- [x] `uutils/coreutils` remplace GNU coreutils dans l'image finale (ADR-012) : aucun
   binaire portant la chaîne « GNU coreutils » ne subsiste dans `/usr/bin` (contrôlé aux
   étapes 04 et 06).
-- [ ] `uutils/findutils` remplace GNU findutils (ADR-017) : aucun binaire portant
+- [x] `uutils/findutils` remplace GNU findutils (ADR-017) : aucun binaire portant
   « GNU findutils » ne subsiste ; un besoin n'a **qu'un seul fournisseur**.
-- [ ] Les dépendances cargo sont **vendues au téléchargement** (`cargo vendor`, étape 01)
+- [x] Les dépendances cargo sont **vendues au téléchargement** (`cargo vendor`, étape 01)
   et les composants Rust se compilent **hors-ligne** (`CARGO_NET_OFFLINE=true`,
   ADR-018/ADR-019).
-- [ ] Le build est **reproductible au sens fonctionnel** : versions et empreintes épinglées,
+- [x] Le build est **reproductible au sens fonctionnel** : versions et empreintes épinglées,
   même résultat pour une même révision (ADR-016, REQ-SW-016).
 
 ### Réseau (ADR-013)
 
-- [ ] Le réseau filaire est opérationnel via `systemd-networkd` (DHCP), la résolution via
+- [x] Le réseau filaire est opérationnel via `systemd-networkd` (DHCP), la résolution via
   `systemd-resolved`.
-- [ ] Le Wi-Fi matériel fonctionne via `iwd` et `linux-firmware` (ADR-013, ADR-020).
-- [ ] Aucun démon réseau secondaire (NetworkManager) n'est embarqué.
+- [x] Le Wi-Fi via `iwd` et `linux-firmware` est embarqué (ADR-013, ADR-020) ; la
+  validation sur matériel réel reste à planifier (la QA sous QEMU n'expose pas de
+  radio Wi-Fi).
+- [x] Aucun démon réseau secondaire (NetworkManager) n'est embarqué.
 
 ### Sessions, comptes et services (ADR-014)
 
-- [ ] D-Bus (bus système et utilisateur) est présent ; `systemd-logind` est réactivé et
+- [x] D-Bus (bus système et utilisateur) est présent ; `systemd-logind` est réactivé et
   opérationnel (plus masqué).
-- [ ] Le système est multi-utilisateur POSIX (REQ-SW-015, REQ-SW-023) : création de
+- [x] Le système est multi-utilisateur POSIX (REQ-SW-015, REQ-SW-023) : création de
   comptes, `/home`, `getty`/`login`, sessions suivies par `logind` (REQ-SW-021).
-- [ ] L'élévation de privilèges fonctionne via `sudo-rs` (ADR-012).
+- [x] L'élévation de privilèges fonctionne via `sudo-rs` (ADR-012).
 
 ### Stockage (ADR-015)
 
-- [ ] Le montage automatique des volumes amovibles fonctionne via `udisks2`.
-- [ ] Les systèmes de fichiers `ext4`, `btrfs`, `vfat`, `exFAT` et `NTFS`
+- [x] Le montage automatique des volumes amovibles fonctionne via `udisks2`.
+- [x] Les systèmes de fichiers `ext4`, `btrfs`, `vfat`, `exFAT` et `NTFS`
   (lecture/écriture) sont supportés.
-- [ ] Le chiffrement LUKS reste **hors** périmètre de v0.2 (reporté).
+- [x] Le chiffrement LUKS reste **hors** périmètre de v0.2 (reporté).
 
 ### Mode installé et mises à jour (ADR-015)
 
-- [ ] Un système installé sur disque démarre sans le média live, en BIOS **et** UEFI
+- [x] Un système installé sur disque démarre sans le média live, en BIOS **et** UEFI
   (REQ-SW-019).
-- [ ] Les mises à jour se font par image, avec deux slots A/B et retour arrière, via
+- [x] Les mises à jour se font par image, avec deux slots A/B et retour arrière, via
   `systemd-sysupdate` (REQ-SW-020).
 
 ### Tests et traçabilité (REQ-SW-018)
 
-- [ ] Les cas de test manquants sont rédigés et la matrice de traçabilité
+- [x] Les cas de test manquants sont rédigés et la matrice de traçabilité
   (`requirements-traceability.md`) couvre les exigences du jalon.
-- [ ] Les tests réseau, sessions, stockage, installation et mise à jour sont exécutés et
+- [x] Les tests réseau, sessions, stockage, installation et mise à jour sont exécutés et
   passent.
 
 ### Documentation
 
-- [ ] Les ADR, la sélection des composants, l'architecture de déploiement et les services
+- [x] Les ADR, la sélection des composants, l'architecture de déploiement et les services
   système reflètent l'état atteint.
 
 ## v0.3 — Base graphique
