@@ -142,6 +142,14 @@ extract_tarball() {
     local tarball="$1" dest="${2:-${WORK:-$BUILD_DIR/work}}" base dir
     base="$(basename "$tarball")"
     dir="${base%.tar.xz}"; dir="${dir%.tar.gz}"; dir="${dir%.tgz}"; dir="${dir%.tar.bz2}"
+    # Fiabilité : le nom dérivé peut différer de la racine réelle (archives
+    # « .orig » de Debian, keyutils_1.6.3.orig.tar.gz → keyutils-1.6.3) ; la
+    # véritable racine est le premier composant de la liste des membres.
+    if [[ ! -d "$dest/$dir" ]]; then
+        top="$(tar -tf "$tarball" 2>/dev/null | head -1)"
+        top="${top%%/*}"
+        [[ -n "$top" ]] && dir="$top"
+    fi
     if [[ ! -d "$dest/$dir" ]]; then
         log "extraction : $base"
         mkdir -p "$dest"
