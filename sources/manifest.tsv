@@ -73,3 +73,15 @@ base	LVM2	2.03.43	https://sourceware.org/ftp/lvm2/LVM2.2.03.43.tgz	d87ec0dac9061
 base	libcryptsetup	2.8.8	https://mirrors.edge.kernel.org/pub/linux/utils/cryptsetup/v2.8/cryptsetup-2.8.8.tar.xz	3acfa685f2dd7fcc832e0b77bc7093aa7da554a51ce8dafbb4138eaa854eee35
 base	libnvme	1.16.2	https://github.com/linux-nvme/libnvme/archive/refs/tags/v1.16.2.tar.gz	1d850d5a871559abf641d6e6b63bb86047e4cb26f3ad144597c2c64b3cff7231
 base	libatasmart	0.19	https://0pointer.de/public/libatasmart-0.19.tar.xz	61f0ea345f63d28ab2ff0dc352c22271661b66bf09642db3a4049ac9dbdb0f8d
+base	mtdev	1.1.7	https://bitmath.org/code/mtdev/mtdev-1.1.7.tar.gz	a55bd02a9af4dd266c0042ec608744fff3a017577614c057da09f1f4566ea32c
+base	libevdev	1.13.6	https://www.freedesktop.org/software/libevdev/libevdev-1.13.6.tar.xz	73f215eccbd8233f414737ac06bca2687e67c44b97d2d7576091aa9718551110
+base	libdrm	2.4.134	https://dri.freedesktop.org/libdrm/libdrm-2.4.134.tar.xz	ac5e74d157830eb8bee44c6a6bf3ad49774ef0dd2a72bdad74a8f20308b52a95
+base	wayland	1.26.0	https://gitlab.freedesktop.org/wayland/wayland/-/releases/1.26.0/downloads/wayland-1.26.0.tar.xz	64176eaa46e4969903e286f8e5ef8331affc17fdf03ac9b58381d2b23162b7a3
+base	wayland-protocols	1.49	https://gitlab.freedesktop.org/wayland/wayland-protocols/-/releases/1.49/downloads/wayland-protocols-1.49.tar.xz	ec4c8f74942d6dff7ace8b4ce4764f0ef9ff618a935d974ea77edee2ad240b14
+base	libinput	1.32.0	https://gitlab.freedesktop.org/libinput/libinput/-/archive/1.32.0/libinput-1.32.0.tar.gz	7dd6c1ca964c86eb6810ccd6639cda634e68bdca43bf3afec39e94e942fac8d4
+base	mesa	26.2.5	https://archive.mesa3d.org/mesa-26.2.5.tar.xz	794b3d1729075dae7ebd47c7283b7ca0cdb5dec668f7f11cc0a5d82f6138a0a5
+base	alsa-lib	1.2.16.1	https://www.alsa-project.org/files/pub/lib/alsa-lib-1.2.16.1.tar.bz2	f740db7f488255944ffd4428416ee3390a96742856916433df468c281436480e
+base	pipewire	1.6.9	https://gitlab.freedesktop.org/pipewire/pipewire/-/archive/1.6.9/pipewire-1.6.9.tar.bz2	0cde58c124825bad462b32ab79f9aa286ee7b113cc73a5cda923a4365e752657
+base	wireplumber	0.5.18	https://gitlab.freedesktop.org/pipewire/wireplumber/-/archive/0.5.18/wireplumber-0.5.18.tar.bz2	0c2ea30a7b3bb4ecad456bb27e2c283defda59bb53d97df6917a495f12887e33
+base	lua	5.4.9	https://www.lua.org/ftp/lua-5.4.9.tar.gz	2335b6c582a52654f94612bf10d2f4672805d05329aa6568b1d8cd9e5c6fb8e6
+base	mako	1.4.3	https://files.pythonhosted.org/packages/5a/09/e07c4b5579a79f4b16f8d4f29f6c54514ac787c4ad506b8c4f28a0e6b0bf/mako-1.4.3.tar.gz	cd6537fe88d5fec315c55c2f8529bc4ce7a9a352ad7db3eeaa6a66e2dd4ec37a
