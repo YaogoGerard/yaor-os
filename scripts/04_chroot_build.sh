@@ -1152,7 +1152,10 @@ phase_gmp() {
     require_archive gmp
     local d; d="$(ci_work gmp)"
     log "configure gmp"
-    run chroot_run "cd '$d' && ./configure --prefix=/usr --libdir=/usr/lib --disable-static"
+    # NB : CFLAGS=-std=gnu17 — le test « long long reliability » de GMP 6.3.0
+    # appelle une fonction sans prototype étendu, ce que le C23 (défaut de
+    # GCC 16) rend fatal (trop d'arguments) ; on repasse en gnu17.
+    run chroot_run "cd '$d' && CFLAGS='-O2 -std=gnu17' ./configure --prefix=/usr --libdir=/usr/lib --disable-static"
     log "compilation gmp"
     run chroot_run "cd '$d' && make -j$JOBS"
     log "installation gmp"
