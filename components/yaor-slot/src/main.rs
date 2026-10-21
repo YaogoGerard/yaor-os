@@ -67,6 +67,12 @@ fn run() -> Result<(), String> {
         return Ok(());
     }
     let command = args.remove(0);
+    if command == "-h" || command == "--help" {
+        // Le message d'usage renvoie à « voir --help » : l'option doit
+        // fonctionner aussi comme premier argument, avant une sous-commande.
+        print!("{USAGE}");
+        return Ok(());
+    }
 
     // Analyse des options communes et de l'éventuel argument positionnel.
     let mut opts = Opts {
