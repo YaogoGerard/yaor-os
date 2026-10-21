@@ -71,20 +71,33 @@ Règles :
 
   1. contrôles préalables : privilèges root, disque cible présent et **distinct** du
      disque qui porte le système en cours (`findmnt -no SOURCE /`) ;
-  2. **`systemd-repart --dry-run=yes --empty=allow`** pour l'aperçu, puis
-     **`systemd-repart --dry-run=no --empty=allow`** crée le schéma GPT d'après
-     `/etc/repart.d/*.conf` (idempotent) et formate l'ESP (`vfat`) et `/var` (`ext4`) ;
-     les deux slots racine restent **vides** (étiquette `_empty`, sans système de
-     fichiers) ;
-  3. écriture de l'image racine dans un slot **libre** via **`systemd-sysupdate
-     --image=<disque> update`** : `--image=` fait opérer l'outil **à l'intérieur** du
-     disque cible. La version effectivement écrite est relue sur les étiquettes de
-     partition ;
+  2. **`systemd-repart --dry-run=yes --empty=allow`** pour l'aperçu, puis création
+     effective du schéma GPT avec des **définitions régénérées dans `/run`** (copies de
+     `/etc/repart.d` où la définition du **slot A** porte l'étiquette `yaor-root_<v>`
+     au lieu de `_empty`) : `repart` pose l'étiquette GPT à la création de la
+     partition. L'ESP (`vfat`) et `/var` (`ext4`) sont formatés ; le slot B reste
+     **vide** (étiquette `_empty`, sans système de fichiers) — c'est la cible des
+     mises à jour A/B ;
+  3. écriture de l'image racine **en flux** dans le slot A : l'artefact
+     (`MatchPattern=yaor-root_x86-64_@v.raw.xz` du transfert racine, base `Path=` ou
+     `--source`) est téléchargé (`curl`), puis décompressé (`xz -d`) pendant
+     l'écriture de la partition. La vérification suit la directive `Verify=` du
+     transfert (défaut `checksum` si elle est absente, aligné sur sysupdate 262) :
+     `no` passe la valeur telle quelle, `checksum` télécharge le
+     manifeste `SHA256SUMS` de la base et compare une somme calculée en flux ;
+     `signature` est **refusé** (pas de fournisseur GPG, point ouvert ADR-007).
+     `systemd-sysupdate` n'est **pas** utilisé ici : avec `--image=<disque>`, il
+     attache le disque comme image OS et exige une racine montable, ce qu'aucun
+     slot vierge ne fournit (étiquette `_empty` et attribut « NoAuto » ignorés par le
+     dissect) — voir le module `yaor-install`. La version effectivement écrite est
+     relue sur les étiquettes de partition ;
   4. montage de l'ESP, de la racine et de `/var` du disque cible ; copie du **noyau**
      sous `yaor/vmlinuz-<version>` sur l'ESP ; **peuplement de `/var`** depuis l'image ;
      écriture d'**`/etc/fstab`** ;
-  5. installation de **Limine** : `EFI/BOOT/BOOTX64.EFI` et `limine.conf` sur l'ESP,
-     `limine bios-install` sur la partition « BIOS boot » ;
+  5. installation de **Limine** : `EFI/BOOT/BOOTX64.EFI` **et `limine-bios.sys`** sur
+     l'ESP (le stage 2 BIOS, écrit dans la partition « BIOS boot », cherche ce fichier
+     à la racine d'une partition du disque — sans lui, le démarrage BIOS reste muet),
+     puis `limine bios-install` et `limine.conf` ;
   6. écriture de l'**état des slots** (`/boot/yaor/slots.state`) : le slot écrit est
      **actif et confirmé** ; son entrée est celle par défaut de `limine.conf` ;
   7. démontage et `sync`.
@@ -114,7 +127,7 @@ Définitions dans `/etc/sysupdate.d/` (fournies par le système, voir
 
 ```ini
 [Transfer]
-Verify=signature
+Verify=no
 ProtectVersion=%A
 
 [Source]
@@ -137,7 +150,7 @@ l'état des slots.
 
 ```ini
 [Transfer]
-Verify=signature
+Verify=no
 ProtectVersion=%A
 
 [Source]
@@ -169,8 +182,13 @@ InstancesMax=2
   bas) ;
 - `ProtectVersion=%A` empêche d'écraser la version en cours (celle qui tourne) : `%A`
   lit `IMAGE_VERSION=` d'`/etc/os-release` (ADR-022) ;
-- `Verify=signature` : l'image, le noyau et leurs manifestes doivent être **signés**
-  (ADR-007) ; une vérification qui échoue **n'écrit aucun slot**.
+- Vérification de l'image téléchargée : sysupdate 262 télécharge lui-même le
+  manifeste `SHA256SUMS` de la base et valide la **somme SHA-256** de l'artefact
+  (`--verify <digest>` inconditionnel pour les sources URL) ; une somme invalide
+  **n'écrit aucun slot**. La directive `Verify=` (tri-state en 262, défaut
+  `true`) réclame en **plus** la signature GPG du manifeste (`SHA256SUMS.asc`) :
+  les définitions portent explicitement `Verify=no`, la vérification par
+  signature restant un point ouvert (ADR-007).
 
 `systemd-sysupdate` et `systemd-repart` sont des **fonctions optionnelles** de systemd.
 systemd étant bâti `-Dauto_features=disabled`, elles exigent d'être activées :
@@ -211,13 +229,25 @@ version_b=2026.10.12
 
 **Séquence de mise à jour :**
 
-1. `yaor-slot update` ordonne `systemd-sysupdate update`, puis identifie le slot écrit
+1. `yaor-slot update` purge d'abord les slots partiels (`systemd-sysupdate vacuum`) :
+   un téléchargement interrompu (réseau, ressource refusée) laisse un slot « partial »
+   que systemd-sysupdate compte parmi les instances disponibles et refuse de
+   re-télécharger tant qu'il existe ; puis il ordonne `systemd-sysupdate update`,
+   identifie le slot écrit
    (par différence d'étiquettes de partition : celle qui n'est plus `_empty` et porte une
    nouvelle version) et enregistre `version_<slot>` ; il pose `trying=<slot>`,
    `attempts_left=N` et repointe l'entrée `limine.conf` du nouveau slot : `path:` vers le
    noyau de sa version (`boot():/yaor/vmlinuz-<v>`) et `cmdline: root=` vers sa partition
    (`yaor-root_<v>`), puis en fait l'entrée par défaut ;
-2. à chaque démarrage, `yaor-slot.service` (avant `sysinit`) décrémente `attempts_left` ;
+2. à chaque démarrage, `yaor-slot.service` décrémente `attempts_left` ; l'unité exige le
+   montage de `/boot` (`RequiresMountsFor=/boot`, l'ESP étant un montage fstab) et est
+   `WantedBy=multi-user.target` avec `Before=multi-user.target` : le décrément (et
+   l'éventuel retour arrière) précède toujours la confirmation, service après
+   multi-user. Le point est sensible : vouloir l'unité depuis `sysinit.target` ou
+   `local-fs.target` ajoute un ordre cyclique (transitif, par `boot.mount` puis
+   `basic.target`) que systemd résout en **supprimant le job** au démarrage
+   (« ordering cycle… Job deleted ») : le confirm re-promeut alors le slot en essai au
+   lieu du retour arrière (TEST-UPD-001) ;
 3. si le système atteint `yaor-slot-confirm.service` (après `multi-user.target`, test de
    santé : cible `sysupdate` active, réseau, montage de `/var`), `yaor-slot ok` promeut le
    slot (`confirmed=<slot>`, `active=<slot>`, `trying=` vide) ;
@@ -283,7 +313,10 @@ Ces points ne sont **pas** encore tranchés et devront l'être pour clore le mod
   réseau suppose de prévoir une source locale (`Type=regular-file`) — non retenu pour
   l'instant, la distribution live restant légère (≤ ~150 Mio) ;
 - **politique de clés** (ADR-007) : la clé publique de vérification des mises à jour doit
-  être provisionnée dans le système.
+  être provisionnée dans le système. En l'état de systemd 262, `Verify=` (tri-state,
+  défaut `true`) réclame la signature GPG du manifeste `SHA256SUMS.asc` ; la somme de
+  l'artefact reste toujours vérifiée. Écart QA/produit documenté : `Verify=no` explicite
+  dans les définitions et dans le flux d'installation (deux passes en flux).
 
 ## Erreurs et défaillances
 
