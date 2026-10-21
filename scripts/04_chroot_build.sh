@@ -1327,9 +1327,10 @@ phase_rust_coreutils() {
     # passe par l'environnement (CARGO_NET_OFFLINE), pas par une variable de make.
     # MULTICALL=y : un seul binaire « coreutils » + liens symboliques. Les
     # ~100 binaires séparés pèsent ~200 Mio, hors budget (~150 Mio) ; le
-    # multicall tient en ~20 Mio. Les liens écrasent les binaires d'un
-    # précédent passage : « make uninstall » nettoie d'abord.
-    run chroot_rust "cd '$d' && make -s uninstall PREFIX=/usr MULTICALL=y SKIP_UTILS='more kill' MANPAGES=n COMPLETIONS=n LOCALES=n INSTALL=/build/work/.gnu-install 2>/dev/null || true"
+    # multicall tient en ~20 Mio. Le GNUmakefile crée les liens avec
+    # « ln -f » : un précédent passage (binaires séparés) est écrasé sans
+    # étape de nettoyage — un « make uninstall » effacerait « env » et
+    # rendrait le chroot inutilisable avant la réinstallation.
     run chroot_rust "cd '$d' && make install PREFIX=/usr MULTICALL=y SKIP_UTILS='more kill' MANPAGES=n COMPLETIONS=n LOCALES=n INSTALL=/build/work/.gnu-install"
     # GNU coreutils installe « chroot » dans /usr/sbin ; uutils l'installe
     # dans /usr/bin. La variante GNU sbin (résiduelle de l'amorce du chroot,
