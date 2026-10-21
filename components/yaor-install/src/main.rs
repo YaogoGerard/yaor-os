@@ -3,12 +3,28 @@
 //! Enchaîne, sur un disque cible :
 //!
 //! 1. création idempotente du schéma GPT par `systemd-repart` (ESP, « BIOS
-//!    boot », deux slots racine A/B, `/var`) ;
-//! 2. écriture de l'image racine dans un slot par `systemd-sysupdate`
-//!    (`--image=<disque>`) ;
+//!    boot », deux slots racine A/B, `/var`) ; la définition du premier slot
+//!    racine est réécrite dans `/run` avec l'étiquette `yaor-root_<version>` :
+//!    `repart` la pose à la création de la partition, dispensant de retoucher
+//!    la table GPT après coup ;
+//! 2. écriture de l'image racine (téléchargée en flux depuis la source des
+//!    transferts, décompressée et copiée dans le slot A) ;
 //! 3. copie du noyau et écriture de `limine.conf` sur l'ESP ;
 //! 4. installation de Limine (UEFI et BIOS) ;
 //! 5. écriture de l'état des slots (`yaor-slot`).
+//!
+//! `systemd-sysupdate` n'est pas utilisé à l'installation : son mode
+//! `--image=<disque>` attache le disque comme image OS et exige une racine
+//! montable (`DISSECT_IMAGE_REQUIRE_ROOT`), alors que les slots vides portent
+//! justement l'étiquette « _empty » et l'attribut « NoAuto » que le dissect
+//! ignore — il échoue donc sur un disque neuf (« No suitable root partition
+//! found in image »). Les mises à jour A/B, elles, restent gérées par
+//! `systemd-sysupdate` depuis le système installé (pas de dissect : la racine
+//! du système en cours sert de contexte, et `yaor-slot` pilote le slot libre).
+//!
+//! Aucune dépendance externe (bibliothèque standard seule) ; les outils
+//! appelés (`systemd-repart`, `curl`, `xz`, `sha256sum`, Limine) font partie
+//! du système live.
 //!
 //! Aucune dépendance externe (bibliothèque standard seule).
 
@@ -21,6 +37,12 @@ use yaor_common::{limine_kernel_path, Slot, ESP_YAOR_DIR, ROOT_LABEL_PREFIX};
 
 /// Outil Limine (outil de build de l'hôte embarqué dans le média, ADR-010).
 const LIMINE: &str = "/usr/bin/limine";
+/// Définitions repart du système (schéma GPT).
+const REPART_DISTRI_DIR: &str = "/etc/repart.d";
+/// Définitions de transferts sysupdate (source et vérification de l'image).
+const SYSUPDATE_DISTRI_DIR: &str = "/etc/sysupdate.d";
+/// Définitions repart régénérées pour l'installation (tmpfs, volatiles).
+const REPART_INSTALL_DIR: &str = "/run/yaor-install/repart";
 /// Fichiers Limine à copier sur l'ESP.
 const LIMINE_SHARE: &str = "/usr/share/limine";
 /// Point de montage temporaire de l'ESP pendant l'installation.
@@ -43,7 +65,8 @@ USAGE :
 OPTIONS :
     --disk <DEV>            disque cible (obligatoire), ex. /dev/sdb
     --version <VERSION>     version de l'image à installer (obligatoire)
-    --source <CHEMIN|URL>   source des transferts (systemd-sysupdate)
+    --source <CHEMIN|URL>   surcharge la base des artefacts racine
+                            (défaut : Path= du transfert racine)
     --yes                   ne pas demander de confirmation
     --dry-run               n'écrit rien ; affiche le plan
     -h, --help              affiche cette aide
@@ -244,24 +267,25 @@ fn install(opts: &Opts) -> Result<(), String> {
         return Ok(());
     }
 
-    // 1. Schéma GPT (repart écrit avec --dry-run=no ; systemd 262 fait
-    //    --dry-run=yes par défaut).
+    // 1. Schéma GPT : définitions régénérées pour poser l'étiquette du slot A
+    //    à la création (la préversion avec --dry-run montre le plan).
     section("Création du schéma GPT");
+    let defs = preparer_definitions(&opts.version)?;
     exec(
         "systemd-repart",
-        &["--dry-run=no", "--empty=allow", "--pretty=yes", &opts.disk],
+        &[
+            &format!("--definitions={defs}"),
+            "--dry-run=no",
+            "--empty=allow",
+            "--pretty=yes",
+            &opts.disk,
+        ],
     )?;
 
-    // 2. Image racine dans un slot.
-    section("Écriture de l'image racine (systemd-sysupdate)");
-    let image_arg = format!("--image={}", opts.disk);
-    let mut args = vec!["update", image_arg.as_str()];
-    let src;
-    if let Some(s) = &opts.source {
-        src = format!("--transfer-source={s}");
-        args.push(&src);
-    }
-    exec("systemd-sysupdate", &args)?;
+    // 2. Image racine écrite en flux dans le slot A (téléchargement →
+    //    vérification éventuelle de la somme → décompression à l'écriture).
+    section("Écriture de l'image racine");
+    ecrire_image_racine(&opts.disk, &opts.version, &opts.source)?;
 
     // 3. Retrouver le slot écrit.
     let version = version_installee(&opts.disk)?;
@@ -315,6 +339,209 @@ fn install(opts: &Opts) -> Result<(), String> {
 fn section(titre: &str) {
     eprintln!("\n== {titre} ==");
 }
+
+// --- Définitions repart et transferts ----------------------------------------
+
+/// Prépare les définitions repart de l'installation dans `/run/yaor-install/repart`
+/// : copies de `/etc/repart.d`, où la **première** définition de slot racine
+/// (« root-a ») reçoit l'étiquette `yaor-root_<version>` au lieu de « _empty ».
+/// `repart` pose l'étiquette GPT à la création de la partition — inutile de la
+/// retoucher après l'écriture de l'image. Les définitions ultérieures de slot
+/// racine (slot B) restent « _empty » : ce sont elles que `systemd-sysupdate`
+/// ciblera lors des mises à jour A/B.
+fn preparer_definitions(version: &str) -> Result<String, String> {
+    let dir = Path::new(REPART_INSTALL_DIR);
+    let _ = std::fs::remove_dir_all(dir);
+    creer_dossier(dir)?;
+    let src_dir = Path::new(REPART_DISTRI_DIR);
+    let mut defs: Vec<PathBuf> = std::fs::read_dir(src_dir)
+        .map_err(|e| format!("lecture de {} : {e}", src_dir.display()))?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().map(|e| e == "conf").unwrap_or(false))
+        .collect();
+    defs.sort();
+    let mut slot_a_traite = false;
+    for src in defs {
+        let nom = src
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let mut texte = std::fs::read_to_string(&src)
+            .map_err(|e| format!("lecture de {} : {e}", src.display()))?;
+        if !slot_a_traite && texte.contains("Type=root-x86-64") {
+            // Slot A : l'étiquette porte la version dès la création de la
+            // partition (repart écrit la table GPT une fois pour toutes).
+            texte = texte.replace(
+                "Label=_empty",
+                &format!("Label={ROOT_LABEL_PREFIX}{version}"),
+            );
+            slot_a_traite = true;
+        }
+        let dest = dir.join(&nom);
+        std::fs::write(&dest, texte)
+            .map_err(|e| format!("écriture de {} : {e}", dest.display()))?;
+    }
+    if !slot_a_traite {
+        return Err(format!(
+            "aucune définition de slot racine (Type=root-x86-64) dans {REPART_DISTRI_DIR}"
+        ));
+    }
+    Ok(REPART_INSTALL_DIR.to_string())
+}
+
+/// Description du transfert racine, extraite de `/etc/sysupdate.d/*.transfer`
+/// (celui qui écrit une **partition** — le transfert du noyau écrit un fichier).
+struct TransfertRacine {
+    /// `Path=` de la section Source : base des artefacts (URL ou chemin).
+    base: String,
+    /// `MatchPattern=` : motif du nom d'artefact, `@v` remplacé par la version.
+    motif: String,
+    /// `Verify=` : « checksum » (défaut), « signature » ou « no ».
+    verify: String,
+}
+
+/// Découpe un fichier de définition en sections (`[Source]`, `[Transfer]`, …).
+fn sections(texte: &str) -> Vec<(String, Vec<String>)> {
+    let mut out: Vec<(String, Vec<String>)> = Vec::new();
+    for line in texte.lines() {
+        let l = line.trim();
+        if l.starts_with('[') && l.ends_with(']') {
+            out.push((l[1..l.len() - 1].to_string(), Vec::new()));
+        } else if !l.is_empty() {
+            if let Some((_, v)) = out.last_mut() {
+                v.push(l.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Valeur d'une clé dans une section donnée.
+fn champ_de(sections: &[(String, Vec<String>)], titre: &str, cle: &str) -> Option<String> {
+    sections
+        .iter()
+        .find(|(t, _)| t == titre)
+        .and_then(|(_, lignes)| {
+            let prefixe = format!("{cle}=");
+            lignes.iter().find_map(|l| {
+                l.strip_prefix(&prefixe)
+                    .map(|v| v.trim().to_string())
+                    .filter(|v| !v.is_empty())
+            })
+        })
+}
+
+fn transfert_racine() -> Result<TransfertRacine, String> {
+    let dir = Path::new(SYSUPDATE_DISTRI_DIR);
+    let mut fichiers: Vec<PathBuf> = std::fs::read_dir(dir)
+        .map_err(|e| format!("lecture de {} : {e}", dir.display()))?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().map(|e| e == "transfer").unwrap_or(false))
+        .collect();
+    fichiers.sort();
+    for p in fichiers {
+        let texte = std::fs::read_to_string(&p)
+            .map_err(|e| format!("lecture de {} : {e}", p.display()))?;
+        // Le transfert racine est celui qui écrit une partition GPT (le
+        // transfert du noyau écrit un fichier régulier).
+        if champ_de(&sections(&texte), "Target", "Type").as_deref() != Some("partition") {
+            continue;
+        }
+        let s = sections(&texte);
+        return Ok(TransfertRacine {
+            base: champ_de(&s, "Source", "Path")
+                .ok_or_else(|| format!("Path= absent de [Source] dans {}", p.display()))?,
+            motif: champ_de(&s, "Source", "MatchPattern")
+                .ok_or_else(|| format!("MatchPattern= absent de [Source] dans {}", p.display()))?,
+            // Défaut « checksum » : aligné sur sysupdate 262 — la directive
+            // Verify (tri-state) ne pilote que la signature du manifeste, la
+            // somme de l'artefact reste toujours vérifiée ; la signature GPG
+            // reste un point ouvert (ADR-007), jamais un défaut.
+            verify: champ_de(&s, "Transfer", "Verify").unwrap_or_else(|| "checksum".into()),
+        });
+    }
+    Err(format!(
+        "aucun transfert racine (cible Type=partition) dans {SYSUPDATE_DISTRI_DIR}"
+    ))
+}
+
+/// URL d'un artefact à partir d'une base `http(s)://` ou d'un répertoire local
+/// (servi alors par curl via `file://`, même chemin de code).
+fn url_de(base: &str, nom: &str) -> Result<String, String> {
+    if base.starts_with("http://") || base.starts_with("https://") {
+        return Ok(format!("{}/{}", base.trim_end_matches('/'), nom));
+    }
+    let local = Path::new(base).join(nom);
+    let abs = local
+        .canonicalize()
+        .map_err(|e| format!("artefact {} introuvable : {e}", local.display()))?;
+    Ok(format!("file://{}", abs.display()))
+}
+
+/// Vérifie la somme SHA-256 de l'artefact (mode `Verify=checksum`) : le
+/// manifeste `SHA256SUMS` de la base est comparé à un calcul en flux
+/// (téléchargement sans écriture disque). Écart v0.2 : `Verify=signature`
+/// exige un fournisseur GPG absent (ADR-007, point ouvert) — refus explicite.
+fn verifier_somme(url_art: &str, base: &str, nom: &str) -> Result<(), String> {
+    let url_sommes = url_de(base, "SHA256SUMS")?;
+    let sommes = capture("curl", &["-sSL", "--fail", &url_sommes])?;
+    let attendu = sommes
+        .lines()
+        .filter(|l| l.contains(nom))
+        .next()
+        .and_then(|l| l.split_whitespace().next())
+        .ok_or_else(|| format!("somme de {nom} absente du manifeste SHA256SUMS"))?
+        .to_string();
+    eprintln!("vérification de la somme SHA-256 de {nom}…");
+    let calcul = capture(
+        "bash",
+        &["-c", &format!("curl -sSL --fail '{url_art}' | sha256sum")],
+    )?;
+    let calcule = calcul.split_whitespace().next().unwrap_or_default();
+    if attendu != calcule {
+        return Err(format!(
+            "somme SHA-256 inattendue pour {nom} : calculé {calcule}, attendu {attendu}"
+        ));
+    }
+    Ok(())
+}
+
+/// Télécharge l'image racine et l'écrit dans le slot A, en flux (aucun
+/// fichier temporaire : `curl | xz -d > partition`), après vérification
+/// éventuelle de sa somme.
+fn ecrire_image_racine(
+    disk: &str,
+    version: &str,
+    source: &Option<String>,
+) -> Result<(), String> {
+    let t = transfert_racine()?;
+    let nom = t.motif.replace("@v", version);
+    let base = source.clone().unwrap_or(t.base);
+    let url_art = url_de(&base, &nom)?;
+    match t.verify.as_str() {
+        "signature" => {
+            return Err(
+                "Verify=signature non pris en charge en v0.2 (aucun fournisseur GPG,\
+ ADR-007 point ouvert) : servez les artefacts avec Verify=checksum ou Verify=no"
+                    .into(),
+            )
+        }
+        "checksum" => verifier_somme(&url_art, &base, &nom)?,
+        "no" => eprintln!("vérification de l'artefact écartée (Verify=no)"),
+        autre => return Err(format!("Verify={autre} inconnu")),
+    }
+    let part = partition_par_etiquette(disk, &format!("{ROOT_LABEL_PREFIX}{version}"))?;
+    eprintln!("écriture de {nom} dans {part}…");
+    exec(
+        "bash",
+        &["-c", &format!("curl -sSL --fail '{url_art}' | xz -d -c > '{part}'")],
+    )?;
+    exec("sync", &[])?;
+    Ok(())
+}
+
 
 fn creer_dossier(p: &Path) -> Result<(), String> {
     std::fs::create_dir_all(p).map_err(|e| format!("création de {} impossible : {e}", p.display()))
@@ -425,6 +652,11 @@ fn ecrire_limine_conf(esp: &Path, version: &str) -> Result<(), String> {
 }
 
 /// Installe Limine : UEFI (copie de BOOTX64.EFI) et BIOS (`limine bios-install`).
+/// En BIOS, le stage 2 (écrit au début de la partition « BIOS boot ») cherche
+/// `limine-bios.sys` à la racine d'une partition du disque (« root, /boot,
+/// /limine ou /boot/limine », cf. avertissement de `limine bios-install`) :
+/// il est copié à la racine de l'ESP, sans quoi le démarrage QEMU/BIOS reste
+/// muet (aucun message, date d'attente indéfinie).
 fn installer_limine(disk: &str, esp: &Path) -> Result<(), String> {
     let efi_dir = esp.join("EFI/BOOT");
     creer_dossier(&efi_dir)?;
@@ -433,6 +665,12 @@ fn installer_limine(disk: &str, esp: &Path) -> Result<(), String> {
     std::fs::copy(&src, &dst)
         .map_err(|e| format!("copie de {} vers {} : {e}", src.display(), dst.display()))?;
     eprintln!("démarrage UEFI installé : {}", dst.display());
+    let bios_sys = Path::new(LIMINE_SHARE).join("limine-bios.sys");
+    let dst_sys = esp.join("limine-bios.sys");
+    std::fs::copy(&bios_sys, &dst_sys).map_err(|e| {
+        format!("copie de {} vers {} : {e}", bios_sys.display(), dst_sys.display())
+    })?;
+    eprintln!("stage 2 BIOS installé : {}", dst_sys.display());
     exec(LIMINE, &["bios-install", disk])?;
     eprintln!("démarrage BIOS installé sur {disk}");
     Ok(())
