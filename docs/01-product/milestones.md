@@ -119,10 +119,43 @@ installé et mises à jour par image. Correspond à la Phase 1 « System ».
 
 ## v0.3 — Base graphique
 
-**Périmètre :** pile graphique, entrée, audio, Wayland (Phase 2 — Graphics, ADR-005).
+**Périmètre :** la pile sous le compositor — rendu GPU (mesa + libdrm), protocoles
+Wayland (libwayland), périphériques d'entrée (libinput + libevdev) et audio
+(pipewire + wireplumber) — validée sous QEMU par la session Wayland de référence
+(ADR-024). Le compositor YAOR, les profils et XWayland relèvent de v0.4 (ADR-005).
 
-**Critères de sortie :** à détailler à l'ouverture du jalon (composants retenus, session
-Wayland de référence, validation sous QEMU).
+**Critères de sortie :**
+
+### Kernel et affichage
+
+- [ ] Le KMS prend l'affichage nativement dès le boot (fbcon sur `simpledrm` /
+  `virtio-gpu`) ; les consoles tty restent accessibles (bascule VT propre).
+
+### Pile userland (ADR-024)
+
+- [ ] `mesa` (EGL/GLES2, llvmpipe) et `libdrm` épinglés dans `sources/manifest.tsv`
+  (SHA-256), construits hors-ligne ; une surface EGL s'initialise et rend (GLES2).
+- [ ] `libwayland` (client + serveur) épinglée et construite ; un client de test
+  dialogue avec le compositor de validation.
+- [ ] `libinput` (+ `libevdev`) livre les événements clavier/pointeur à la session
+  graphique sous QEMU.
+
+### Audio
+
+- [ ] `pipewire` daemon + `wireplumber` politique : un son synthétique est audible
+  via la carte HDA générique (`pw-cat` → `intel-hda`, QEMU).
+
+### Session graphique de référence
+
+- [ ] Le compositor d'exemple Smithay tient une session sur KMS dans le système
+  installé : rendu (rectangle + horloge), entrée (déplacement d'un objet), sortie
+  propre vers la console ; la validation couvre virtio-gpu (KMS) et le repli
+  `simpledrm`.
+
+### Tests et traçabilité (REQ-SW-018)
+
+- [ ] Les cas TEST-GFX-001/002 et les cas audio sont exécutés et passent ; la
+  matrice de traçabilité couvre les exigences graphiques du jalon.
 
 ## v0.4 → v1.0
 

@@ -33,6 +33,22 @@ couche ne nécessite de modification majeure.
 
 Démarrer l'environnement graphique, ouvrir une fenêtre, puis la déplacer et la redimensionner.
 
+## TEST-GFX-002 — Pile graphique et session de référence (v0.3)
+**Vérifie :** ADR-024, REQ-SW-005 (partie pile)
+
+Sous QEMU : le KMS prend l'affichage au boot (fbcon) ; la session de référence
+(compositor d'exemple Smithay) s'ouvre sur KMS, initialise une surface EGL/GLES2 via
+mesa (llvmpipe), reçoit les événements libinput (déplacement d'un objet au
+pointeur, frappe clavier) et redonne proprement la main à la console (bascule VT).
+La validation couvre virtio-gpu et le repli `simpledrm`.
+
+## TEST-AUD-001 — Audio (PipeWire + WirePlumber)
+**Vérifie :** ADR-024
+
+`pipewire` assure le serveur, `wireplumber` la politique : un son synthétique joué
+via `pw-cat` sort sur la carte HDA générique (QEMU `intel-hda`) et `wpctl` liste la
+sortie active (routage ALSA par PipeWire).
+
 ## TEST-DESK-001 — Configuration
 **Vérifie :** REQ-SW-006
 

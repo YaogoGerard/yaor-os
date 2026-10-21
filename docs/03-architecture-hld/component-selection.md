@@ -43,10 +43,11 @@ Existe-t-il une solution ?
 | Installateur | (aucune solution adaptée) | **`yaor-install`** + **`yaor-slot`** (internes, Rust — ADR-015) |
 | Toolchain | Rust, LLVM, GCC | **GCC** (dans l'image) ; **Rust = outil de build** (`rustc`/`cargo` de l'hôte, non embarqué — ADR-019) |
 | Packaging | dpkg/APT, image immuable | **image immuable** (`systemd-sysupdate`, ADR-015) |
-| Compositor | Smithay et autres projets Rust | À évaluer (Phase 2) |
-| Graphics | Mesa et alternatives | À évaluer (Phase 2) |
-| Audio | PipeWire et éventuelles implémentations Rust | À évaluer (Phase 2) |
-| Input | libinput et alternatives | À évaluer (Phase 2) |
+| Compositor | Smithay et autres projets Rust | **Smithay** (ADR-005, Phase 2) |
+| Rendu GPU | Mesa et alternatives | **`mesa` + `libdrm`** (ADR-024, Phase 2) |
+| Audio | PipeWire, PulseAudio, ALSA pur | **`pipewire` + `wireplumber`** (ADR-024, Phase 2) |
+| Protocoles Wayland | libwayland et alternatives | **`libwayland`** (ADR-024, Phase 2) |
+| Périphériques d'entrée | libinput et alternatives | **`libinput` + `libevdev`** (ADR-024, Phase 2) |
 
 > **Principe de non-duplication :** un besoin correspond à **un seul fournisseur**. Un
 > composant Rust retenu **remplace** son homologue C/GNU, qui n'est pas embarqué

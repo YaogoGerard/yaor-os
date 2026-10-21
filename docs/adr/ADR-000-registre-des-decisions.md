@@ -3,7 +3,7 @@
 **Statut :** Accepté
 **Date :** 2026-10-13
 **Décisionnaire(s) :** Équipe YAOR
-**Décisions liées :** ADR-001 à ADR-023
+**Décisions liées :** ADR-001 à ADR-024
 
 ## Contexte
 
@@ -65,6 +65,7 @@ ADR dédié.
 | 44 | Socle cryptographique v0.2 | **OpenSSL et curl intégrés au socle (mode installé : `sysupdate`/`repart`)** — voir ADR-021 |
 | 45 | Version de produit/d'image | **fichier `VERSION` (source unique) → `IMAGE_VERSION` ; apparie racine et noyau** — voir ADR-022 |
 | 46 | Limine dans le média | **Limine copié depuis l'hôte dans l'image live (outil de build, ADR-010/011)** — voir ADR-023 |
+| 47 | Base graphique v0.3 | **mesa + libdrm, libwayland, libinput + libevdev, pipewire + wireplumber ; validation par le compositor d'exemple Smithay** — voir ADR-024 |
 
 ## Conséquences
 
