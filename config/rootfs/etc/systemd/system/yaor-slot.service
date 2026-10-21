@@ -4,10 +4,16 @@ Documentation=man:yaor-slot(8)
 # N'a de sens que sur un système installé : /boot est alors l'ESP monté, porteur
 # de l'état des slots. Sur le média live, /boot n'est pas un point de montage et
 # le service est ignoré.
+RequiresMountsFor=/boot
 ConditionPathIsMountPoint=/boot
 ConditionPathExists=/boot/yaor/slots.state
-After=local-fs.target
-Before=sysinit.target
+# Ordonnée juste avant multi-user.target : d'une part elle exige le montage de
+# /boot (fstab, donc local-fs), d'autre part le décrément d'essais et l'éventuel
+# retour arrière doivent précéder la confirmation (yaor-slot-confirm, après
+# multi-user). Ni sysinit ni local-fs ici : les deux créaient un cycle
+# d'ordonnancement (transitif, par boot.mount puis basic.target) que systemd
+# résout en supprimant le job du démarrage (TEST-UPD-001).
+Before=multi-user.target
 
 [Service]
 Type=oneshot
@@ -17,4 +23,4 @@ RemainAfterExit=yes
 ExecStart=/usr/bin/yaor-slot startup
 
 [Install]
-WantedBy=sysinit.target
+WantedBy=multi-user.target

@@ -7,7 +7,7 @@
 
 use std::env;
 use std::ffi::OsStr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use yaor_common::limine::Config;
@@ -186,6 +186,22 @@ fn save_limine(esp: &std::path::Path, cfg: &Config, dry_run: bool) -> Result<(),
         .map_err(|e| format!("écriture de {} impossible : {e}", path.display()))
 }
 
+// Outil systemd à chemin connu : depuis systemd 262, « systemd-sysupdate »
+// n'est installé que dans /usr/lib/systemd (les unités y font référence,
+// aucun alias /usr/bin) — une résolution par PATH échouerait.
+const SYSTEMD_LIBDIR: &str = "/usr/lib/systemd";
+
+/// Outil systemd : chemin connu dans /usr/lib/systemd s'il y existe, sinon
+/// résolution par PATH (distributions qui l'aliasent en /usr/bin).
+fn outil(nom: &str) -> String {
+    let avec_chemin = format!("{SYSTEMD_LIBDIR}/{nom}");
+    if Path::new(&avec_chemin).exists() {
+        avec_chemin
+    } else {
+        nom.to_string()
+    }
+}
+
 fn exec(program: &str, args: &[String]) -> Result<(), String> {
     let mut cmd = Command::new(program);
     cmd.args(args.iter().map(OsStr::new));
@@ -229,6 +245,24 @@ fn status(opts: &Opts) -> Result<(), String> {
 fn update(opts: &Opts) -> Result<(), String> {
     let state = load_state(&opts.esp)?;
 
+    // Un update interrompu (réseau coupé, ressource refusée) laisse un slot
+    // « partial » que systemd-sysupdate 262 compte comme instance disponible
+    // (« already acquired and partially installed ») et refuse de
+    // re-télécharger tant qu'il existe. On supprime ces slots partiels avant
+    // chaque mise à jour ; les versions installées sont conservées
+    // (transfer_vacuum, systemd 262).
+    let mut vacuum: Vec<String> = vec!["vacuum".to_string()];
+    if !opts.verify {
+        vacuum.push("--verify=no".to_string());
+    }
+    if let Some(src) = &opts.source {
+        vacuum.push(format!("--transfer-source={src}"));
+    }
+    if opts.dry_run {
+        vacuum.push("--dry-run".to_string());
+    }
+    exec(&outil("systemd-sysupdate"), &vacuum)?;
+
     let mut args: Vec<String> = vec!["update".to_string()];
     if !opts.verify {
         args.push("--verify=no".to_string());
@@ -239,7 +273,7 @@ fn update(opts: &Opts) -> Result<(), String> {
     if opts.dry_run {
         args.push("--dry-run".to_string());
     }
-    exec("systemd-sysupdate", &args)?;
+    exec(&outil("systemd-sysupdate"), &args)?;
 
     let present = partitions::list_root_versions_default();
     let (slot, version) = state.reconcile(&present).ok_or_else(|| {
@@ -255,9 +289,20 @@ fn update(opts: &Opts) -> Result<(), String> {
 }
 
 /// `try <slot>` : essaie un slot sans mise à jour.
+///
+/// Le disque fait foi sur la version d'un slot **fraîchement écrit** : l'état
+/// persistant peut rester en retard si `systemd-sysupdate` a tourné en dehors
+/// de `yaor-slot update` (mise à jour scriptée), alors que le retitrage de la
+/// partition (étiquette `yaor-root_<v>` posée par sysupdate) est déjà visible.
+/// Sans changement décelable, l'état enregistré reste la référence (et un slot
+/// sans version, ni fraîche ni persistée, est refusé).
 fn try_slot(opts: &Opts, slot: Slot) -> Result<(), String> {
     let state = load_state(&opts.esp)?;
-    record_and_promote_default(opts, &state, slot, None)
+    let nouvelle = state
+        .reconcile(&partitions::list_root_versions_default())
+        .filter(|(s, _)| *s == slot)
+        .map(|(_, v)| v);
+    record_and_promote_default(opts, &state, slot, nouvelle.as_deref())
 }
 
 /// Écrit l'état (essai en cours) et pointe l'entrée Limine par défaut sur le
