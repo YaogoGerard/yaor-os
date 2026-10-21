@@ -68,13 +68,10 @@ mkdir -p "$ROOTFS_CLEAN"/{proc,sys,dev,run,tmp,mnt,build,sources}
 
 section "Vérification : fournisseurs non dupliqués (ADR-017)"
 # Les composants Rust (uutils) remplacent GNU coreutils/findutils (étape 04).
-# Aucun binaire GNU ne doit subsister : les chaînes « GNU coreutils » /
-# « GNU findutils » figurent dans leur --version et jamais dans les binaires Rust.
-leftovers="$(grep -rl -e 'GNU coreutils' -e 'GNU findutils' \
-    "$ROOTFS_CLEAN"/usr/bin "$ROOTFS_CLEAN"/usr/sbin 2>/dev/null || true)"
-if [[ -n "$leftovers" ]]; then
-    log "binaires GNU coreutils/findutils résiduels :"
-    printf '%s\n' "$leftovers" | sed "s#$ROOTFS_CLEAN/##" >&2
+# Aucun binaire GNU ne doit subsister : contrôle par marqueurs discriminants
+# (check_uutils_replacement, common.sh — un grep de « GNU coreutils » est
+# faux, les aides uutils le citent comme référence de compatibilité).
+if ! check_uutils_replacement "$ROOTFS_CLEAN"; then
     die "intégration Rust incomplète : des binaires GNU subsistent (ADR-017)"
 fi
 log "aucun binaire GNU coreutils/findutils résiduel"

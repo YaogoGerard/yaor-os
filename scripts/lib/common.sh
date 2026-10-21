@@ -136,6 +136,46 @@ STAMP_DIR="$BUILD_DIR/stamps"
 stamp_done() { mkdir -p "$STAMP_DIR"; touch "$STAMP_DIR/$1"; }
 stamp_exists() { [[ -f "$STAMP_DIR/$1" ]]; }
 
+# check_uutils_replacement <base> : aucun binaire GNU coreutils/findutils
+# ne doit subsister dans <base>/usr/bin et <base>/usr/sbin (ADR-017, après la
+# phase rust-coreutils/rust-findutils de l'étape 04). Un simple grep du
+# contenu est faux : les *aides* uutils citent « GNU coreutils » comme
+# référence de compatibilité. Marqueurs discriminants (vérifiés) :
+#  - les binaires uutils coreutils embarquent « uutils » (ex. « (uutils
+#    coreutils) 0.12.0 ») ; les binaires GNU jamais ;
+#  - les binaires uutils findutils embarquent un chemin de crate
+#    « findutils-<version> » (vendored) ; les binaires GNU jamais.
+check_uutils_replacement() {
+    local base="$1" b p
+    local coreutils="arch b2sum base32 base64 basename basenc cat chgrp
+        chmod chown chroot cksum comm cp csplit cut date dd df dir dircolors
+        dirname du echo env expand expr factor false fmt fold groups head
+        hostid hostname id install join link ln logname ls md5sum mkdir
+        mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk
+        pinky pr printenv printf ptx pwd readlink realpath rm rmdir seq
+        sha1sum sha224sum sha256sum sha384sum sha512sum shred shuf sleep
+        sort split stat stdbuf stty sum sync tac tail tee test timeout touch
+        tr true truncate tsort tty uname unexpand uniq unlink uptime users
+        vdir wc who whoami yes ["
+    for b in $coreutils; do
+        for p in "$base/usr/bin/$b" "$base/usr/sbin/$b"; do
+            if [[ -f "$p" ]] && ! grep -qa uutils "$p"; then
+                printf '%s\n' "binaire coreutils non remplacé : ${p#$base/}"
+                return 1
+            fi
+        done
+    done
+    for b in find xargs locate updatedb; do
+        for p in "$base/usr/bin/$b" "$base/usr/sbin/$b"; do
+            if [[ -f "$p" ]] && ! grep -qaE 'uutils|findutils-[0-9]' "$p"; then
+                printf '%s\n' "binaire findutils non remplacé : ${p#$base/}"
+                return 1
+            fi
+        done
+    done
+    return 0
+}
+
 # extract_tarball <archive> [dest] : extrait une archive si nécessaire et
 # affiche le dossier obtenu. dest vaut $WORK (ou build/work) par défaut.
 extract_tarball() {
