@@ -801,8 +801,13 @@ phase_iwd() {
 phase_linux_firmware() {
     require_archive linux-firmware
     local d; d="$(ci_work linux-firmware)"
-    log "installation des microprogrammes (linux-firmware)"
-    run chroot_run "cd '$d' && make install DESTDIR= FIRMWAREDIR=/lib/firmware"
+    log "installation des microprogrammes (linux-firmware, liste restreinte)"
+    # « Un besoin = un fournisseur » et budget live ~150 Mio : le dépôt
+    # complet pèse ~2 Gio une fois installé. v0.2 cible QEMU (virtio :
+    # aucun microprogramme requis) ; on n'installe que les microprogrammes
+    # Ethernet Realtek « rtl_nic », les plus répandus sur les cartes grand
+    # public. Le répertoire est reconstruit de zéro (phase ré-entrantible).
+    run chroot_run "cd '$d' && rm -rf /lib/firmware && mkdir -p /lib/firmware && cp -a --no-preserve=ownership rtl_nic /lib/firmware/"
 }
 
 # === Lot stockage (1/3) : socle GLib et moteurs ============================
@@ -1320,7 +1325,12 @@ phase_rust_coreutils() {
     # (fournis par util-linux). Ne PAS surcharger CARGOFLAGS : le GNUmakefile y
     # ajoute feat_external_libstdbuf (exigé par le binaire stdbuf). Le hors-ligne
     # passe par l'environnement (CARGO_NET_OFFLINE), pas par une variable de make.
-    run chroot_rust "cd '$d' && make install PREFIX=/usr MULTICALL=n SKIP_UTILS='more kill' MANPAGES=n COMPLETIONS=n LOCALES=n INSTALL=/build/work/.gnu-install"
+    # MULTICALL=y : un seul binaire « coreutils » + liens symboliques. Les
+    # ~100 binaires séparés pèsent ~200 Mio, hors budget (~150 Mio) ; le
+    # multicall tient en ~20 Mio. Les liens écrasent les binaires d'un
+    # précédent passage : « make uninstall » nettoie d'abord.
+    run chroot_rust "cd '$d' && make -s uninstall PREFIX=/usr MULTICALL=y SKIP_UTILS='more kill' MANPAGES=n COMPLETIONS=n LOCALES=n INSTALL=/build/work/.gnu-install 2>/dev/null || true"
+    run chroot_rust "cd '$d' && make install PREFIX=/usr MULTICALL=y SKIP_UTILS='more kill' MANPAGES=n COMPLETIONS=n LOCALES=n INSTALL=/build/work/.gnu-install"
     # GNU coreutils installe « chroot » dans /usr/sbin ; uutils l'installe
     # dans /usr/bin. La variante GNU sbin (résiduelle de l'amorce du chroot,
     # ch6) est supprimée — le contrôle suivant ne la tolère pas.

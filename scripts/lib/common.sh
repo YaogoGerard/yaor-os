@@ -60,6 +60,12 @@ YAOR_IMAGE_EXCLUDES=(
     '/usr/bin/ld' '/usr/bin/ld.bfd' '/usr/bin/ld.gold'
     '/usr/bin/as' '/usr/bin/ar' '/usr/bin/ranlib'
     '/usr/bin/nm' '/usr/bin/objcopy' '/usr/bin/objdump'
+    # Outils de construction sans usage runtime (gettext ne sert qu'aux
+    # builds des composants du lot ; gcov/lto-dump sont des outils GCC).
+    '/usr/bin/gcov*' '/usr/bin/lto-dump' '/usr/bin/gperf'
+    '/usr/bin/xgettext' '/usr/bin/msg*'
+    '/usr/lib/libstdc++*' '/usr/lib/lib*san.so*' '/usr/lib/libcc1*'
+    '/usr/lib/libgettext*' '/usr/lib/libtextstyle*'
     '/usr/bin/readelf' '/usr/bin/strip' '/usr/bin/size'
     '/usr/bin/strings' '/usr/bin/addr2line' '/usr/bin/elfedit'
     '/usr/bin/gprof*' '/usr/bin/c++filt'
