@@ -126,6 +126,9 @@ ALL_PHASES=(
     libcryptsetup
     libnvme
     libatasmart
+    # Libbytesize exigera gmp.h/mpfr.h (fournisseurs groupés « toolchain »
+    # déjà dans le lot, ici bâtis en natif pour le chroot).
+    gmp mpfr
     # Lot stockage (3/3, fin) : socle de stockage d'udisks2, puis le démon de
     # montage automatique lui-même (ADR-015).
     libbytesize
@@ -1138,6 +1141,32 @@ phase_libatasmart() {
     log "compilation libatasmart"
     run chroot_run "cd '$d' && make -j$JOBS"
     log "installation libatasmart"
+    run chroot_run "cd '$d' && make install"
+}
+
+# gmp et mpfr : arithmétique arbitraire exigée par libbytesize (gmp.h/mpfr.h
+# sont à la configuration). Les sources sont déjà dans le lot (groupe
+# « toolchain » : elles servent à construire GCC) ; elles sont ici installées
+# en bibliothèques natives du chroot.
+phase_gmp() {
+    require_archive gmp
+    local d; d="$(ci_work gmp)"
+    log "configure gmp"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --libdir=/usr/lib --disable-static"
+    log "compilation gmp"
+    run chroot_run "cd '$d' && make -j$JOBS"
+    log "installation gmp"
+    run chroot_run "cd '$d' && make install"
+}
+
+phase_mpfr() {
+    require_archive mpfr
+    local d; d="$(ci_work mpfr)"
+    log "configure mpfr"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --libdir=/usr/lib --disable-static"
+    log "compilation mpfr"
+    run chroot_run "cd '$d' && make -j$JOBS"
+    log "installation mpfr"
     run chroot_run "cd '$d' && make install"
 }
 
