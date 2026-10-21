@@ -134,8 +134,13 @@ l'ESP) a été mis à jour avec son image et que l'entrée Limine repointe à la
 ## TEST-SEC-001 — Intégrité des sources et des images
 **Vérifie :** REQ-SW-022
 
-Altérer une source (empreinte SHA-256) puis une image de mise à jour (signature) et vérifier
-que le build et `systemd-sysupdate` **refusent** l'élément non conforme, sans modifier le système.
+Altérer une source (empreinte SHA-256) puis une image de mise à jour (somme SHA-256) et
+vérifier que le build et `systemd-sysupdate` **refusent** l'élément non conforme. La
+vérification porte sur la somme du manifeste `SHA256SUMS` (`Verify=no` explicite : le
+digest de l'artefact reste inconditionnel, sa signature GPG est un point ouvert
+ADR-007). Le slot visé reste à l'état « partial » de sysupdate (étiquette cible posée,
+type GPT dérivé) — la version altérée n'est **pas** installée ; le système actif est
+inchangé.
 
 ## TEST-CONFIG-001 — Configuration déclarative
 **Vérifie :** REQ-SW-015
@@ -176,4 +181,33 @@ Activer le profil « barre de menus supérieure + dock » et vérifier la dispos
 **Vérifie :** REQ-SW-010
 
 Activer le profil en mosaïque, ouvrir plusieurs fenêtres et vérifier leur disposition.
+
+## Harnais d'exécution QA
+
+Les cas exécutables en machine virtuelle sont automatisés par le harnais
+`/home/gerard/yaor-qa` (hors dépôt) : `yaexpect.py` pilote la console série de
+QEMU (`-serial stdio`, autologin `root` sur `ttyS0`, marqueurs `QAEND-N`) et
+`t-*.py` enchaînent les scénarios (`t-boot` : TEST-BOOT-001 ; `t-net`/`t-sess`/
+`t-stor` : réseau, sessions, stockage ; `t-install` : TEST-INST-001/002 ;
+`t-update` : TEST-UPD-001 ; `t-sec-img` : TEST-SEC-001 partie image). Les
+artefacts de mise à jour sont servis par un serveur HTTP de l'hôte
+(`qa_http.py`, écarts QA documentés dans `../04-design-lld/installer/installer.md`,
+« Points ouverts »).
+
+Règles d'exécution établies :
+
+- la console série est lente (~1 o/s) : les commandes invité produisent des
+  **sorties compactes** (un chiffre, une ligne) et le parse des chiffres
+  tolère les séquences ANSI/CR du tty ;
+- après un reformattage GPT massif (écriture de 2 Gio par sysupdate), les
+  outils invités s'appuyant sur udev (`lsblk`) peuvent suspendre : le slot
+  écrit est déduit **côté hôte** du stdout de sysupdate
+  (« as /proc/self/fd/3pN », N = index GPT : 3 = A, 4 = B) ;
+- après un reboot invité suivi en session, l'attente porte sur le marqueur
+  **unique par démarrage** (ligne d'autologin agetty), pas sur une invite
+  déjà présente dans le tampon ;
+- un update interrompu laisse un slot « partial » compté comme instance
+  disponible (« already acquired ») : `yaor-slot update` ordonne
+  `systemd-sysupdate vacuum` avant chaque mise à jour (les versions
+  installées sont conservées, `transfer_vacuum` 262).
 
