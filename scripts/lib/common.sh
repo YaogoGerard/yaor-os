@@ -145,7 +145,11 @@ extract_tarball() {
     if [[ ! -d "$dest/$dir" ]]; then
         log "extraction : $base"
         mkdir -p "$dest"
-        tar -xf "$tarball" -C "$dest"
+        # NB : --no-same-owner — dans un build sans privilèges réels (espace
+        # d'utilisateurs, ADR-001), « chown » vers un uid/gid de l'archive non
+        # mappé échoue (EINVAL) ; tout le contenu appartient à l'utilisateur
+        # courant (vu root=0 dans le chroot), ce qui est correct pour l'image.
+        tar --no-same-owner -xf "$tarball" -C "$dest"
     fi
     printf '%s\n' "$dest/$dir"
 }

@@ -715,6 +715,14 @@ EOF
 phase_dbus() {
     require_archive dbus
     local d; d="$(ci_work dbus)"
+    # NB : meson_post_install.py chowne le « launch-helper » en
+    # root:messagebus (sgid) — chown vers un gid non mappé dans l'espace
+    # d'utilisateurs du build (ADR-001) échoue (EINVAL) ; l'installation
+    # meson s'arrête. On accepte l'échec du chown : la règle tmpfiles
+    # « yaor.conf » (config/rootfs) rétablit root:messagebus 4750 au
+    # démarrage, quand un vrai root chowne effectivement.
+    log "patch dbus (chown sgid non mappé dans le userns)"
+    run sed -i "s|^            os\.chown(exe_path, 0, dbus_user_data\.pw_gid)\$|            try:\\n                os.chown(exe_path, 0, dbus_user_data.pw_gid)\\n            except OSError as e:\\n                print('chown sgid saute (%s)' % e)|" "$(src_dir dbus)/meson_post_install.py"
     local b="$d/build7"
     log "configure D-Bus (meson, bus système sur libsystemd)"
     run chroot_run "rm -rf '$b' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release -Dsystemd=enabled -Dselinux=disabled -Dapparmor=disabled -Dmodular_tests=disabled -Dinstalled_tests=false -Dintrusive_tests=false -Ddoxygen_docs=disabled -Dducktype_docs=disabled -Dxml_docs=disabled"
@@ -729,8 +737,11 @@ phase_dbus() {
 phase_shadow() {
     require_archive shadow
     local d; d="$(ci_work shadow)"
+    # NB : --without-libbsd — libbsd est hors lot ; shadow embarque sa propre
+    # implémentation OpenBSD de readpassphrase (lib/readpassphrase.c) que
+    # configure exige sinon (readpassphrase() manquante, ni libc ni libbsd).
     log "configure shadow"
-    run chroot_run "cd '$d' && ./configure --sysconfdir=/etc --disable-static --without-su --with-libpam --with-yescrypt --disable-lastlog --with-group-name-max-length=32"
+    run chroot_run "cd '$d' && ./configure --sysconfdir=/etc --disable-static --without-su --without-libbsd --with-libpam --with-yescrypt --disable-lastlog --with-group-name-max-length=32"
     run chroot_run "cd '$d' && make"
     run chroot_run "cd '$d' && make install"
 }
