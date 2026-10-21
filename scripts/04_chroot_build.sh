@@ -581,11 +581,13 @@ phase_linux_pam() {
 phase_util_linux() {
     require_archive util-linux
     local d; d="$(ci_work util-linux)"
-    # v0.2 fournit « login » et « agetty » (consoles) : on retire
-    # --disable-login. su/nologin/runuser/setpriv restent désactivés,
+    # NB : --disable-wall — « wall » s'installe sgid tty, et dans un build
+    # sans privilèges réels (espace d'utilisateurs restreint, ADR-001) chgrp
+    # vers un gid non mappé échoue (EINVAL) ; wall n'est pas requis (logind /
+    # agetty suffisent). su/nologin/runuser/setpriv restent désactivés,
     # l'élévation passant par sudo-rs (un besoin, un fournisseur — ADR-014).
     log "configure util-linux"
-    run chroot_run "cd '$d' && ./configure --bindir=/usr/bin --sbindir=/usr/sbin --libdir=/usr/lib --runstatedir=/run --disable-chfn-chsh --disable-nologin --disable-su --disable-setpriv --disable-runuser --disable-pylibmount --disable-liblastlog2 --disable-static --without-python ADJTIME_PATH=/var/run/adjtime"
+    run chroot_run "cd '$d' && ./configure --bindir=/usr/bin --sbindir=/usr/sbin --libdir=/usr/lib --runstatedir=/run --disable-chfn-chsh --disable-nologin --disable-su --disable-setpriv --disable-runuser --disable-pylibmount --disable-liblastlog2 --disable-wall --disable-static --without-python ADJTIME_PATH=/var/run/adjtime"
     run chroot_run "cd '$d' && make"
     run chroot_run "cd '$d' && make install"
 }
