@@ -134,6 +134,16 @@ ALL_PHASES=(
     libbytesize
     libblockdev
     udisks
+    # Pile graphique v0.3 (ADR-024) : génération Python (mako) et lua (scripts
+    # WirePlumber), audio (alsa-lib avant pipewire), entrée (mtdev + libevdev
+    # avant libinput), puis DRM/Wayland avant mesa ; wireplumber clôt l'audio.
+    # Tout est C : avant kernel/configure-system et les composants Rust.
+    mako packaging pyyaml lua
+    alsa-lib mtdev libevdev
+    libdrm wayland wayland-protocols
+    mesa
+    libinput
+    pipewire wireplumber
     kernel
     # Phase de configuration système : copie config/rootfs et active les
     # services. Elle précède les composants Rust pour s'appuyer sur les outils
@@ -183,15 +193,22 @@ host_rust_dir() {
     home="$(getent passwd "$user" 2>/dev/null | cut -d: -f6)"
     [[ -n "$home" ]] || home="${HOME:-/root}"
 
-    if command -v rustc >/dev/null 2>&1; then
-        rr="$(rustc --print sysroot 2>/dev/null || true)"
-    elif [[ -x "$home/.cargo/bin/rustc" ]]; then
+    # 1. Le rustup-proxy du compte qui a lancé la compilation. S'il échoue
+    #    (HOME redirigé vers /root par sudo : aucun défaut configuré), on
+    #    NE SSH PAS court-circuite la découverte — « rr » reste vide et la
+    #    recherche continue.
+    if [[ -x "$home/.cargo/bin/rustc" ]]; then
         rr="$("$home/.cargo/bin/rustc" --print sysroot 2>/dev/null || true)"
-    else
+        [[ -n "$rr" && -x "$rr/bin/rustc" ]] || rr=""
+    fi
+    # 2. Recherche directe dans les rustup HOME plausibles.
+    if [[ -z "$rr" ]]; then
         for root in "${RUSTUP_HOME:-$home/.rustup}" "$home/.rustup" /root/.rustup; do
-            for cand in "$root"/toolchains/*; do
-                if [[ -x "$cand/bin/rustc" ]]; then rr="$cand"; break 2; fi
-            done
+            if [[ -d "$root/toolchains" ]]; then
+                for cand in "$root"/toolchains/*; do
+                    if [[ -x "$cand/bin/rustc" ]]; then rr="$cand"; break 2; fi
+                done
+            fi
         done
     fi
 
@@ -265,6 +282,26 @@ mount_if() {
     else
         mount -v "$@" "$mp"
     fi
+}
+
+# ensure_chroot_mounts : (re)monte l'environnement d'exécution du chroot.
+# Idempotent (mount_if vérifie le point de montage). Extrait de phase_setup
+# pour être rappelé au début de chaque exécution : lors d'une construction
+# incrémentale où setup est déjà marquée, les montages de la session
+# précédente sont absents et toutes les phases chroot échoueraient sinon.
+ensure_chroot_mounts() {
+    mount_if "$LFS/dev"           --bind /dev
+    mount_if "$LFS/dev/pts"       --bind /dev/pts
+    mount_if "$LFS/proc"          -t proc  proc
+    mount_if "$LFS/sys"           -t sysfs sysfs
+    mount_if "$LFS/run"           -t tmpfs tmpfs
+    mount_if "$LFS/sources"       --bind "$SOURCES_DIR"
+    mount_if "$LFS/build/work"    --bind "$WORK"
+    mount_if "$LFS/build/config"  --bind "$CONFIG_DIR"
+    # Composants internes (Rust) : sources du dépôt, montées pour compilation.
+    mount_if "$LFS/build/components" --bind "$COMPONENTS_DIR"
+    # Toolchain Rust de l'hôte, montée en lecture seule (ADR-019).
+    ensure_host_rust
 }
 
 # --- Phase : préparation du chroot -----------------------------------------
@@ -394,18 +431,7 @@ EOF
 
     section "Montages du chroot"
     mkdir -pv "$LFS/dev/pts" "$LFS/dev/shm"
-    mount_if "$LFS/dev"           --bind /dev
-    mount_if "$LFS/dev/pts"       --bind /dev/pts
-    mount_if "$LFS/proc"          -t proc  proc
-    mount_if "$LFS/sys"           -t sysfs sysfs
-    mount_if "$LFS/run"           -t tmpfs tmpfs
-    mount_if "$LFS/sources"       --bind "$SOURCES_DIR"
-    mount_if "$LFS/build/work"    --bind "$WORK"
-    mount_if "$LFS/build/config"  --bind "$CONFIG_DIR"
-    # Composants internes (Rust) : sources du dépôt, montées pour compilation.
-    mount_if "$LFS/build/components" --bind "$COMPONENTS_DIR"
-    # Toolchain Rust de l'hôte, montée en lecture seule (ADR-019).
-    ensure_host_rust
+    ensure_chroot_mounts
     mkdir -pv "$LFS/run/lock"
 
     section "Vérification du chroot"
@@ -1220,6 +1246,176 @@ phase_udisks() {
     run chroot_run "cd '$d' && make install"
 }
 
+# === Pile graphique v0.3 (ADR-024) ==========================================
+# Rendu GPU (mesa + libdrm), protocoles Wayland, entrée (libinput) et audio
+# (pipewire + wireplumber). Aucun X11 : les client et compositor passent par
+# EGL/GBM sur Wayland (ADR-005). Le rendu logiciel est softpipe : llvmpipe exigerait
+# LLVM à l'exécution (~130 Mio de libLLVM dans l'image), ce qui heurterait le
+# budget live (~150 Mio) ; softpipe suffit à la validation QEMU (TEST-GFX-002).
+# Construction hors-ligne : --wrap-mode=nodownload sur tout projet meson.
+# XWayland n'est pas dans le périmètre v0.3 (livré au compositor, v0.4, ADR-005).
+
+# mako : moteur de gabarits Python pur exigé par la génération de code de mesa.
+phase_mako() {
+    install_pure_python mako mako
+}
+
+# packaging : version/releases pure Python ; mesa l'utilise (via
+# packaging.version.Version) pour contrôler la version de mako — python 3.13
+# n'a plus distutils en secours, donc packaging est requis pour la build.
+phase_packaging() {
+    install_pure_python packaging src/packaging
+}
+
+# pyyaml : lecture des registres YAML par les générateurs de mesa (sondée dans
+# la même boucle que mako) — pure Python, sous lib/yaml dans le sdist.
+phase_pyyaml() {
+    install_pure_python pyyaml lib/yaml
+}
+
+# lua : machine à scripts de WirePlumber (sa dépendance « politique audio »).
+# Bibliothèque partagée ajoutée à la main : le Makefile de lua ne livre qu'un
+# archive statique ; le .pc journalier (lua5.4.pc) nourrit la recherche meson.
+phase_lua() {
+    require_archive lua
+    local d; d="$(ci_work lua)"
+    log "compilation lua (MYCFLAGS -fPIC pour la lib partageable)"
+    run chroot_run "cd '$d' && make -j$JOBS linux MYCFLAGS='-fPIC -DLUA_USE_LINUX'"
+    run chroot_run "cd '$d' && make INSTALL_TOP=/usr install"
+    # Bibliothèque partagée : les objets de liblua.a privés des points d'entrée
+    # (lua.o et luac.o contiennent chacun un main()).
+    run chroot_run "cd '$d/src' && ls *.o | grep -vx -e lua.o -e luac.o > /tmp/lua-objs && gcc -shared -Wl,-soname,liblua.so.5.4 -o /usr/lib/liblua.so.5.4.9 \$(sed 's|^|./|' /tmp/lua-objs) && rm /tmp/lua-objs"
+    run chroot_run "ln -sf liblua.so.5.4.9 /usr/lib/liblua.so.5.4 && ln -sf liblua.so.5.4 /usr/lib/liblua.so"
+    cat > "$LFS/usr/lib/pkgconfig/lua5.4.pc" <<'EOF'
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: Lua
+Description: An Extensible Extension Language
+Version: 5.4.9
+Requires:
+Libs: -L${libdir} -llua
+Cflags: -I${includedir}
+EOF
+    run chroot_run "ln -sf lua5.4.pc /usr/lib/pkgconfig/lua54.pc && ln -sf lua5.4.pc /usr/lib/pkgconfig/lua-5.4.pc"
+}
+
+# alsa-lib : interface ALSA userland ; pipewire s'y appuie pour capturer et
+# rendre le son (serveur spa-alsa) ; pw-cat sort vers le HDA de QEMU.
+phase_alsa_lib() {
+    require_archive alsa-lib
+    local d; d="$(ci_work alsa-lib)"
+    log "configure alsa-lib"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --sysconfdir=/etc --disable-static --disable-python"
+    run chroot_run "cd '$d' && make"
+    run chroot_run "cd '$d' && make install"
+}
+
+# mtdev : décapsulation multipoint brute exigée par libinput.
+phase_mtdev() {
+    require_archive mtdev
+    local d; d="$(ci_work mtdev)"
+    log "configure mtdev"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --disable-static"
+    run chroot_run "cd '$d' && make"
+    run chroot_run "cd '$d' && make install"
+}
+
+# libevdev : abstraction des pilotes evdev consommée par libinput.
+phase_libevdev() {
+    require_archive libevdev
+    local d; d="$(ci_work libevdev)"
+    log "configure libevdev (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Ddocumentation=disabled -Dtests=disabled"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# libdrm : enveloppes DRM/KMS userland (mémoire GBM) pour mesa et le
+# compositor ; les seuls pilotes utiles ici sont génériques et virtio (QEMU).
+phase_libdrm() {
+    require_archive libdrm
+    local d; d="$(ci_work libdrm)"
+    log "configure libdrm (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Dtests=false -Dintel=disabled -Dradeon=disabled -Damdgpu=disabled -Dnouveau=disabled -Dvmwgfx=disabled -Dfreedreno=disabled -Detnaviv=disabled"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# wayland : bibliothèques client et serveur du protocole (wayland-scanner inclus,
+# sur expat) ; documentation et tests coupés (doxygen/pytest absents).
+phase_wayland() {
+    require_archive wayland
+    local d; d="$(ci_work wayland)"
+    log "configure wayland (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Ddocumentation=false -Ddtd_validation=false -Dtests=false"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# wayland-protocols : définitions des extensions Wayland consommées par mesa,
+# libinput et le compositor (paquet de données, sans compilation).
+phase_wayland_protocols() {
+    require_archive wayland-protocols
+    local d; d="$(ci_work wayland-protocols)"
+    log "installation wayland-protocols (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Dtests=false"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# mesa : rendu pour le compositor (proxy EGL/GLES2/GBM). Sans X11 (glx coupé),
+# sans Vulkan, sans LLVM : le seul pilote Gallium est softpipe. Outillage :
+# python-mako (génération), flex/bison (analyses), wayland+wayland-protocols,
+# libdrm et zstd (cache des shaders).
+phase_mesa() {
+    require_archive mesa
+    local d; d="$(ci_work mesa)"
+    log "configure mesa (meson, softpipe sans LLVM)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Dplatforms=wayland -Dglx=disabled -Degl=enabled -Dgbm=enabled -Dgles1=disabled -Dgles2=enabled -Dglvnd=disabled -Dllvm=disabled -Dgallium-drivers=softpipe -Dvulkan-drivers= -Dbuild-tests=false -Dxmlconfig=disabled -Dtools= -Dvalgrind=disabled"
+    log "compilation mesa"
+    run chroot_run "cd '$d' && ninja -C build7"
+    log "installation mesa"
+    run chroot_run "cd '$d' && ninja -C build7 install"
+}
+
+# libinput : normalisation des événements d'entrée (clavier, pointeur) pour le
+# compositor, sur libevdev + mtdev + libgudev (udev logind, ADR-014). La GUI de
+# débogage, les tests et libwacom (tablettes, hors cible) sont écartés.
+phase_libinput() {
+    require_archive libinput
+    local d; d="$(ci_work libinput)"
+    log "configure libinput (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Ddebug-gui=false -Dtests=false -Dlibwacom=false"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# pipewire : serveur de session audio ADR-024 (sortie spa-alsa vers le HDA de
+# QEMU, TEST-AUD-001). Les gestionnaires de session (sous-projets meson) sont
+# écartés : WirePlumber est bâti séparément ci-dessous.
+phase_pipewire() {
+    require_archive pipewire
+    local d; d="$(ci_work pipewire)"
+    log "configure pipewire (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Dsession-managers='[]' -Ddocs=disabled -Dman=disabled"
+    log "compilation pipewire"
+    run chroot_run "cd '$d' && ninja -C build7"
+    log "installation pipewire"
+    run chroot_run "cd '$d' && ninja -C build7 install"
+}
+
+# wireplumber : gestionnaire de session et de politique audio (routage ALSA),
+# sur la liblua système (dosée 5.4) ; introspection g-ir et docs absents du
+# socle. Son unité utilisateur est activée globalement en configure-system.
+phase_wireplumber() {
+    require_archive wireplumber
+    local d; d="$(ci_work wireplumber)"
+    log "configure wireplumber (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Dsystem-lua=true -Ddoc=disabled -Dtests=false"
+    log "compilation wireplumber"
+    run chroot_run "cd '$d' && ninja -C build7"
+    log "installation wireplumber"
+    run chroot_run "cd '$d' && ninja -C build7 install"
+}
+
 # --- Phase : noyau ----------------------------------------------------------
 phase_kernel() {
     require_archive linux
@@ -1293,6 +1489,14 @@ phase_configure_system() {
     chroot_run "ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf"
     # Profils Wi-Fi persistants d'iwd (l'unité les crée aussi à l'exécution).
     chroot_run "mkdir -p -m 0700 /var/lib/iwd"
+
+    section "Activation des services (audio de session — ADR-024)"
+    # Pipewire et WirePlumber sont des unités de SESSION utilisateur : la prise
+    # du son (pw-cat → spa-alsa → HDA) marche pour tout compte qui ouvre une
+    # session (ptest TEST-AUD-001, compositor v0.4). --global pose les liens
+    # dans /etc/systemd/user/...wants : vaut pour root comme pour l'utilisateur.
+    # pipewire.socket (activation par prise de contact) démarre pipewire.service.
+    chroot_run "systemctl --global enable pipewire.socket wireplumber.service"
 }
 
 # --- Phases : composants Rust (uutils) --------------------------------------
@@ -1400,6 +1604,11 @@ for s in binutils1 gcc1 headers glibc libstdcxx; do
     stamp_exists "$s" || die "étape 02 incomplète (marqueur manquant : $s)"
 done
 stamp_exists "ch6.gcc2" || die "étape 03 incomplète (marqueur manquant : ch6.gcc2)"
+
+# Les montages du chroot doivent être en place avant TOUTE phase (c'est un
+# prérequis d'exécution, pas un produit de build : on les (re)pose à chaque
+# exécution, même si setup est déjà marquée).
+ensure_chroot_mounts
 
 if (($# == 0)); then
     for p in "${ALL_PHASES[@]}"; do run_phase "$p"; done
