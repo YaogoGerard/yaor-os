@@ -1321,12 +1321,24 @@ phase_rust_coreutils() {
     # ajoute feat_external_libstdbuf (exigé par le binaire stdbuf). Le hors-ligne
     # passe par l'environnement (CARGO_NET_OFFLINE), pas par une variable de make.
     run chroot_rust "cd '$d' && make install PREFIX=/usr MULTICALL=n SKIP_UTILS='more kill' MANPAGES=n COMPLETIONS=n LOCALES=n INSTALL=/build/work/.gnu-install"
+    # GNU coreutils installe « chroot » dans /usr/sbin ; uutils l'installe
+    # dans /usr/bin. La variante GNU sbin (résiduelle de l'amorce du chroot,
+    # ch6) est supprimée — le contrôle suivant ne la tolère pas.
+    run chroot_run "rm -f /usr/sbin/chroot"
     # « make install » couvre aussi « [ » (copie de « test »), comme GNU.
     # Contrôle de non-duplication : aucun binaire GNU ne doit subsister dans le
     # PATH (la chaîne « GNU coreutils »/« GNU findutils » figure dans leur
     # --version, et jamais dans les binaires Rust).
     log "vérification : plus aucun binaire GNU coreutils/findutils dans /usr/bin"
-    run chroot_run "if grep -rl -e 'GNU coreutils' -e 'GNU findutils' /usr/bin /usr/sbin 2>/dev/null; then echo 'ERREUR : binaires GNU résiduels ci-dessus' >&2; exit 1; fi"
+    # Contrôle de non-duplication. Un simple grep de la chaîne « GNU coreutils »
+    # dans les binaires est faux : les *aides* uutils citent « GNU coreutils »
+    # comme référence de compatibilité. Marqueurs discriminants (vérifiés) :
+    #  - les binaires uutils coreutils embarquent « uutils » (ex. « (uutils
+    #    coreutils) 0.12.0 ») ; les GNU coreutils jamais ;
+    #  - les binaires uutils findutils embarquent un chemin de crate
+    #    « findutils-<version> » (vendored) ; les GNU findutils jamais.
+    run chroot_run "for b in arch b2sum base32 base64 basename basenc cat chgrp chmod chown chroot cksum comm cp csplit cut date dd df dir dircolors dirname du echo env expand expr factor false fmt fold groups head hostid hostname id install join link ln logname ls md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk pinky pr printenv printf ptx pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum sha384sum sha512sum shred shuf sleep sort split stat stdbuf stty sum sync tac tail tee test timeout touch tr true truncate tsort tty uname unexpand uniq unlink uptime users vdir wc who whoami yes; do for p in /usr/bin/\$b /usr/sbin/\$b; do if [ -f \"\$p\" ] && ! grep -qa uutils \"\$p\"; then echo \"ERREUR : binaire coreutils non remplacé : \$p\" >&2; exit 1; fi; done; done"
+    run chroot_run "for b in find xargs locate updatedb; do for p in /usr/bin/\$b /usr/sbin/\$b; do if [ -f \"\$p\" ] && ! grep -qaE 'uutils|findutils-[0-9]' \"\$p\"; then echo \"ERREUR : binaire findutils non remplacé : \$p\" >&2; exit 1; fi; done; done"
     run chroot_run "ls --version | head -1; find --version | head -1"
 }
 
