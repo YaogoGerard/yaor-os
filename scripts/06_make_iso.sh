@@ -92,7 +92,7 @@ section "Limine embarqué dans le média live (ADR-010/ADR-011, ADR-023)"
 # au `bios-install`, et ses fichiers de démarrage (BOOTX64.EFI, limine-bios.sys).
 install -Dm755 "$(command -v limine)" "$ROOTFS_CLEAN/usr/bin/limine"
 mkdir -p "$ROOTFS_CLEAN/usr/share/limine"
-cp -a "$LIMINE_DIR/." "$ROOTFS_CLEAN/usr/share/limine/"
+cp -a --no-preserve=ownership "$LIMINE_DIR/." "$ROOTFS_CLEAN/usr/share/limine/"
 log "limine embarqué : /usr/bin/limine + $(ls "$LIMINE_DIR" | wc -l) fichiers dans /usr/share/limine"
 
 section "Création de l'image EROFS (zstd)"
