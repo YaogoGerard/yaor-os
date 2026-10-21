@@ -85,7 +85,10 @@ truncate -s "$SLOT_BYTES" "$ROOT_IMG"
 mkfs.ext4 -q -F -L yaor-root -d "$STAGE" "$ROOT_IMG"
 
 section "Compression de l'image racine (xz)"
-xz -T0 -9 "$ROOT_IMG"
+# -T1 : mono-thread — au-delà de 4 threads xz -9 consomme ~670 Mio/thread
+# (OOM-killed à 8 jobs sur une machine 8 Gio : .xz tronqué à 0 octet) et le
+# résultat reste déterministe.
+xz -T1 -9 "$ROOT_IMG"
 
 section "Noyau destiné à l'ESP (vmlinuz-$PRODVER)"
 install -m 0644 "$LFS/boot/vmlinuz-$KVER" "$BOOT_DIR/vmlinuz-$PRODVER"
