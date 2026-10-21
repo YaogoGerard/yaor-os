@@ -267,7 +267,7 @@ mount_if() {
 # --- Phase : préparation du chroot -----------------------------------------
 phase_setup() {
     section "Arborescence FHS de la cible"
-    mkdir -pv "$LFS"/{etc,usr/{bin,lib,sbin,include},var/{log,tmp,lib,spool},run/lock,srv,opt,root,home,mnt,proc,sys,dev/{pts,shm},tmp,boot,sources,build/{work,config}}
+    mkdir -pv "$LFS"/{etc,usr/{bin,lib,sbin,include},var/{log,tmp,lib,spool},run/lock,srv,opt,root,home,mnt,proc,sys,dev/{pts,shm},tmp,boot,sources,build/{work,config,components}}
 
     local l name tgt
     for l in bin:usr/bin sbin:usr/sbin lib:usr/lib lib64:usr/lib; do
