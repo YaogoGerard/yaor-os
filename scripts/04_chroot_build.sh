@@ -1054,7 +1054,11 @@ phase_curl() {
 # json-c 0.19 : requis par cryptsetup et libnvme. Correctif pour headers/pkg-config.
 phase_json_c() {
     require_archive json-c
-    local d h; d="$(ci_work json-c)"; h="$(src_dir json-c)"
+    local d h; h="$(src_dir json-c)"
+    # Ré-extraction propre : la phase peut être rejetée (stamp retiré) et le
+    # correctif ci-dessous n'est pas ré-appliquable (patch non idempotent).
+    rm -rf "$h"
+    d="$(ci_work json-c)"; h="$(src_dir json-c)"
     if [ -f "$ROOT/patches/json-c-0.19-meson-pc.patch" ]; then
         patch -p1 -d "$h" -i "$ROOT/patches/json-c-0.19-meson-pc.patch"
     fi
