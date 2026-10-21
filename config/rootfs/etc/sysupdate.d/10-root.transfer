@@ -7,11 +7,15 @@
 # (InstancesMax=2) ; `yaor-slot` choisit celle que Limine démarre.
 #
 # Source « url-file » : l'étape 03 télécharge le manifeste « SHA256SUMS »
-# (et sa signature « SHA256SUMS.gpg ») sous « Path », puis l'image listée.
+# (à terme sa signature « SHA256SUMS.asc ») sous « Path », puis l'image
+# listée ; sysupdate télécharge lui-même « SHA256SUMS » et valide la somme.
 [Transfer]
-# Vérification cryptographique de l'image téléchargée (ADR-007, REQ-SW-022) :
-# la clé publique d'import doit être provisionnée (voir systemd-sysupdate).
-Verify=signature
+# Vérification de l'image téléchargée : le digest SHA-256 de l'artefact (lu
+# dans « SHA256SUMS ») est TOUJOURS vérifié par (sd-pull), quelle que soit
+# cette directive. « Verify=no » la limite à cette vérification : sa valeur
+# par défaut (true) réclamerait en plus la signature « SHA256SUMS.asc » du
+# manifeste, indisponible sans fournisseur GPG (point ouvert ADR-007).
+Verify=no
 # Protection de la version en cours : « %A » se développe en « IMAGE_VERSION= »
 # d'/etc/os-release. La version protégée n'est jamais écrasée, ce qui évite de
 # corrompre la racine en cours d'exécution. Prérequis : définir IMAGE_VERSION=

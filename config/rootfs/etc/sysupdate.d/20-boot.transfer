@@ -13,8 +13,10 @@
 # « 20- » garantit que le point d'entrée (la racine que Limine démarre) est écrit
 # avant le noyau qui l'accompagne.
 [Transfer]
-# Vérification cryptographique de la source (ADR-007, REQ-SW-022).
-Verify=signature
+# Vérification de la source : le digest SHA-256 de l'artefact est toujours
+# vérifié par (sd-pull) ; « Verify=no » évite d'exiger la signature du
+# manifeste « SHA256SUMS.asc » (point ouvert ADR-007).
+Verify=no
 # Protection de la version en cours (« %A » = IMAGE_VERSION, ADR-022).
 ProtectVersion=%A
 
