@@ -76,6 +76,9 @@ YAOR_IMAGE_EXCLUDES=(
     '/usr/bin/perl*' '/usr/lib/perl5/*'
     '/usr/bin/file' '/usr/lib/libmagic*'
     '/usr/share/misc/magic.mgc'
+    # Conversions de jeux de caractères de glibc : UTF-8 et ASCII sont
+    # intégrés à glibc ; le reste (16 Mio) n'a pas d'usage v0.2.
+    '/usr/lib/gconv/*'
 )
 
 # yaor_rsync_image <src> <dst> [keep|drop] — synchronise l'arborescence livrée en
@@ -83,7 +86,10 @@ YAOR_IMAGE_EXCLUDES=(
 # « keep » (défaut) le conserve (image installable).
 yaor_rsync_image() {
     local src="$1" dst="$2" boot="${3:-keep}" e
-    local args=(-a --delete)
+    # -H : uutils multicall installe ses entrées /usr/bin comme liens
+    # matériels vers le binaire « coreutils » ; sans -H, rsync les
+    # matérialise en copies indépendantes (×13 Mio par utilitaire).
+    local args=(-a -H --delete)
     for e in "${YAOR_IMAGE_EXCLUDES[@]}"; do args+=(--exclude="$e"); done
     [[ "$boot" == "drop" ]] && args+=(--exclude='/boot/*')
     rsync "${args[@]}" "$src/" "$dst/"

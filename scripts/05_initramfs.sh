@@ -46,18 +46,37 @@ ln -sf usr/lib   "$WORKDIR/lib"
 ln -sf usr/lib   "$WORKDIR/lib64"
 
 # Ajoute un binaire + toutes ses dépendances partagées (résolues par le
-# chargeur du système cible, pas celui de l'hôte).
+# chargeur du système cible, pas celui de l'hôte). Les liens matériels sont
+# dédupliqués : uutils multicall installe chaque utilitaire comme lien dur
+# vers « coreutils » (13 Mio) — copier chaque nom séparement gonfle
+# l'initramfs d'un facteur ~8. Les binaires sont strippés à la volée.
+declare -A COPIED
+copy_bin() { # <src> <dst> : copie strippée, en respectant les liens durs
+    local src="$1" dst="$2" key tmp
+    key="$(stat -c%d:%i "$src")"
+    mkdir -p "$(dirname "$dst")"
+    if [[ -n "${COPIED[$key]:-}" ]]; then
+        ln -f "${COPIED[$key]}" "$dst"
+        return 0
+    fi
+    tmp="$dst.strip"
+    cp -f "$src" "$tmp"
+    strip --strip-unneeded "$tmp" 2>/dev/null || true
+    chmod 755 "$tmp"
+    mv -f "$tmp" "$dst"
+    COPIED[$key]="$dst"
+}
 add_bin() {
     local src="$1"
     [[ -f "$src" ]] || return 0
-    install -Dm755 "$src" "$WORKDIR${src#"$LFS"}"
+    copy_bin "$src" "$WORKDIR${src#"$LFS"}"
     "$LOADER" --library-path "$LFS/usr/lib" --list "$src" 2>/dev/null |
         awk -F'=>' '/=>/ { print $2 }' |
         awk '{ print $1 }' |
         while IFS= read -r lib; do
             case "$lib" in
                 "$LFS"/*)
-                    install -Dm755 "$lib" "$WORKDIR${lib#"$LFS"}"
+                    copy_bin "$lib" "$WORKDIR${lib#"$LFS"}"
                     ;;
             esac
         done
