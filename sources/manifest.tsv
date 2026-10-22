@@ -87,3 +87,4 @@ base	lua	5.4.9	https://www.lua.org/ftp/lua-5.4.9.tar.gz	2335b6c582a52654f94612bf
 base	mako	1.4.3	https://files.pythonhosted.org/packages/5a/09/e07c4b5579a79f4b16f8d4f29f6c54514ac787c4ad506b8c4f28a0e6b0bf/mako-1.4.3.tar.gz	cd6537fe88d5fec315c55c2f8529bc4ce7a9a352ad7db3eeaa6a66e2dd4ec37a
 base	packaging	26.3	https://files.pythonhosted.org/packages/7d/fa/3944b40b07da9ce895c0e6303a5ab7d53da063554f534556b134a54d6093/packaging-26.3.tar.gz	94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79
 base	pyyaml	6.0.3	https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz	d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f
+base	libsndfile	1.2.2	https://github.com/libsndfile/libsndfile/releases/download/1.2.2/libsndfile-1.2.2.tar.xz	3799ca9924d3125038880367bf1468e53a1b7e3686a934f098b7e1d286cdb80e

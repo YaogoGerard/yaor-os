@@ -143,7 +143,7 @@ ALL_PHASES=(
     libdrm wayland wayland-protocols
     mesa
     libinput
-    pipewire wireplumber
+    libsndfile pipewire wireplumber
     kernel
     # Phase de configuration système : copie config/rootfs et active les
     # services. Elle précède les composants Rust pour s'appuyer sur les outils
@@ -1284,7 +1284,11 @@ phase_lua() {
     run chroot_run "cd '$d' && make INSTALL_TOP=/usr install"
     # Bibliothèque partagée : les objets de liblua.a privés des points d'entrée
     # (lua.o et luac.o contiennent chacun un main()).
-    run chroot_run "cd '$d/src' && ls *.o | grep -vx -e lua.o -e luac.o > /tmp/lua-objs && gcc -shared -Wl,-soname,liblua.so.5.4 -o /usr/lib/liblua.so.5.4.9 \$(sed 's|^|./|' /tmp/lua-objs) && rm /tmp/lua-objs"
+    # Bibliothèque partagée : les objets de liblua.a privés des points d'entrée
+    # (lua.o et luac.o contiennent chacun un main()). -lm requis : les
+    # fonctions mathématiques (sinh…) sont sinon manquantes à la charge, et le
+    # module lua-scripting de wireplumber échoue en boucle (constat QA).
+    run chroot_run "cd '$d/src' && ls *.o | grep -vx -e lua.o -e luac.o > /tmp/lua-objs && gcc -shared -Wl,-soname,liblua.so.5.4 -o /usr/lib/liblua.so.5.4.9 \$(sed 's|^|./|' /tmp/lua-objs) -lm && rm /tmp/lua-objs"
     run chroot_run "ln -sf liblua.so.5.4.9 /usr/lib/liblua.so.5.4 && ln -sf liblua.so.5.4 /usr/lib/liblua.so"
     cat > "$LFS/usr/lib/pkgconfig/lua5.4.pc" <<'EOF'
 prefix=/usr
@@ -1386,6 +1390,19 @@ phase_libinput() {
     log "configure libinput (meson)"
     run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Ddebug-gui=false -Dtests=false -Dlibwacom=false"
     run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# libsndfile : lecture/écriture WAV/RAW/PCM — pw-cat l'exige même pour le
+# rendu brut ; sans elle, meson écarte pw-cat (« pw-cat: command not found »,
+# constat QA TEST-AUD-001). Les encodages compressés (vorbis/flac/opus) sont
+# auto-désactivés faute de leurs bibliothèques : le pcm suffit au test.
+phase_libsndfile() {
+    require_archive libsndfile
+    local d; d="$(ci_work libsndfile)"
+    log "configure libsndfile (gnu17 : le code ALAC redéfinit false/true, mots-clés depuis C23)"
+    run chroot_run "cd '$d' && CFLAGS='-std=gnu17' ./configure --prefix=/usr --sysconfdir=/etc --disable-static --disable-octave --disable-alsa"
+    run chroot_run "cd '$d' && make"
+    run chroot_run "cd '$d' && make install"
 }
 
 # pipewire : serveur de session audio ADR-024 (sortie spa-alsa vers le HDA de
@@ -1491,12 +1508,51 @@ phase_configure_system() {
     chroot_run "mkdir -p -m 0700 /var/lib/iwd"
 
     section "Activation des services (audio de session — ADR-024)"
+    # Unités REPLACÉES : les unités en amont (socket-activation + sandbox
+    # SystemCallFilter/MemoryDenyWriteExecute + BindsTo sur pipewire.service)
+    # provoque une sortie immédiate des deux processus dans l'invité
+    # (constat QA 2026-10-22 : exit 0 en ~1 s, aucun journal, alors que le
+    # même binaire lancé manuellement ou sous systemd-run --user tourne sans
+    # fin, et que toute la pile — wpctl, Sinks ALSA, pw-cat — fonctionne dans
+    # cette manœuvre). Les unités minimales ci-dessous reproduisent la topologie
+    # qui marche : pipewire.service Activé dans default.target crée lui-même
+    # ses sockets ; wireplumber est tiré après lui.
+    cat > /usr/lib/systemd/user/pipewire.service <<'YEOF'
+[Unit]
+Description=PipeWire Multimedia Service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/pipewire
+Restart=on-failure
+Slice=session.slice
+
+[Install]
+WantedBy=default.target
+YEOF
+    cat > /usr/lib/systemd/user/wireplumber.service <<'YEOF'
+[Unit]
+Description=Multimedia Service Session Manager
+After=pipewire.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/wireplumber
+Restart=on-failure
+Slice=session.slice
+Environment=GIO_USE_VFS=local
+
+[Install]
+WantedBy=pipewire.service
+YEOF
     # Pipewire et WirePlumber sont des unités de SESSION utilisateur : la prise
     # du son (pw-cat → spa-alsa → HDA) marche pour tout compte qui ouvre une
     # session (ptest TEST-AUD-001, compositor v0.4). --global pose les liens
     # dans /etc/systemd/user/...wants : vaut pour root comme pour l'utilisateur.
-    # pipewire.socket (activation par prise de contact) démarre pipewire.service.
-    chroot_run "systemctl --global enable pipewire.socket wireplumber.service"
+    # Le service est activé directement (création de ses sockets par le serveur)
+    # ; la socket systemd n'est plus activée — elle se lierait au pied
+    # pipewire-0 avant le serveur et créerait un conflit de liaison.
+    chroot_run "systemctl --global disable pipewire.socket 2>/dev/null; systemctl --global enable pipewire.service wireplumber.service"
 }
 
 # --- Phases : composants Rust (uutils) --------------------------------------
