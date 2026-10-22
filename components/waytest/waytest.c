@@ -95,6 +95,14 @@ struct waytest {
     unsigned long pcount;       /* événements pointeur (motion/axis) */
     unsigned long bcount;       /* boutons pressés */
 
+    /* Requêtes interactives xdg (TEST-GFX-001) : la 1re pression
+     * interactive livrée (milieu ou droit) déclenche move, la 2e resize
+     * — le TYPE est découplé du bouton physique, car le canal PS/2
+     * sacrifie des événements de bouton à la traversée evdev/libinput
+     * (SYN_DROPPED pendant les rafales). La sérial passée est celle de
+     * CETTE pression — le grab implicite correspond. */
+    int icount;                 /* pressions interactives livrées */
+
     /* Position pointeur courant : l'objet (carré fuchsia) se rend ici —
      * la preuve visuelle du « déplacement d'un objet au pointeur ». */
     int32_t lsq_x, lsq_y;       /* -1 : jamais entré */
@@ -383,13 +391,32 @@ pointer_button(void *data, struct wl_pointer *wp, uint32_t serial,
                uint32_t time, uint32_t button, uint32_t state)
 {
     struct waytest *s = data;
-    (void)wp; (void)serial; (void)time;
+    (void)wp; (void)time;
     fprintf(stderr, "waytest: pointer button %u %s (B=%lu)\n",
             button, state == WL_POINTER_BUTTON_STATE_PRESSED ? "press" : "release",
             s->bcount + (state == WL_POINTER_BUTTON_STATE_PRESSED ? 1 : 0));
     if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
         s->bcount++;
         draw(s);
+        /* Requêtes interactives xdg (TEST-GFX-001) : 1re livraison =
+         * xdg_toplevel_move, 2e = xdg_toplevel_resize (bord droit + bas),
+         * les suivantes sans effet. La sérial passée est celle de CETTE
+         * pression — le grab implicite du compositor correspond
+         * (pointer.has_grab côté serveur). */
+        if (button == 274 || button == 273) {
+            s->icount++;
+            if (s->icount == 1) {
+                xdg_toplevel_move(s->top, s->seat, serial);
+                fprintf(stderr, "waytest: move request envoyé (serial=%u)\n",
+                        serial);
+            } else if (s->icount == 2) {
+                xdg_toplevel_resize(s->top, s->seat, serial,
+                                    XDG_TOPLEVEL_RESIZE_EDGE_RIGHT |
+                                    XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM);
+                fprintf(stderr, "waytest: resize request envoyé (serial=%u)\n",
+                        serial);
+            }
+        }
     }
 }
 
