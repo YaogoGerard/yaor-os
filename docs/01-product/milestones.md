@@ -25,7 +25,7 @@ l'approche de ce jalon : seuls `v0.1` (atteint) et `v0.2` (en cours) sont figés
 |---|---|---|---|
 | v0.1 | Système de construction + boot Linux minimal | Phase 0 — Foundation | Atteint |
 | v0.2 | Userland fonctionnel et composants sélectionnés | Phase 1 — System | Atteint |
-| v0.3 | Base graphique | Phase 2 — Graphics | À venir |
+| v0.3 | Base graphique | Phase 2 — Graphics | En cours |
 | v0.4 | Compositor YAOR | Phase 2 — Graphics | À venir |
 | v0.5 | Desktop Core configurable | Phase 3 — YAOR Desktop | À venir |
 | v0.6 | Profils Caméléon | Phase 4 — Caméléon | À venir |
@@ -128,13 +128,15 @@ Wayland (libwayland), périphériques d'entrée (libinput + libevdev) et audio
 
 ### Kernel et affichage
 
-- [ ] Le KMS prend l'affichage nativement dès le boot (fbcon sur `simpledrm` /
+- [x] Le KMS prend l'affichage nativement dès le boot (fbcon sur `simpledrm` /
   `virtio-gpu`) ; les consoles tty restent accessibles (bascule VT propre).
 
 ### Pile userland (ADR-024)
 
-- [ ] `mesa` (EGL/GLES2, llvmpipe) et `libdrm` épinglés dans `sources/manifest.tsv`
-  (SHA-256), construits hors-ligne ; une surface EGL s'initialise et rend (GLES2).
+- [x] `mesa` (EGL/GLES2, softpipe — llvmpipe écarté du live sans LLVM) et
+  `libdrm` épinglés dans `sources/manifest.tsv` (SHA-256), construits
+  hors-ligne ; une surface EGL s'initialise et rend (GLES2) — QA anvil :
+  EGL 1.5 initialisé sur `PLATFORM_GBM_KHR`.
 - [ ] `libwayland` (client + serveur) épinglée et construite ; un client de test
   dialogue avec le compositor de validation.
 - [ ] `libinput` (+ `libevdev`) livre les événements clavier/pointeur à la session
@@ -142,7 +144,7 @@ Wayland (libwayland), périphériques d'entrée (libinput + libevdev) et audio
 
 ### Audio
 
-- [ ] `pipewire` daemon + `wireplumber` politique : un son synthétique est audible
+- [x] `pipewire` daemon + `wireplumber` politique : un son synthétique est audible
   via la carte HDA générique (`pw-cat` → `intel-hda`, QEMU).
 
 ### Session graphique de référence
@@ -151,6 +153,12 @@ Wayland (libwayland), périphériques d'entrée (libinput + libevdev) et audio
   installé : rendu (rectangle + horloge), entrée (déplacement d'un objet), sortie
   propre vers la console ; la validation couvre virtio-gpu (KMS) et le repli
   `simpledrm`.
+
+  Avancement (v0.4, QA `t-anvil`) : anvil 0.7.0 tient la session 12 s (KMS
+  master via seatd), socket `wayland-1` publiée, sortie propre au SIGTERM,
+  screendump QMP pendant la session = 100 % px lumineux (scanout basculé sur
+  le framebuffer du compositor, rendu softpipe). Reste : client de test
+  (rectangle + horloge), entrée réelle, repli `simpledrm`.
 
 ### Tests et traçabilité (REQ-SW-018)
 
