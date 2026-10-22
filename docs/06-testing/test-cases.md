@@ -33,11 +33,13 @@ couche ne nécessite de modification majeure.
 
 Démarrer l'environnement graphique, ouvrir une fenêtre, puis la déplacer et la redimensionner.
 
-Statut v0.3 (anvil 0.7, QA `t-anvil.py`) : fenêtre ouverte ✓ (client
+Statut v0.3 (QA `t-anvil.py`, build ISO courante) : fenêtre ouverte ✓ (client
 `waytest` mappé, screendump avec contenu client, focus clavier au clic) ;
-entrées livrées ✓ (injection QMP PS/2 + touches) ; déplacement/redimensionnement
-✗ (anvil 0.7 n'implémente pas de grabs move/resize — géré par le compositor
-YAOR aux jalons suivants).
+entrées livrées ✓ (injection QMP PS/2 + touches) ;
+déplacement/redimensionnement ✓ — anvil arme ses grabs serveur sur les
+requêtes xdg interactives du client (alternance : 1re pression interactive
+livrée = `move`, 2e = `resize` ; run vert virtio : 507 px de déplacement
+mesuré au scanout + 8 buffers recréés ; repli simpledrm : 13/13).
 
 ## TEST-GFX-002 — Pile graphique et session de référence (v0.3)
 **Vérifie :** ADR-024, REQ-SW-005 (partie pile)
@@ -48,10 +50,10 @@ mesa (softpipe), reçoit les événements libinput (déplacement d'un objet au
 pointeur, frappe clavier) et redonne proprement la main à la console (bascule VT).
 La validation couvre virtio-gpu et le repli `simpledrm`.
 
-Statut v0.3 : **vert** — `t-gfx-live.py` 8/8, `t-anvil.py` 10/10, repli
-`t-anvil-simpledrm.py` 11/11 (le rendu est softpipe, cf. `graphics-tests.md`) ;
-les événements livrés au client de validation `waytest` font foi pour le
-chemin libinput → compositor → client.
+Statut v0.3 : **vert** — `t-gfx-live.py` 8/8, `t-anvil.py` 12/12 (virtio),
+repli `t-anvil-simpledrm.py` 13/13 (le rendu est softpipe, cf.
+`graphics-tests.md`) ; les événements livrés au client de validation
+`waytest` font foi pour le chemin libinput → compositor → client.
 
 ## TEST-AUD-001 — Audio (PipeWire + WirePlumber)
 **Vérifie :** ADR-024
