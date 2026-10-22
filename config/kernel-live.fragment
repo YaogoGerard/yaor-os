@@ -79,6 +79,12 @@ CONFIG_FB=y
 CONFIG_FRAMEBUFFER_CONSOLE=y
 CONFIG_INPUT_EVDEV=y
 
+# --- Entrées QEMU (TEST-GFX-001/002) ---
+# i8042 est déjà posé en defconfig ; le clavier (atkbd) aussi. La souris PS/2
+# auxiliaire de QEMU exige MOUSE_PS2 : sans elle, aucun événement pointeur
+# n'arrive à libinput (sessions graphiques validées sous QEMU sans souris).
+CONFIG_MOUSE_PS2=y
+
 # --- Exigences de systemd (PID 1) ---
 CONFIG_PROC_FS=y
 CONFIG_SYSFS=y

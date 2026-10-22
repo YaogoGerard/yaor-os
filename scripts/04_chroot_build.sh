@@ -150,6 +150,10 @@ ALL_PHASES=(
     # xkeyboard-config (données règles evdev), seatd (libseat), puis anvil
     # bâti après tout le graphique (drm/gbm/egl/libinput).
     hwdata displayinfo pixman libxkbcommon xkeyboard-config seatd smithay
+    # Client de validation Wayland (rectangle + horloge, journal des
+    # entrées) : la libwayland et wayland-protocols (xdg-shell.xml) sont
+    # déjà installées ; le binaire part dans le live pour la QA compositor.
+    waytest
     kernel
     # Phase de configuration système : copie config/rootfs et active les
     # services. Elle précède les composants Rust pour s'appuyer sur les outils
@@ -1506,6 +1510,27 @@ phase_smithay() {
     log "compilation d'anvil (Smithay v0.7.0, hors-ligne)"
     run chroot_rust "cd '$d' && cargo build --release --locked -p anvil --no-default-features --features udev"
     run chroot_run "install -Dm755 '$d/target/release/anvil' /usr/bin/anvil"
+}
+
+# waytest : client Wayland de validation (TEST-GFX-001/002, ADR-024). Sources
+# internes du dépôt (components/waytest, montées sur /build/components) : la
+# fenêtre xdg-shell rend le rectangle + horloge via wl_shm et journale chaque
+# événement pointeur/clavier reçu — la preuve que libinput livre bien les
+# entrées de la session au client. Le code de protocole xdg-shell est
+# généré par wayland-scanner depuis wayland-protocols (déjà épinglé, un seul
+# fournisseur : le XML amont de l'archive déjà vendored).
+phase_waytest() {
+    # src_dir renvoie un chemin hôte ; la génération tourne dans le chroot
+    # : même arbre, vue chroot absolue (cf. ci_work).
+    local d; d="/build/work/$(basename "$(src_dir wayland-protocols)")"
+    local gen="/build/work/waytest-gen"
+    log "génération des liaisons xdg-shell (wayland-scanner)"
+    run chroot_run "rm -rf '$gen' && mkdir -p '$gen' && \
+        wayland-scanner client-header '$d/stable/xdg-shell/xdg-shell.xml' '$gen/xdg-shell-client-protocol.h' && \
+        wayland-scanner private-code '$d/stable/xdg-shell/xdg-shell.xml' '$gen/xdg-shell-protocol.c'"
+    log "compilation de waytest (client de validation, libwayland-client seule)"
+    run chroot_run "cc -O2 -Wall -Wextra -I'$gen' -o /usr/bin/waytest /build/components/waytest/waytest.c '$gen/xdg-shell-protocol.c' -lwayland-client"
+    run chroot_run "test -x /usr/bin/waytest && echo 'waytest installé'"
 }
 
 # pipewire : serveur de session audio ADR-024 (sortie spa-alsa vers le HDA de

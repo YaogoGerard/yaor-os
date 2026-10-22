@@ -149,21 +149,33 @@ Wayland (libwayland), périphériques d'entrée (libinput + libevdev) et audio
 
 ### Session graphique de référence
 
-- [ ] Le compositor d'exemple Smithay tient une session sur KMS dans le système
+- [x] Le compositor d'exemple Smithay tient une session sur KMS dans le système
   installé : rendu (rectangle + horloge), entrée (déplacement d'un objet), sortie
   propre vers la console ; la validation couvre virtio-gpu (KMS) et le repli
   `simpledrm`.
 
-  Avancement (v0.4, QA `t-anvil`) : anvil 0.7.0 tient la session 12 s (KMS
-  master via seatd), socket `wayland-1` publiée, sortie propre au SIGTERM,
-  screendump QMP pendant la session = 100 % px lumineux (scanout basculé sur
-  le framebuffer du compositor, rendu softpipe). Reste : client de test
-  (rectangle + horloge), entrée réelle, repli `simpledrm`.
+  Preuves v0.4 (QA `t-anvil` 10/10, `t-anvil-simpledrm` 11/11 — RC=0) :
+  anvil 0.7.0 tient la session (KMS master via seatd), socket `wayland-1`
+  publiée, screendump QMP avec contenu client = 456 845 px sombres (client
+  `waytest` : rectangle + horloge digitale + compteurs, carré qui suit le
+  pointeur) ; entrées réelles injectées par QEMU (QMP `input-send-event`,
+  pointeur PS/2) traversant evdev → libinput → anvil → waytest (4 clics,
+  3 touches livrés) ; sortie propre au SIGTERM. Repli `simpledrm` couvert
+  (`-vga std`, dmesg + connecteur `Unknown-1`, 2 clics/3 touches livrés).
+  Détails : `docs/06-testing/graphics-tests.md`. Gap renvoyé au compositor
+  YAOR : move/resize de fenêtre (grabs absents d'anvil 0.7).
 
 ### Tests et traçabilité (REQ-SW-018)
 
 - [ ] Les cas TEST-GFX-001/002 et les cas audio sont exécutés et passent ; la
   matrice de traçabilité couvre les exigences graphiques du jalon.
+
+  Avancement (v0.4) : TEST-GFX-002 **vert** (session de référence complète :
+  KMS boot, mesa softpipe, session anvil, client Wayland, entrées libinput,
+  audio, repli simpledrm) ; TEST-AUD-001 vert ; TEST-GFX-001 **partiel**
+  (fenêtre ouverte ✓, entrées ✓ ; déplacer/redimensionner ✗ — grabs absents
+  d'anvil, responsabilité du compositor YAOR) ; audio vert. Matrice de
+  traçabilité : REQ-SW-005 → TEST-GFX-001 + TEST-GFX-002 (ADR-024).
 
 ## v0.4 → v1.0
 

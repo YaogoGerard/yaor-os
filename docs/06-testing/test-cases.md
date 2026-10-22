@@ -33,14 +33,25 @@ couche ne nécessite de modification majeure.
 
 Démarrer l'environnement graphique, ouvrir une fenêtre, puis la déplacer et la redimensionner.
 
+Statut v0.3 (anvil 0.7, QA `t-anvil.py`) : fenêtre ouverte ✓ (client
+`waytest` mappé, screendump avec contenu client, focus clavier au clic) ;
+entrées livrées ✓ (injection QMP PS/2 + touches) ; déplacement/redimensionnement
+✗ (anvil 0.7 n'implémente pas de grabs move/resize — géré par le compositor
+YAOR aux jalons suivants).
+
 ## TEST-GFX-002 — Pile graphique et session de référence (v0.3)
 **Vérifie :** ADR-024, REQ-SW-005 (partie pile)
 
 Sous QEMU : le KMS prend l'affichage au boot (fbcon) ; la session de référence
 (compositor d'exemple Smithay) s'ouvre sur KMS, initialise une surface EGL/GLES2 via
-mesa (llvmpipe), reçoit les événements libinput (déplacement d'un objet au
+mesa (softpipe), reçoit les événements libinput (déplacement d'un objet au
 pointeur, frappe clavier) et redonne proprement la main à la console (bascule VT).
 La validation couvre virtio-gpu et le repli `simpledrm`.
+
+Statut v0.3 : **vert** — `t-gfx-live.py` 8/8, `t-anvil.py` 10/10, repli
+`t-anvil-simpledrm.py` 11/11 (le rendu est softpipe, cf. `graphics-tests.md`) ;
+les événements livrés au client de validation `waytest` font foi pour le
+chemin libinput → compositor → client.
 
 ## TEST-AUD-001 — Audio (PipeWire + WirePlumber)
 **Vérifie :** ADR-024
