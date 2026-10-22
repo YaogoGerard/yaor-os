@@ -64,7 +64,12 @@ YAOR_IMAGE_EXCLUDES=(
     # builds des composants du lot ; gcov/lto-dump sont des outils GCC).
     '/usr/bin/gcov*' '/usr/bin/lto-dump' '/usr/bin/gperf'
     '/usr/bin/xgettext' '/usr/bin/msg*'
-    '/usr/lib/libstdc++*' '/usr/lib/lib*san.so*' '/usr/lib/libcc1*'
+    # NB : libstdc++.so.6 est CONSERVÉE (exclue séparément ci-dessous n'a pas
+    # été possible — la règle générale la visait) : libgallium de mesa (NEEDED
+    # de /usr/lib/gbm/dri_gbm.so) en dépend au runtime, constat QA v0.4
+    # (anvil : « failed to open dri: libstdc++.so.6 »). Sanitizers et libcc1
+    # restent des pure outils de build.
+    '/usr/lib/lib*san.so*' '/usr/lib/libcc1*'
     '/usr/lib/libgettext*' '/usr/lib/libtextstyle*'
     '/usr/bin/readelf' '/usr/bin/strip' '/usr/bin/size'
     '/usr/bin/strings' '/usr/bin/addr2line' '/usr/bin/elfedit'

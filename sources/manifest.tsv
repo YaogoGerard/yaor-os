@@ -88,3 +88,23 @@ base	mako	1.4.3	https://files.pythonhosted.org/packages/5a/09/e07c4b5579a79f4b16
 base	packaging	26.3	https://files.pythonhosted.org/packages/7d/fa/3944b40b07da9ce895c0e6303a5ab7d53da063554f534556b134a54d6093/packaging-26.3.tar.gz	94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79
 base	pyyaml	6.0.3	https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz	d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f
 base	libsndfile	1.2.2	https://github.com/libsndfile/libsndfile/releases/download/1.2.2/libsndfile-1.2.2.tar.xz	3799ca9924d3125038880367bf1468e53a1b7e3686a934f098b7e1d286cdb80e
+base	seatd	0.9.3	https://git.sr.ht/~kennylevinsen/seatd/archive/0.9.3.tar.gz	302564d54d8e28191fadfd734f2675ecb0c9e0615a58011b89ef15dfa4dbaa96	seatd-0.9.3.tar.gz
+# libdisplay-info : parseur EDID/CTA en C, requis à l'édition de liens par la
+# caisse libdisplay-info-sys (< 0.3.0), elle-même tirée par smithay-drm-extras
+# pour la découverture des connecteurs virtio-gpu.
+base	libdisplay-info	0.2.0	https://gitlab.freedesktop.org/emersion/libdisplay-info/-/archive/0.2.0/libdisplay-info-0.2.0.tar.gz	f7331fcaf5527251b84c8fb84238d06cd2f458422ce950c80e86c72927aa8c2b	libdisplay-info-0.2.0.tar.gz
+# hwdata : table PNP-IDs seule dépendance retenue (données EDID, exigées au
+# build de libdisplay-info ; intégration du tableau dans le binaire final) —
+# le reste de hwdata (pci.ids usb.ids) relève des outils d'hôte, pas du live.
+base	hwdata	0.412	https://github.com/vcrhonek/hwdata/archive/refs/tags/v0.412.tar.gz	f0c64cd7e31d70a5fb3a52e53ab50a61e74c0421a6381eaa45114eec3bde5fe7	hwdata-0.412.tar.gz
+# pixman : composition logicielle (renderer_pixman de Smithay via pixman-sys).
+base	pixman	0.46.4	https://gitlab.freedesktop.org/pixman/pixman/-/archive/pixman-0.46.4/pixman-pixman-0.46.4.tar.gz	1b8288086e5da0ec5cb95cf174a919cc6fe4548f10dc3cd873b3bb1d9e8fdeab	pixman-0.46.4.tar.gz
+# libxkbcommon : bibliothèque de mise en page clavier — la caisse xkbcommon
+# 0.7.0 embarquée dans le verrou de Smithay est une liaison FFI
+# (-lxkbcommon) ; la caisse anvil 0.8.0 reste pur Rust, sans C à installer.
+base	libxkbcommon	1.13.2	https://github.com/xkbcommon/libxkbcommon/archive/refs/tags/xkbcommon-1.13.2.tar.gz	acc4d5f7c3cbba5f9f8d08d8bdbeede84ecede46792f47929aa9321873385528	libxkbcommon-1.13.2.tar.gz
+# xkeyboard-config : données xkb (règles evdev, keycodes, symdef…) prises au
+# chemin par défaut /usr/share/X11/xkb ; sans elles anvil échoue à l'init du
+# clavier (constat QA v0.4 : XKB-338 rules/evdev introuvable).
+base	xkeyboard-config	2.49	https://gitlab.freedesktop.org/xkeyboard-config/xkeyboard-config/-/archive/xkeyboard-config-2.49/xkeyboard-config-2.49.tar.gz	deda99f75a41532db85661cac01793c9b48b5e68a78ecd259fe8b3a7d8fddd61	xkeyboard-config-2.49.tar.gz
+rust	smithay	0.7.0	https://github.com/Smithay/smithay/archive/refs/tags/v0.7.0.tar.gz	938fe52d5df1deada45525d3b908d3e71fa8d87cfd88bbe7b1f820e9805f31d9	smithay-0.7.0.tar.gz

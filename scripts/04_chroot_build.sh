@@ -144,6 +144,12 @@ ALL_PHASES=(
     mesa
     libinput
     libsndfile pipewire wireplumber
+    # Session graphique de validation (Smithay/anvil) : hwdata (pnp.ids, la
+    # table EDID requise au build), libdisplay-info (requis par
+    # smithay-drm-extras), pixman et libxkbcommon (liens du renderer / clavier),
+    # xkeyboard-config (données règles evdev), seatd (libseat), puis anvil
+    # bâti après tout le graphique (drm/gbm/egl/libinput).
+    hwdata displayinfo pixman libxkbcommon xkeyboard-config seatd smithay
     kernel
     # Phase de configuration système : copie config/rootfs et active les
     # services. Elle précède les composants Rust pour s'appuyer sur les outils
@@ -161,7 +167,12 @@ ALL_PHASES=(
 )
 
 # --- Outillage --------------------------------------------------------------
-run() { "$@" 2>&1 | tee -a "$BUILD_LOG"; }
+run() {
+    set -o pipefail
+    "$@" 2>&1 | tee -a "$BUILD_LOG"
+    local rc=$?
+    ((rc == 0)) || die "commande en échec (rc=$rc) : $*"
+}
 
 # Environnement minimal et reproductible à l'intérieur du chroot.
 chroot_env=(
@@ -1405,6 +1416,98 @@ phase_libsndfile() {
     run chroot_run "cd '$d' && make install"
 }
 
+# seatd : gestion de siège (libseat) — anvil, le compositor de validation
+# Smithay (v0.4), y prend la session KMS. Le démon marche sous root : anvil
+# (autologin root, ADR-014) n'a pas besoin de la règle de groupe.
+phase_seatd() {
+    require_archive seatd
+    local d; d="$(ci_work seatd)"
+    log "configure seatd (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Dman-pages=disabled"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# hwdata : table pnp.ids seule — libdisplay-info l'EMBUTE (lookup vendeur
+# EDID) au build via /usr/share/hwdata/pnp.ids du chroot.
+phase_hwdata() {
+    require_archive hwdata
+    local d; d="$(ci_work hwdata)"
+    run chroot_run "install -Dm644 '$d/pnp.ids' /usr/share/hwdata/pnp.ids"
+}
+
+# libdisplay-info : parseur EDID/CTA — la caisse libdisplay-info-sys (via
+# smithay-drm-extras) lie pkg-config libdisplay-info < 0.3.0 ; sans elle,
+# cargo exigeait le .pc à l'édition et la phase smithay échouait.
+phase_displayinfo() {
+    require_archive libdisplay-info
+    local d; d="$(ci_work libdisplay-info)"
+    log "configure libdisplay-info (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# pixman : composition logicielle sous Smithay (renderer_pixman — pixman-sys
+# lie -lpixman-1). Meson ; les dépendances hôte (png/gl) restent auto-off.
+phase_pixman() {
+    require_archive pixman
+    local d; d="$(ci_work pixman)"
+    log "configure pixman (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# libxkbcommon : mise en page clavier — la caisse xkbcommon 0.7.0 du verrou
+# de Smithay lie -lxkbcommon (FFI) ; la caisse 0.8.0 d'anvil reste pur Rust.
+phase_libxkbcommon() {
+    require_archive libxkbcommon
+    local d; d="$(ci_work libxkbcommon)"
+    log "configure libxkbcommon (meson ; x11 écartée — xcb-xkb hors périmètre live)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Denable-x11=false -Denable-xkbregistry=false -Denable-tools=false -Denable-docs=false"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# xkeyboard-config : données xkb sous /usr/share/X11/xkb (règles evdev…) —
+# requises pour l'init clavier d'anvil ; compat-rules false (X11 legacy hors
+# périmètre), síntes nls false pour rester minimal.
+phase_xkeyboard_config() {
+    require_archive xkeyboard-config
+    local d; d="$(ci_work xkeyboard-config)"
+    log "configure xkeyboard-config (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Dcompat-rules=false -Dnls=false"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# smithay : compositor de validation v0.4 (ADR-024) — l'exemple « anvil » est
+# un membre du workspace de la source. Build hors-ligne (dépendances vendues
+# par 01_download, ADR-018/019) ; xkbcommon est une caisse Rust PUR (pas de
+# libxkbcommon C, économie d'un paquet). Seule la cible KMS est exigée :
+# udev (drm + gbm + egl + libinput + libseat + renderer GLES2) — pas de
+# winit/x11 ; ne cliquent pas sur les C libs X11 ni Wayland client hôte.
+phase_smithay() {
+    require_archive smithay
+    ensure_host_rust
+    local d; d="$(ci_work smithay)"
+    local d_host; d_host="$(src_dir smithay)"   # même arbre, vue hôte (le
+    # patch et le grep tournent hors chroot, cf. conventions phases meson).
+    # Acceptation du rendu logiciel pour la QA KMS (QEMU sans GPU hôte) :
+    # patch minimal et DÉTERMINISTE — le fichier amont restauré du tarball
+    # avant application (un tree déjà patché v1 ne respectait pas la marque
+    # finale et passait au travers du garde).
+    local udev_rs="$d_host/anvil/src/udev.rs"
+    if ! grep -q 'or_else(|| node.node_with_type(NodeType::Render).and_then(|x| x.ok()))' "$udev_rs"; then
+        log "patch anvil (rendu logiciel pour la QA, YAOR_SOFTWARE_OK)"
+        local tmp; tmp="$(mktemp -d)"
+        tar -xzf "$(source_archive smithay)" \
+            -C "$tmp" smithay-0.7.0/anvil/src/udev.rs
+        run cp "$tmp/smithay-0.7.0/anvil/src/udev.rs" "$udev_rs"
+        rm -rf "$tmp"
+        run patch -p1 -d "$d_host" -i "$ROOT/patches/anvil-0.7.0-rendu-logiciel.patch"
+    fi
+    log "compilation d'anvil (Smithay v0.7.0, hors-ligne)"
+    run chroot_rust "cd '$d' && cargo build --release --locked -p anvil --no-default-features --features udev"
+    run chroot_run "install -Dm755 '$d/target/release/anvil' /usr/bin/anvil"
+}
+
 # pipewire : serveur de session audio ADR-024 (sortie spa-alsa vers le HDA de
 # QEMU, TEST-AUD-001). Les gestionnaires de session (sous-projets meson) sont
 # écartés : WirePlumber est bâti séparément ci-dessous.
@@ -1499,6 +1602,8 @@ phase_configure_system() {
     # [Install] ; ils restent inactifs sur le média live grâce à leurs
     # conditions (ADR-015). yaor-install est une commande, pas un service.
     chroot_run "systemctl enable yaor-slot.service yaor-slot-confirm.service"
+    # seatd : siège KMS pour le compositor de validation (anvil v0.4, ADR-024).
+    chroot_run "systemctl enable seatd.service"
 
     section "Résolution de noms et profils Wi-Fi"
     # systemd-resolved expose son résolveur local : /etc/resolv.conf doit y

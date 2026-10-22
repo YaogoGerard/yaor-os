@@ -1,0 +1,17 @@
+# seatd — gestion de siège (libseat) pour le compositor de validation anvil
+# (v0.4, ADR-024). Anvil tourne sous root (autologin QA, ADR-014) : pas
+# d'affinage de permissions de socket nécessaire. Une session via logind
+# serait envisageable, seatd reste déterministe (pas de dépendance à une
+# session logind active pour la prise du siège).
+[Unit]
+Description=Seat management daemon
+Documentation=man:seatd(1)
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/seatd
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
