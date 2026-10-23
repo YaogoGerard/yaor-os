@@ -2,7 +2,7 @@
 
 **Statut :** Accepté
 **Version :** 0.1
-**Dernière mise à jour :** 2026-10-17
+**Dernière mise à jour :** 2026-10-23
 **Décisions liées :** ADR-000 (#21), ADR-003, ADR-011, ADR-015, ADR-022
 
 ## Objet
@@ -17,7 +17,7 @@ jalon correspond à une ou plusieurs phases de [`roadmap.md`](roadmap.md).
 
 Un critère de sortie est **vérifiable** s'il peut être constaté par un test, une commande
 ou un artefact (image, journal). Les critères d'un jalon lointain ne sont détaillés qu'à
-l'approche de ce jalon : seuls `v0.1` (atteint) et `v0.2` (en cours) sont figés ici.
+l'approche de ce jalon : seuls `v0.1` et `v0.2` (atteints) sont figés ici.
 
 ## Vue d'ensemble
 
@@ -25,7 +25,7 @@ l'approche de ce jalon : seuls `v0.1` (atteint) et `v0.2` (en cours) sont figés
 |---|---|---|---|
 | v0.1 | Système de construction + boot Linux minimal | Phase 0 — Foundation | Atteint |
 | v0.2 | Userland fonctionnel et composants sélectionnés | Phase 1 — System | Atteint |
-| v0.3 | Base graphique | Phase 2 — Graphics | En cours |
+| v0.3 | Base graphique | Phase 2 — Graphics | Atteint |
 | v0.4 | Compositor YAOR | Phase 2 — Graphics | À venir |
 | v0.5 | Desktop Core configurable | Phase 3 — YAOR Desktop | À venir |
 | v0.6 | Profils Caméléon | Phase 4 — Caméléon | À venir |
@@ -137,10 +137,17 @@ Wayland (libwayland), périphériques d'entrée (libinput + libevdev) et audio
   `libdrm` épinglés dans `sources/manifest.tsv` (SHA-256), construits
   hors-ligne ; une surface EGL s'initialise et rend (GLES2) — QA anvil :
   EGL 1.5 initialisé sur `PLATFORM_GBM_KHR`.
-- [ ] `libwayland` (client + serveur) épinglée et construite ; un client de test
+- [x] `libwayland` (client + serveur) épinglée et construite ; un client de test
   dialogue avec le compositor de validation.
-- [ ] `libinput` (+ `libevdev`) livre les événements clavier/pointeur à la session
+  Preuves : `libwayland` et `wayland-protocols` bâties depuis des archives
+  épinglées (un fournisseur, étape 04) ; le client de validation `waytest`
+  (`components/waytest/`) se connecte à la socket du compositor, échange
+  globals/bindings et reçoit les événements (runs verts `t-anvil`).
+- [x] `libinput` (+ `libevdev`) livre les événements clavier/pointeur à la session
   graphique sous QEMU.
+  Preuve : injection QMP `input-send-event` → evdev → libinput → anvil →
+  waytest (compteurs K/P/B du client + journal `/tmp/wt.log` : 2 clics et
+  3 touches livrés dans les runs verts).
 
 ### Audio
 
@@ -169,10 +176,10 @@ Wayland (libwayland), périphériques d'entrée (libinput + libevdev) et audio
 
 ### Tests et traçabilité (REQ-SW-018)
 
-- [ ] Les cas TEST-GFX-001/002 et les cas audio sont exécutés et passent ; la
+- [x] Les cas TEST-GFX-001/002 et les cas audio sont exécutés et passent ; la
   matrice de traçabilité couvre les exigences graphiques du jalon.
 
-  Avancement (v0.4) : TEST-GFX-002 **vert** (session de référence complète :
+  Preuves (v0.4) : TEST-GFX-002 **vert** (session de référence complète :
   KMS boot, mesa softpipe, session anvil, client Wayland, entrées libinput,
   audio, repli simpledrm) ; TEST-AUD-001 vert ; TEST-GFX-001 **vert**
   (fenêtre ouverte ✓, entrées ✓, déplacer/redimensionner ✓ via les requêtes
