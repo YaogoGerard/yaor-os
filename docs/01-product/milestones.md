@@ -26,7 +26,7 @@ l'approche de ce jalon : seuls `v0.1` et `v0.2` (atteints) sont figés ici.
 | v0.1 | Système de construction + boot Linux minimal | Phase 0 — Foundation | Atteint |
 | v0.2 | Userland fonctionnel et composants sélectionnés | Phase 1 — System | Atteint |
 | v0.3 | Base graphique | Phase 2 — Graphics | Atteint |
-| v0.4 | Compositor YAOR | Phase 2 — Graphics | À venir |
+| v0.4 | Compositor YAOR | Phase 2 — Graphics | En cours |
 | v0.5 | Desktop Core configurable | Phase 3 — YAOR Desktop | À venir |
 | v0.6 | Profils Caméléon | Phase 4 — Caméléon | À venir |
 | v0.7 | Système de plugins | Phase 5 — Extensibilité | À venir |
@@ -161,7 +161,7 @@ Wayland (libwayland), périphériques d'entrée (libinput + libevdev) et audio
   propre vers la console ; la validation couvre virtio-gpu (KMS) et le repli
   `simpledrm`.
 
-  Preuves v0.4 (QA `t-anvil` 12/12 virtio, `t-anvil-simpledrm` 13/13 —
+  Preuves (session anvil) (QA `t-anvil` 12/12 virtio, `t-anvil-simpledrm` 13/13 —
   RC=0) : anvil 0.7.0 tient la session (KMS master via seatd), socket
   `wayland-1` publiée, screendump QMP avec contenu client (client
   `waytest` : rectangle + horloge digitale + compteurs, carré qui suit le
@@ -179,15 +179,59 @@ Wayland (libwayland), périphériques d'entrée (libinput + libevdev) et audio
 - [x] Les cas TEST-GFX-001/002 et les cas audio sont exécutés et passent ; la
   matrice de traçabilité couvre les exigences graphiques du jalon.
 
-  Preuves (v0.4) : TEST-GFX-002 **vert** (session de référence complète :
+  Preuves (session anvil) : TEST-GFX-002 **vert** (session de référence complète :
   KMS boot, mesa softpipe, session anvil, client Wayland, entrées libinput,
   audio, repli simpledrm) ; TEST-AUD-001 vert ; TEST-GFX-001 **vert**
   (fenêtre ouverte ✓, entrées ✓, déplacer/redimensionner ✓ via les requêtes
   xdg interactives — grabs d'anvil armés côté serveur) ; audio vert. Matrice
   de traçabilité : REQ-SW-005 → TEST-GFX-001 + TEST-GFX-002 (ADR-024).
 
-## v0.4 → v1.0
+## v0.4 — Compositor YAOR (ouvert)
+
+**Périmètre :** remplacer la session de référence (anvil 0.7) par le compositor YAOR
+propre, bâti sur **Smithay** (ADR-005) : gestion des fenêtres intégrée (pas de «
+Window Manager » distinct), session via **logind** (ADR-004/005), **XWayland** pour la
+compatibilité X11. Rendu logiciel (mesa softpipe) ; les fondamentaux KMS/entrées/mesa
+sont établis par v0.3 et réutilisés tels quels.
+
+**Critères de sortie :**
+
+### Crate compositor YAOR
+
+- [ ] La crate `components/compositor` (Rust + Smithay, dépendances vendues) est
+  intégrée à la chaîne de build (étape 04 ; hors-ligne, toolchain hôte, un besoin un
+  fournisseur) et livrée comme binaire du live.
+- [ ] Le compositor tient une session KMS (virtio-gpu, repli simpledrm) : socket
+  Wayland publiée, screendump avec contenu client, sortie propre au SIGTERM.
+
+### Gestion des fenêtres (ADR-005 — pas de WM distinct)
+
+- [ ] Fenêtres xdg-shell : mappage, focus clavier/pointeur, déplacement et
+  redimensionnement — vérifiés par une QA dédiée (TEST-GFX-003, sur le modèle de
+  `t-anvil`, harnais réutilisant les leçons PS/2 v0.3).
+- [ ] Disposition multi-fenêtres minimale : au moins deux fenêtres xdg simultanées
+  avec la fenêtre active visible, disposition (découpage ou empilement) documentée
+  au LLD `compositor.md`.
+
+### Compatibilité X11 (ADR-005)
+
+- [ ] XWayland intégré (épinglé, construit hors-ligne) ; une fenêtre X11 de test est
+  rendue dans la session, cliquable et livrée clavier.
+
+### Sessions (ADR-004, ADR-005)
+
+- [ ] La session graphique acquiert le siège via libseat en mode **logind**
+  (systemd-logind actif ; journal + `loginctl` en preuve), en live et installé ;
+  le chemin seatd de v0.3 reste documenté comme repli.
+
+### Tests et traçabilité
+
+- [ ] Les cas TEST-GFX-003 (+ actualisation TEST-GFX-001/002 si périmètre commun) et
+  les critères du compositor sont exécutés et passent ; la matrice de traçabilité
+  couvre les exigences compositor du jalon (REQ-SW-005 partie compositor, ADR-005).
+
+## v0.5 → v1.0
 
 Les périmètres sont fixés par [`roadmap.md`](roadmap.md) ; les critères de sortie sont à
-détailler à l'ouverture de chaque jalon (compositor, Desktop Core, profils Caméléon,
-plugins, accessibilité, stabilisation).
+détailler à l'ouverture de chaque jalon (Desktop Core, profils Caméléon, plugins,
+accessibilité, stabilisation).
