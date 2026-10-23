@@ -1759,11 +1759,11 @@ phase_yaor_components() {
     cargover="$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$COMPONENTS_DIR/Cargo.toml")"
     [[ "$cargover" == "$prodver" ]] \
         || die "version des composants ($cargover) ≠ VERSION ($prodver) — ADR-022"
-    log "compilation des composants internes YAOR (yaor-install, yaor-slot) version $prodver"
+    log "compilation des composants internes YAOR (yaor-install, yaor-slot, yaor-compositor) version $prodver"
     run chroot_rust "cd /build/components && CARGO_TARGET_DIR=/build/work/yaor-target cargo build --release --locked"
-    log "installation de yaor-install et yaor-slot dans /usr/bin"
-    run chroot_run "install -m 0755 /build/work/yaor-target/release/yaor-install /build/work/yaor-target/release/yaor-slot /usr/bin/"
-    run chroot_run "yaor-slot --help >/dev/null && yaor-install --help >/dev/null && echo 'composants YAOR opérationnels'"
+    log "installation de yaor-install, yaor-slot et yaor-compositor dans /usr/bin"
+    run chroot_run "install -m 0755 /build/work/yaor-target/release/yaor-install /build/work/yaor-target/release/yaor-slot /build/work/yaor-target/release/yaor-compositor /usr/bin/"
+    run chroot_run "yaor-slot --help >/dev/null && yaor-install --help >/dev/null && yaor-compositor --help >/dev/null && echo 'composants YAOR opérationnels'"
 }
 
 # --- Exécution --------------------------------------------------------------

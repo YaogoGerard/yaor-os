@@ -20,7 +20,7 @@ Voir [`milestones.md`](../../01-product/milestones.md) (v0.4) et l'ADR-005.
 | Élément | Source | Note |
 |---|---|---|
 | Smithay | archive épinglée 0.7.0 (étape 01, vendored) | cible seule `udev` (KMS) |
-| `components/compositor` | sources du dépôt, workspace `components/` | toolchain hôte, hors-ligne |
+| `components/compositor` | sources du dépôt, workspace `components/` | toolchain hôte, hors-ligne, `Cargo.lock` committé |
 | XWayland | archive épinglée xorg-server (étape 01) | nouveau fournisseur, uniquement ce paquet |
 | wayland-protocols | archive déjà épinglée | XML `xdg-shell`, déjà consommé par waytest |
 
@@ -77,11 +77,20 @@ Détail par module :
 
 ## Intégration build (étape 04, conventions phases Rust)
 
-- phase `compositor` après `phase_smithay` (consomme l'arbre vendored smithay) ;
-- build : `cargo build --release --locked -p yaor-compositor` (workspace
-  `components/`, monté sur `/build/components` comme les autres crates YAOR) ;
-- livré `/usr/bin/yaor-compositor` ; lancement en session utilisateur selon
-  ADR-014 (launcher de session, au pari des services existants de anvil).
+- la crate est **membre du workspace `components/`** (comme yaor-common,
+  yaor-slot, yaor-install) et bâtie par la phase `yaor-components` (binaire
+  installé `/usr/bin/yaor-compositor`, test `--help` rc=0) ;
+- Smithay arrive par **dépendance de chemin** vers l'arbre épinglé déjà
+  décompressé (`/build/work/smithay-0.7.0`, racine de cet arbre = crate
+  smithay, mêmes conventions que anvil) ; les sources du registre sont
+  remplacées par le dossier vendored de cet arbre
+  (`components/.cargo/config.toml`) : aucune résolution réseau, même
+  environnement chroot et hôte (ADR-018) ;
+- `Cargo.lock` du workspace **committé** (reproductible au sens
+  fonctionnel, ADR-016) ; la cohérence de version produit reste contrôlée
+  par la phase (ADR-022) ;
+- lancement en session utilisateur selon ADR-014 (au pari des services
+  de la session de référence).
 
 ## QA (TEST-GFX-003, v0.4)
 

@@ -1,0 +1,52 @@
+# yaor-compositor (ADR-005) : compositor graphique YAOR — jalon v0.4.
+#
+# Membre du workspace des composants internes (components/), bâti avec la
+# toolchain Rust de l'hôte dans le chroot (ADR-019). La crate dépend de
+# Smithay 0.7.0 — archive épinglée de l'étape 01, décompressée au build dans
+# /build/work/smithay-0.7.0 — et de ses dépendances vendues (ADR-018) : la
+# config components/.cargo/config.toml remplace crates.io par le dossier
+# vendored de l'arbre Smithay, donc aucune résolution réseau (ADR-018,
+# CARGO_NET_OFFLINE). Les liaisons des bibliothèques système (libEGL, gbm,
+# drm, libinput, libseat) se font dans le chroot, où ces bibliothèques sont
+# installées par les phases C précédentes (mesa, libinput, seatd).
+[package]
+name = "yaor-compositor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Smithay épinglé : l'arbre décompressé de l'étape 01 — la racine de cet
+# arbre EST la crate smithay (mêmes conventions que anvil, qui déclare
+# `path = ".."` vers la racine de son propre workspace). Un besoin = un
+# fournisseur : la version est figée par l'archive de l'étape 01.
+[dependencies.smithay]
+path = "/build/work/smithay-0.7.0"
+default-features = false
+# Cible seule : udev/KMS comme anvil en QA (ADR-024). Pas de winit/x11.
+# use_system_lib : liaisons des bibliothèques système installées (mesa…).
+features = [
+    "desktop",
+    "wayland_frontend",
+    "use_system_lib",
+    "backend_egl",
+    "backend_drm",
+    "backend_gbm",
+    "backend_udev",
+    "backend_session_libseat",
+    "backend_libinput",
+    "renderer_gl",
+    "renderer_pixman",
+    "renderer_multi",
+]
+
+# Énumération des sorties DRM (modes, connecteurs) — crate auxiliaire de
+# l'arbre Smithay : ajoutée à l'étape 2 (réelles sorties). Elle tire
+# libdisplay-info (C, < 0.3.0, version épinglée du chroot) : conservée hors
+# du squelette pour garder la compilation de validation indépendante des
+# libs C de l'hôte.
+# [dependencies.smithay-drm-extras]
+# path = "/build/work/smithay-0.7.0/smithay-drm-extras"
+
+[dependencies.libc]
+version = "0.2.103"

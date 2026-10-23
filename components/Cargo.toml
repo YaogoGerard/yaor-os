@@ -3,7 +3,7 @@
 # nécessite donc aucun vendoring (ADR-018).
 [workspace]
 resolver = "2"
-members = ["yaor-common", "yaor-slot", "yaor-install"]
+members = ["yaor-common", "yaor-slot", "yaor-install", "compositor"]
 
 [workspace.package]
 version = "0.2.0"
