@@ -226,12 +226,30 @@ sont établis par v0.3 et réutilisés tels quels.
 
 ### Gestion des fenêtres (ADR-005 — pas de WM distinct)
 
-- [ ] Fenêtres xdg-shell : mappage, focus clavier/pointeur, déplacement et
+- [x] Fenêtres xdg-shell : mappage, focus clavier/pointeur, déplacement et
   redimensionnement — vérifiés par une QA dédiée (TEST-GFX-003, sur le modèle de
   `t-anvil`, harnais réutilisant les leçons PS/2 v0.3).
-- [ ] Disposition multi-fenêtres minimale : au moins deux fenêtres xdg simultanées
+
+  Preuves : `t-yaor-comp-wm.py` **23/23, RC=0** (virtio-gpu) et repli
+  simpledrm **23/23** — deux fenêtres `waytest --two` (W1 vert / W2
+  orange) à la taille 640x480 posée par le compositor ; focus au clic
+  (`keyboard enter` de la fenêtre cliquée, touches livrées 3+2,
+  aucune fuite vers l'autre fenêtre), `xdg_toplevel_move` + glisser
+  (bbox 20,20,659,499 → 221,141,860,620, 644 px) et
+  `xdg_toplevel_resize` + glisser (buffers client 709x529 → 794x589,
+  bbox 221,141,1014,729). Détails : `docs/06-testing/graphics-tests.md`
+  (TEST-GFX-003, étape 3).
+- [x] Disposition multi-fenêtres minimale : au moins deux fenêtres xdg simultanées
   avec la fenêtre active visible, disposition (découpage ou empilement) documentée
   au LLD `compositor.md`.
+
+  Preuves : les deux fenêtres du run ci-dessus rendues **simultanément**
+  au scanout (11 924 px verts / 16 352 px oranges ; bboxes W1
+  (20,20,659,499) et W2 (340,220,979,699)) ; fenêtre active visible
+  après raise (4 428 px verts, 0 orange dans la zone de chevauchement).
+  Empilement en cascade au pas 320x200 documenté au LLD
+  `docs/04-design-lld/compositor/compositor.md` (policy.rs, mécanisme et
+  politique ; tiling complet reporté au Desktop Core v0.5).
 
 ### Compatibilité X11 (ADR-005)
 

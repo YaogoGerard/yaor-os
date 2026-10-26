@@ -92,7 +92,12 @@ impl XdgShellHandler for Yaor {
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
-        let window = Window::new_wayland_window(surface);
+        let window = Window::new_wayland_window(surface.clone());
+        // Taille initiale : le compositor guide les clients (à la configure
+        // initiale, avant le premier commit — le client suit via xdg).
+        // Démontre aussi la gestion de la taille à chaque nouvelle fenêtre
+        // (QA : deux fenêtres 640x480 simultanées).
+        surface.with_pending_state(|state| state.size = Some((640, 480).into()));
         let position = crate::policy::next_window_location(self);
         self.space.map_element(window, position, false);
     }

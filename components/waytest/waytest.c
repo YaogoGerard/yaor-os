@@ -1,11 +1,19 @@
 /*
- * waytest — client Wayland de validation (ADR-024, TEST-GFX-001/002).
+ * waytest — client Wayland de validation (ADR-024, TEST-GFX-001/002/003).
  *
- * Fenêtre xdg-shell rendue via wl_shm (XRGB8888) : rectangle bordé, horloge
- * digitale et compteurs d'événements pointeur/clavier affichés à l'écran.
- * Chaque événement d'entrée reçu est journalisé sur stderr — la preuve que
- * les entrées de la session (libinput sous le compositor) arrivent bien au
- * client (QA : injection QMP côté QEMU).
+ * Fenêtre(s) xdg-shell rendue(s) via wl_shm (XRGB8888) : rectangle bordé,
+ * horloge digitale et compteurs d'événements pointeur/clavier affichés à
+ * l'écran. Chaque événement d'entrée reçu est journalisé sur stderr — la
+ * preuve que les entrées de la session (libinput sous le compositor)
+ * arrivent bien au client (QA : injection QMP côté QEMU).
+ *
+ * Mode `--two` (TEST-GFX-003, étape 3 « gestion des fenêtres ») : crée
+ * DEUX fenêtres distinctes — W1 (bord vert) puis W2 (bord orange) —
+ * pour que le compositor les place, les fasse se chevaucher en cascade,
+ * reçoive le focus au clic (raise + focus clavier) et les redimensionne.
+ * Journalage préfixé par fenêtre : ex. « waytest: W2 KEY press code=30
+ * (K=1) ». Sans option, une seule fenêtre W1 (comportement historique
+ * de TEST-GFX-001/002 inchangé).
  *
  * Dépendances runtime : libwayland-client seule. Aucun moteur de rendu ni
  * bibliothèque de texte : police bitmap 5x7 intégrée (chiffres, ':', 'K',
@@ -13,7 +21,7 @@
  * YAOR est son propre fournisseur pour la brique de validation).
  *
  * Connexion : WAYLAND_DISPLAY sous XDG_RUNTIME_DIR (socket du compositor).
- * Journal : stderr — ex. « waytest: K=1 P=42 key=30 press ».
+ * Journal : stderr — ex. « waytest: W1 KEY press code=30 (K=1) ».
  */
 
 #include <errno.h>
@@ -67,18 +75,17 @@ glyph_index(char c)
 
 /* ------------------------------------------------------------- état client */
 
-struct waytest {
-    struct wl_display *dpy;
-    struct wl_registry *reg;
-    struct wl_compositor *comp;
-    struct wl_shm *shm;
-    struct wl_seat *seat;
-    struct wl_pointer *ptr;
-    struct wl_keyboard *kbd;
-    struct xdg_wm_base *wmbase;
+/* Nombre maximal de fenêtres gérées par le client (mode `--two` : 2). */
+#define MAX_WIN 2
+
+/* Une fenêtre xdg-shell : surface, état xdg, buffer wl_shm courant,
+ * compteurs d'événements et requêtes interactives — tout est PAR
+ * FENÊTRE (l'étape 3 manipule deux fenêtres simultanées). */
+struct win {
+    int id;                     /* identifiant affiché/journalisé : 1..2 */
+    struct wl_surface *surf;
     struct xdg_surface *xsurf;
     struct xdg_toplevel *top;
-    struct wl_surface *surf;
 
     int32_t w, h;               /* taille buffer actuel */
     int32_t pending_w, pending_h; /* taille demandée par le toplevel */
@@ -86,9 +93,6 @@ struct waytest {
     struct wl_buffer *buf;
     uint32_t *pix;              /* mmap du pool */
     int shmfdfd;
-
-    int tfd;                    /* timerfd horloge (1 s) */
-    volatile sig_atomic_t quit;
 
     /* Compteurs affichés (preuves visuelles) et journalisés. */
     unsigned long kcount;       /* touches pressées */
@@ -106,60 +110,98 @@ struct waytest {
     /* Position pointeur courant : l'objet (carré fuchsia) se rend ici —
      * la preuve visuelle du « déplacement d'un objet au pointeur ». */
     int32_t lsq_x, lsq_y;       /* -1 : jamais entré */
+
+    /* Couleur d'accent (XRGB) : bordure, libellés, carré d'identité —
+     * vert pour W1, orange pour W2 : les deux fenêtres sont
+     * distinguables au screendump (preuve « deux fenêtres distinctes »
+     * et « fenêtre active au premier plan » par pixels). */
+    uint32_t accent;
+};
+
+struct waytest {
+    struct wl_display *dpy;
+    struct wl_registry *reg;
+    struct wl_compositor *comp;
+    struct wl_shm *shm;
+    struct wl_seat *seat;
+    struct wl_pointer *ptr;
+    struct wl_keyboard *kbd;
+    struct xdg_wm_base *wmbase;
+
+    struct win wins[MAX_WIN];
+    int nwin;
+
+    /* Routage des events globaux du seat vers la fenêtre concernée :
+     * wl_pointer/wl_keyboard sont par seat, pas par surface ; les
+     * events enter indiquent la surface cible. */
+    int ptr_win;                /* index sous le pointeur, -1 : aucun */
+    int kbd_win;                /* index focus clavier, -1 : aucun */
+
+    int tfd;                    /* timerfd horloge (1 s) */
+    volatile sig_atomic_t quit;
 };
 
 static struct waytest S;
 
+static int
+win_by_surface(struct waytest *s, struct wl_surface *surf)
+{
+    for (int i = 0; i < s->nwin; i++) {
+        if (s->wins[i].surf == surf) return i;
+    }
+    return -1;
+}
+
 /* ---------------------------------------------------------------- rendu */
 
 static void
-px_fill(struct waytest *s, uint32_t color)
+px_fill(struct win *w, uint32_t color)
 {
-    for (int32_t i = 0; i < s->w * s->h; i++) s->pix[i] = color;
+    for (int32_t i = 0; i < w->w * w->h; i++) w->pix[i] = color;
 }
 
 static void
-px_rect(struct waytest *s, int32_t x, int32_t y, int32_t w, int32_t h,
+px_rect(struct win *w, int32_t x, int32_t y, int32_t rw, int32_t rh,
         uint32_t color)
 {
-    for (int32_t j = 0; j < h; j++) {
+    for (int32_t j = 0; j < rh; j++) {
         int32_t py = y + j;
-        if (py < 0 || py >= s->h) continue;
-        for (int32_t i = 0; i < w; i++) {
+        if (py < 0 || py >= w->h) continue;
+        for (int32_t i = 0; i < rw; i++) {
             int32_t px = x + i;
-            if (px < 0 || px >= s->w) continue;
-            s->pix[py * s->w + px] = color;
+            if (px < 0 || px >= w->w) continue;
+            w->pix[py * w->w + px] = color;
         }
     }
 }
 
 static void
-px_glyph(struct waytest *s, const uint8_t *g, int32_t x, int32_t y,
+px_glyph(struct win *w, const uint8_t *g, int32_t x, int32_t y,
          int32_t scale, uint32_t color)
 {
     for (int r = 0; r < 7; r++)
         for (int c = 0; c < 5; c++)
             if (g[r] & (0x10 >> c))
-                px_rect(s, x + c * scale, y + r * scale, scale, scale, color);
+                px_rect(w, x + c * scale, y + r * scale, scale, scale, color);
 }
 
 static void
-px_text(struct waytest *s, const char *txt, int32_t x, int32_t y,
+px_text(struct win *w, const char *txt, int32_t x, int32_t y,
         int32_t scale, uint32_t color)
 {
     /* largeur : 4 colonnes + 1 colonne d'espace par glyphe */
     for (const char *c = txt; *c; c++) {
         int gi = glyph_index(*c);
-        if (gi >= 0) px_glyph(s, GLYPH[gi], x, y, scale, color);
+        if (gi >= 0) px_glyph(w, GLYPH[gi], x, y, scale, color);
         x += 6 * scale;
     }
 }
 
 static void
-draw(struct waytest *s)
+draw(struct win *w)
 {
-    if (!s->buf) {
-        fprintf(stderr, "waytest: draw sans buffer (ignoré)\n");
+    if (!w->buf) {
+        fprintf(stderr, "waytest: draw W%d sans buffer (ignoré)\n", w->id);
         return;
     }
 
@@ -171,43 +213,50 @@ draw(struct waytest *s)
     snprintf(line1, sizeof(line1), "%02d:%02d:%02d",
              tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
     snprintf(line2, sizeof(line2), "K%lu P%lu B%lu",
-             s->kcount, s->pcount, s->bcount);
+             w->kcount, w->pcount, w->bcount);
 
     uint32_t bg = 0xFF100F0C;       /* XRGB : fond sombre */
-    uint32_t border = 0xFF6ADB2A;   /* bord vert franc */
+    uint32_t border = w->accent;
     uint32_t bar = 0xFF1C1B15;
     uint32_t fg = 0xFFE8E8E8;
 
-    px_fill(s, bg);
+    px_fill(w, bg);
     /* cadre */
-    px_rect(s, 0, 0, s->w, 6, border);
-    px_rect(s, 0, s->h - 6, s->w, 6, border);
-    px_rect(s, 0, 0, 6, s->h, border);
-    px_rect(s, s->w - 6, 0, 6, s->h, border);
+    px_rect(w, 0, 0, w->w, 6, border);
+    px_rect(w, 0, w->h - 6, w->w, 6, border);
+    px_rect(w, 0, 0, 6, w->h, border);
+    px_rect(w, w->w - 6, 0, 6, w->h, border);
     /* barre de titre */
-    px_rect(s, 6, 6, s->w - 12, 40, bar);
+    px_rect(w, 6, 6, w->w - 12, 40, bar);
+    /* carré d'identité dans la barre : chiffre de la fenêtre sur fond
+     * d'accent (W1 : bleu clair sur vert ; W2 : idem sur orange). */
+    px_rect(w, 32, 6, 40, 40, border);
+    char tag[4];
+    snprintf(tag, sizeof(tag), "%d", w->id);
+    int32_t ts = 4;
+    px_text(w, tag, 32 + 10, 6 + 6, ts, bg);
 
-    int32_t s1 = s->w / 60; if (s1 < 3) s1 = 3; if (s1 > 7) s1 = 7;
+    int32_t s1 = w->w / 60; if (s1 < 3) s1 = 3; if (s1 > 7) s1 = 7;
     int32_t w1 = 8 * 6 * s1;
-    px_text(s, line1, (s->w - w1) / 2, (int32_t)(s->h * 0.35), s1, fg);
+    px_text(w, line1, (w->w - w1) / 2, (int32_t)(w->h * 0.35), s1, fg);
 
-    int32_t s2 = s->w / 110; if (s2 < 2) s2 = 2; if (s2 > 4) s2 = 4;
+    int32_t s2 = w->w / 110; if (s2 < 2) s2 = 2; if (s2 > 4) s2 = 4;
     int32_t w2 = (int32_t)strlen(line2) * 6 * s2;
-    px_text(s, line2, (s->w - w2) / 2, (int32_t)(s->h * 0.62), s2, border);
+    px_text(w, line2, (w->w - w2) / 2, (int32_t)(w->h * 0.62), s2, border);
 
     /* Objet déplacé par le pointeur (carré fuchsia, rendu à la dernière
      * position motion reçue) — il bouge à chaque motion livrée. */
-    if (s->lsq_x >= 0) {
+    if (w->lsq_x >= 0) {
         int32_t sz = 14;
-        px_rect(s, s->lsq_x - sz / 2, s->lsq_y - sz / 2, sz, sz, 0xFFFF20FF);
-        px_rect(s, s->lsq_x - sz / 2 + 3, s->lsq_y - sz / 2 + 3,
+        px_rect(w, w->lsq_x - sz / 2, w->lsq_y - sz / 2, sz, sz, 0xFFFF20FF);
+        px_rect(w, w->lsq_x - sz / 2 + 3, w->lsq_y - sz / 2 + 3,
                 sz - 6, sz - 6, 0xFFE8E8E8);
     }
 
-    wl_surface_attach(s->surf, s->buf, 0, 0);
-    wl_surface_damage_buffer(s->surf, 0, 0, INT32_MAX, INT32_MAX);
-    wl_surface_commit(s->surf);
-    wl_display_flush(s->dpy);
+    wl_surface_attach(w->surf, w->buf, 0, 0);
+    wl_surface_damage_buffer(w->surf, 0, 0, INT32_MAX, INT32_MAX);
+    wl_surface_commit(w->surf);
+    wl_display_flush(S.dpy);
 }
 
 /* ------------------------------------------------------- buffers wl_shm */
@@ -222,15 +271,15 @@ static const struct wl_buffer_listener buffer_listener = { buffer_release };
 
 /* Recrée pool + buffer pour la taille courante. Rend 0/≤0 en échec. */
 static int
-realloc_buffer(struct waytest *s, int32_t w, int32_t h)
+realloc_buffer(struct win *w, int32_t rw, int32_t rh)
 {
-    if (s->buf) { wl_buffer_destroy(s->buf); s->buf = NULL; }
-    if (s->pool) { wl_shm_pool_destroy(s->pool); s->pool = NULL; }
-    if (s->pix) { munmap(s->pix, (size_t)s->w * s->h * 4); s->pix = NULL; }
-    if (s->shmfdfd >= 0) { close(s->shmfdfd); s->shmfdfd = -1; }
+    if (w->buf) { wl_buffer_destroy(w->buf); w->buf = NULL; }
+    if (w->pool) { wl_shm_pool_destroy(w->pool); w->pool = NULL; }
+    if (w->pix) { munmap(w->pix, (size_t)w->w * w->h * 4); w->pix = NULL; }
+    if (w->shmfdfd >= 0) { close(w->shmfdfd); w->shmfdfd = -1; }
 
-    s->w = w; s->h = h;
-    if (w <= 0 || h <= 0) return -1;
+    w->w = rw; w->h = rh;
+    if (rw <= 0 || rh <= 0) return -1;
 
     char tmpl[] = "/tmp/.waytest-XXXXXX";
     int fd = mkstemp(tmpl);
@@ -239,30 +288,30 @@ realloc_buffer(struct waytest *s, int32_t w, int32_t h)
         return -1;
     }
     unlink(tmpl);
-    size_t bytes = (size_t)w * h * 4;
+    size_t bytes = (size_t)rw * rh * 4;
     if (ftruncate(fd, (off_t)bytes) < 0) { close(fd); return -1; }
 
-    s->pix = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (s->pix == MAP_FAILED) {
-        s->pix = NULL;
+    w->pix = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (w->pix == MAP_FAILED) {
+        w->pix = NULL;
         close(fd);
         return -1;
     }
-    s->shmfdfd = fd;
+    w->shmfdfd = fd;
 
-    s->pool = wl_shm_create_pool(s->shm, fd, (int32_t)bytes);
-    if (!s->pool) {
+    w->pool = wl_shm_create_pool(S.shm, fd, (int32_t)bytes);
+    if (!w->pool) {
         fprintf(stderr, "waytest: wl_shm_create_pool échec\n");
         return -1;
     }
-    s->buf = wl_shm_pool_create_buffer(s->pool, 0, w, h, w * 4,
+    w->buf = wl_shm_pool_create_buffer(w->pool, 0, rw, rh, rw * 4,
                                        WL_SHM_FORMAT_XRGB8888);
-    if (!s->buf) {
+    if (!w->buf) {
         fprintf(stderr, "waytest: create_buffer échec\n");
         return -1;
     }
-    wl_buffer_add_listener(s->buf, &buffer_listener, NULL);
-    fprintf(stderr, "waytest: buffer %dx%d prêt\n", w, h);
+    wl_buffer_add_listener(w->buf, &buffer_listener, NULL);
+    fprintf(stderr, "waytest: buffer %dx%d prêt (W%d)\n", rw, rh, w->id);
     return 0;
 }
 
@@ -282,20 +331,20 @@ static const struct xdg_wm_base_listener wm_base_listener = {
 static void
 xdg_surface_configure(void *data, struct xdg_surface *xs, uint32_t serial)
 {
-    struct waytest *s = data;
-    fprintf(stderr, "waytest: xdg_surface configure serial=%u "
-            "(pending %dx%d, actuel %dx%d)\n", serial, s->pending_w,
-            s->pending_h, s->w, s->h);
+    struct win *w = data;
+    fprintf(stderr, "waytest: W%d xdg_surface configure serial=%u "
+            "(pending %dx%d, actuel %dx%d)\n", w->id, serial, w->pending_w,
+            w->pending_h, w->w, w->h);
     xdg_surface_ack_configure(xs, serial);
     /* Séquence xdg : toplevel.configure (positions taille en attente) PUIS
      * xdg_surface.configure → ack → commit (l'attachement AVANT l'ack est
      * un comportement non conforme, le compositor l'ignore). */
-    if (s->pending_w > 0 && s->pending_h > 0 &&
-        (s->pending_w != s->w || s->pending_h != s->h)) {
-        if (realloc_buffer(s, s->pending_w, s->pending_h) == 0) draw(s);
-    } else if (!s->buf) {
-        /* compositor sans taille explicite : repli raisonnable 800x600. */
-        if (realloc_buffer(s, 800, 600) == 0) draw(s);
+    if (w->pending_w > 0 && w->pending_h > 0 &&
+        (w->pending_w != w->w || w->pending_h != w->h)) {
+        if (realloc_buffer(w, w->pending_w, w->pending_h) == 0) draw(w);
+    } else if (!w->buf) {
+        /* compositor sans taille explicite : repli raisonnable 640x480. */
+        if (realloc_buffer(w, 640, 480) == 0) draw(w);
     }
 }
 
@@ -307,22 +356,23 @@ static void
 toplevel_configure(void *data, struct xdg_toplevel *tl,
                    int32_t width, int32_t height, struct wl_array *states)
 {
-    struct waytest *s = data;
+    struct win *w = data;
     (void)tl; (void)states;
-    fprintf(stderr, "waytest: toplevel configure %dx%d\n", width, height);
+    fprintf(stderr, "waytest: W%d toplevel configure %dx%d\n",
+            w->id, width, height);
     if (width > 0 && height > 0) {
-        s->pending_w = width;
-        s->pending_h = height;
+        w->pending_w = width;
+        w->pending_h = height;
     }
 }
 
 static void
 toplevel_close(void *data, struct xdg_toplevel *tl)
 {
-    struct waytest *s = data;
+    struct win *w = data;
     (void)tl;
-    fprintf(stderr, "waytest: toplevel close\n");
-    s->quit = 1;
+    fprintf(stderr, "waytest: W%d toplevel close\n", w->id);
+    S.quit = 1;
 }
 
 /* Events (xdg-shell <= 1.49) sans effet ici mais sujets OBLIGATOIRES du
@@ -355,21 +405,36 @@ pointer_enter(void *data, struct wl_pointer *wp, uint32_t serial,
               struct wl_surface *surf, wl_fixed_t x, wl_fixed_t y)
 {
     struct waytest *s = data;
-    (void)wp; (void)serial; (void)surf;
-    fprintf(stderr, "waytest: pointer enter (%d,%d)\n",
+    (void)wp; (void)serial;
+    int idx = win_by_surface(s, surf);
+    if (idx < 0) {
+        fprintf(stderr, "waytest: pointer enter (%d,%d) — surface inconnue\n",
+                wl_fixed_to_int(x), wl_fixed_to_int(y));
+        return;
+    }
+    struct win *w = &s->wins[idx];
+    s->ptr_win = idx;
+    fprintf(stderr, "waytest: W%d pointer enter (%d,%d)\n", w->id,
             wl_fixed_to_int(x), wl_fixed_to_int(y));
-    s->lsq_x = wl_fixed_to_int(x);
-    s->lsq_y = wl_fixed_to_int(y);
-    s->pcount++;
-    draw(s);
+    w->lsq_x = wl_fixed_to_int(x);
+    w->lsq_y = wl_fixed_to_int(y);
+    w->pcount++;
+    draw(w);
 }
 
 static void
 pointer_leave(void *data, struct wl_pointer *wp, uint32_t serial,
               struct wl_surface *surf)
 {
-    (void)data; (void)wp; (void)serial; (void)surf;
-    fprintf(stderr, "waytest: pointer leave\n");
+    struct waytest *s = data;
+    (void)wp; (void)serial;
+    int idx = win_by_surface(s, surf);
+    if (idx >= 0) {
+        fprintf(stderr, "waytest: W%d pointer leave\n", s->wins[idx].id);
+        if (s->ptr_win == idx) s->ptr_win = -1;
+    } else {
+        fprintf(stderr, "waytest: pointer leave (surface inconnue)\n");
+    }
 }
 
 static void
@@ -378,12 +443,18 @@ pointer_motion(void *data, struct wl_pointer *wp, uint32_t time,
 {
     struct waytest *s = data;
     (void)wp; (void)time;
-    fprintf(stderr, "waytest: pointer motion (%d,%d)\n",
+    if (s->ptr_win < 0) {
+        fprintf(stderr, "waytest: pointer motion (%d,%d) hors fenêtre\n",
+                wl_fixed_to_int(x), wl_fixed_to_int(y));
+        return;
+    }
+    struct win *w = &s->wins[s->ptr_win];
+    fprintf(stderr, "waytest: W%d pointer motion (%d,%d)\n", w->id,
             wl_fixed_to_int(x), wl_fixed_to_int(y));
-    s->lsq_x = wl_fixed_to_int(x);
-    s->lsq_y = wl_fixed_to_int(y);
-    s->pcount++;
-    draw(s);    /* le carré suit le pointeur (déplacement d'objet) */
+    w->lsq_x = wl_fixed_to_int(x);
+    w->lsq_y = wl_fixed_to_int(y);
+    w->pcount++;
+    draw(w);    /* le carré suit le pointeur (déplacement d'objet) */
 }
 
 static void
@@ -392,29 +463,39 @@ pointer_button(void *data, struct wl_pointer *wp, uint32_t serial,
 {
     struct waytest *s = data;
     (void)wp; (void)time;
-    fprintf(stderr, "waytest: pointer button %u %s (B=%lu)\n",
-            button, state == WL_POINTER_BUTTON_STATE_PRESSED ? "press" : "release",
-            s->bcount + (state == WL_POINTER_BUTTON_STATE_PRESSED ? 1 : 0));
+    const char *sk = state == WL_POINTER_BUTTON_STATE_PRESSED ?
+                     "press" : "release";
+    if (s->ptr_win < 0) {
+        fprintf(stderr, "waytest: pointer button %u %s (hors fenêtre)\n",
+                button, sk);
+        return;
+    }
+    struct win *w = &s->wins[s->ptr_win];
+    fprintf(stderr, "waytest: W%d pointer button %u %s (B=%lu)\n", w->id,
+            button, sk,
+            w->bcount + (state == WL_POINTER_BUTTON_STATE_PRESSED ? 1 : 0));
     if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
-        s->bcount++;
-        draw(s);
+        w->bcount++;
+        draw(w);
         /* Requêtes interactives xdg (TEST-GFX-001) : 1re livraison =
          * xdg_toplevel_move, 2e = xdg_toplevel_resize (bord droit + bas),
          * les suivantes sans effet. La sérial passée est celle de CETTE
          * pression — le grab implicite du compositor correspond
          * (pointer.has_grab côté serveur). */
         if (button == 274 || button == 273) {
-            s->icount++;
-            if (s->icount == 1) {
-                xdg_toplevel_move(s->top, s->seat, serial);
-                fprintf(stderr, "waytest: move request envoyé (serial=%u)\n",
-                        serial);
-            } else if (s->icount == 2) {
-                xdg_toplevel_resize(s->top, s->seat, serial,
+            w->icount++;
+            if (w->icount == 1) {
+                xdg_toplevel_move(w->top, s->seat, serial);
+                fprintf(stderr,
+                        "waytest: W%d move request envoyé (serial=%u)\n",
+                        w->id, serial);
+            } else if (w->icount == 2) {
+                xdg_toplevel_resize(w->top, s->seat, serial,
                                     XDG_TOPLEVEL_RESIZE_EDGE_RIGHT |
                                     XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM);
-                fprintf(stderr, "waytest: resize request envoyé (serial=%u)\n",
-                        serial);
+                fprintf(stderr,
+                        "waytest: W%d resize request envoyé (serial=%u)\n",
+                        w->id, serial);
             }
         }
     }
@@ -426,7 +507,7 @@ pointer_axis(void *data, struct wl_pointer *wp, uint32_t time,
 {
     struct waytest *s = data;
     (void)wp; (void)time; (void)axis; (void)value;
-    s->pcount++;
+    if (s->ptr_win >= 0) s->wins[s->ptr_win].pcount++;
 }
 
 static void
@@ -456,7 +537,10 @@ pointer_frame(void *data, struct wl_pointer *wp)   /* v5, obligatoire */
 {
     struct waytest *s = data;
     (void)wp;
-    s->pcount++;        /* la frame clôt une série d'events pointeur */
+    if (s->ptr_win >= 0) {
+        /* la frame clôt une série d'events pointeur */
+        s->wins[s->ptr_win].pcount++;
+    }
 }
 
 static const struct wl_pointer_listener pointer_listener = {
@@ -487,17 +571,31 @@ keyboard_enter(void *data, struct wl_keyboard *wk, uint32_t serial,
                struct wl_surface *surf, struct wl_array *keys)
 {
     struct waytest *s = data;
-    (void)wk; (void)serial; (void)surf; (void)keys;
-    fprintf(stderr, "waytest: keyboard enter (focus obtenu)\n");
-    draw(s);
+    (void)wk; (void)serial; (void)keys;
+    int idx = win_by_surface(s, surf);
+    if (idx < 0) {
+        fprintf(stderr, "waytest: keyboard enter (surface inconnue)\n");
+        return;
+    }
+    s->kbd_win = idx;
+    fprintf(stderr, "waytest: W%d keyboard enter (focus obtenu)\n",
+            s->wins[idx].id);
+    draw(&s->wins[idx]);
 }
 
 static void
 keyboard_leave(void *data, struct wl_keyboard *wk, uint32_t serial,
                struct wl_surface *surf)
 {
-    (void)data; (void)wk; (void)serial; (void)surf;
-    fprintf(stderr, "waytest: keyboard leave\n");
+    struct waytest *s = data;
+    (void)wk; (void)serial;
+    int idx = win_by_surface(s, surf);
+    if (idx >= 0) {
+        fprintf(stderr, "waytest: W%d keyboard leave\n", s->wins[idx].id);
+        if (s->kbd_win == idx) s->kbd_win = -1;
+    } else {
+        fprintf(stderr, "waytest: keyboard leave (surface inconnue)\n");
+    }
 }
 
 static void
@@ -507,9 +605,15 @@ keyboard_key(void *data, struct wl_keyboard *wk, uint32_t serial, uint32_t time,
     struct waytest *s = data;
     (void)wk; (void)serial; (void)time;
     if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
-        s->kcount++;
-        fprintf(stderr, "waytest: KEY press code=%u (K=%lu)\n", key, s->kcount);
-        draw(s);
+        if (s->kbd_win < 0) {
+            fprintf(stderr, "waytest: KEY press code=%u sans focus\n", key);
+            return;
+        }
+        struct win *w = &s->wins[s->kbd_win];
+        w->kcount++;
+        fprintf(stderr, "waytest: W%d KEY press code=%u (K=%lu)\n",
+                w->id, key, w->kcount);
+        draw(w);
     }
 }
 
@@ -643,10 +747,21 @@ on_term(int sig)
 int
 main(int argc, char **argv)
 {
-    (void)argc; (void)argv;
+    S.nwin = 1;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--two") == 0) {
+            S.nwin = 2;
+        } else {
+            fprintf(stderr, "waytest: argument inconnu : %s "
+                            "(usage : waytest [--two])\n", argv[i]);
+            return 2;
+        }
+    }
+
     setvbuf(stderr, NULL, _IOLBF, 0);
-    memset(&S, 0, sizeof(S));
-    S.shmfdfd = -1;
+    memset(&S.wins, 0, sizeof(S.wins));
+    S.ptr_win = -1;
+    S.kbd_win = -1;
 
     S.dpy = wl_display_connect(NULL);
     if (!S.dpy) {
@@ -654,7 +769,16 @@ main(int argc, char **argv)
                         "XDG_RUNTIME_DIR ?): %s\n", strerror(errno));
         return 1;
     }
-    S.lsq_x = S.lsq_y = -1;
+    for (int i = 0; i < S.nwin; i++) {
+        S.wins[i].id = i + 1;
+        S.wins[i].shmfdfd = -1;
+        /* Accents distinguables : W1 reste le vert historique (QA v0.4
+         * étape 2 inchangée), W2 passe à l'orange pour la preuve pixel
+         * « deux fenêtres distinctes / active au premier plan ». */
+        S.wins[i].accent = i == 0 ? 0xFF6ADB2A : 0xFFFF8020;
+        S.wins[i].lsq_x = -1;
+        S.wins[i].lsq_y = -1;
+    }
     S.reg = wl_display_get_registry(S.dpy);
     wl_registry_add_listener(S.reg, &registry_listener, &S);
     wl_display_roundtrip(S.dpy);
@@ -665,17 +789,30 @@ main(int argc, char **argv)
         return 1;
     }
 
-    S.surf = wl_compositor_create_surface(S.comp);
-    wl_surface_add_listener(S.surf, &surface_listener, &S);
-    S.xsurf = xdg_wm_base_get_xdg_surface(S.wmbase, S.surf);
-    xdg_surface_add_listener(S.xsurf, &xdg_surface_listener, &S);
-    S.top = xdg_surface_get_toplevel(S.xsurf);
-    xdg_toplevel_add_listener(S.top, &toplevel_listener, &S);
-    xdg_toplevel_set_title(S.top, "waytest");
-    /* Taille demandée raisonnable pour la QA : guider le compositor sans
-     * imposer de min/max (pas de demande bloquante). */
-    xdg_toplevel_set_min_size(S.top, 480, 320);
-    wl_surface_commit(S.surf);
+    for (int i = 0; i < S.nwin; i++) {
+        struct win *w = &S.wins[i];
+        w->surf = wl_compositor_create_surface(S.comp);
+        wl_surface_add_listener(w->surf, &surface_listener, w);
+        w->xsurf = xdg_wm_base_get_xdg_surface(S.wmbase, w->surf);
+        xdg_surface_add_listener(w->xsurf, &xdg_surface_listener, w);
+        w->top = xdg_surface_get_toplevel(w->xsurf);
+        xdg_toplevel_add_listener(w->top, &toplevel_listener, w);
+        /* Titre distinct par fenêtre en mode --two (le mono garde le
+         * titre historique). */
+        if (S.nwin > 1) {
+            char title[32];
+            snprintf(title, sizeof(title), "waytest W%d", w->id);
+            xdg_toplevel_set_title(w->top, title);
+        } else {
+            xdg_toplevel_set_title(w->top, "waytest");
+        }
+        /* Taille demandée raisonnable pour la QA : guider le compositor
+         * sans imposer de min/max (pas de demande bloquante). */
+        xdg_toplevel_set_min_size(w->top, 480, 320);
+        wl_surface_commit(w->surf);
+        fprintf(stderr, "waytest: W%d toplevel déclarée (W%d bord %s)\n",
+                w->id, w->id, w->id == 1 ? "vert" : "orange");
+    }
     wl_display_flush(S.dpy);
 
     S.tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
@@ -686,7 +823,7 @@ main(int argc, char **argv)
     sigaction(SIGTERM, &sa, NULL);
     sigaction(SIGINT, &sa, NULL);
 
-    /* Premier configure en attente : dessiner dès réception (la taille
+    /* Première configure en attente : dessiner dès réception (la taille
      * exacte vient du compositor). Boucle : entrées + horloge 1 s. */
     struct pollfd pfd[2];
     pfd[0].fd = wl_display_get_fd(S.dpy);
@@ -694,7 +831,8 @@ main(int argc, char **argv)
     pfd[1].fd = S.tfd;
     pfd[1].events = POLLIN;
 
-    fprintf(stderr, "waytest: prêt (boucle d'événements en cours)\n");
+    fprintf(stderr, "waytest: prêt (boucle d'événements en cours, %d "
+                    "fenêtre%s)\n", S.nwin, S.nwin > 1 ? "s" : "");
     while (!S.quit) {
         wl_display_flush(S.dpy);
         int r = poll(pfd, 2, 2000);
@@ -710,11 +848,12 @@ main(int argc, char **argv)
             ssize_t n = read(S.tfd, &ticks, sizeof(ticks));
             (void)n;
             fprintf(stderr, "waytest: seconde %lu (K=%lu P=%lu B=%lu)\n",
-                    (unsigned long)ticks, S.kcount, S.pcount, S.bcount);
-            draw(&S);
+                    (unsigned long)ticks,
+                    S.wins[0].kcount, S.wins[0].pcount, S.wins[0].bcount);
+            for (int i = 0; i < S.nwin; i++) draw(&S.wins[i]);
         }
     }
     fprintf(stderr, "waytest: fin propre (K=%lu P=%lu B=%lu)\n",
-            S.kcount, S.pcount, S.bcount);
+            S.wins[0].kcount, S.wins[0].pcount, S.wins[0].bcount);
     return 0;
 }

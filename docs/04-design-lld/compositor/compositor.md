@@ -75,15 +75,22 @@ Détail par module :
   curseur. Le curseur est rendu par le compositor (pas un client), en **buffer
   mémoire statique** (pas de thème xcursor au v0.4) ; le rythme vient des vblanks.
 - **input.rs** — flux libinput : clavier, pointeur relatif, boutons, axes ; focus
-  par surface sous le curseur (modèle smallvil/anvil).
+  par surface sous le curseur (modèle smallvil/anvil). Le mouvement du pointeur
+  cumule le delta **brut** (`delta_unaccel`) : déplacement 1:1 du dispositif,
+  sans accélération matérielle — la politique d'accélération (modèles
+  adaptables molette/trackpad) sera une option de configuration (v0.5).
 - **shell.rs** — surfaces xdg-shell (toplevel/popup) insérées dans un `Space`
   Smithay ; mappage sur ack de configure, popup positionnée par le compositor.
 - **grabs.rs** — requêtes xdg interactives `xdg_toplevel_move/resize` armées sur
   le vérificateur `pointer.has_grab(serial)` (sérial de la pression, chaîné au
   grab implicite) — transposé de la référence anvil `shell/xdg.rs`
   (`PointerMoveSurfaceGrab` / `PointerResizeSurfaceGrab`, vérifiées en QA v0.3).
-- **policy.rs** — v0.4 : **empilement simple** (stacking) : placement en cascade,
-  fenêtre active au sommet (stacking order du `Space`) ; le découpage tiling
+- **policy.rs** — v0.4 : **empilement simple** (stacking) : placement en cascade
+  au pas **320x200** (face aux tailles initiales 640x480 : chaque fenêtre laisse
+  dépasser une bande franche de la précédente, les fenêtres empilées restent
+  largement visibles en même temps — preuves QA observables à l'écran sans
+  interaction), fenêtre active au sommet (stacking order du `Space`) ; le
+  découpage tiling
   complet relève du Desktop Core v0.5 et des plugins v0.7 (ADR-000 décision 12 :
   le compositor garde le mécanisme, le Desktop Core branche la politique).
 - **config.rs** — lecture d'un toml minimal (curseur, placement) ; la
@@ -92,8 +99,17 @@ Détail par module :
 ## Gestion des fenêtres (ADR-005 — pas de WM distinct)
 
 - tout mappage/unmapping/close passe par le compositor (pas de processus séparé) ;
+- **taille initiale** : à `new_toplevel` le compositor écrit la taille
+  640x480 dans l'état en attente du toplevel (avant le premier commit) —
+  la configure initiale la porte, le client suit (waytest alloue son
+  buffer à cette taille : journal `buffer 640x480 prêt`) ;
 - interactifs xdg : move/resize par la voie v0.3 (grabs armés côté serveur) ;
-- fenêtre active = focus clavier ; visible = sommet du stacking ;
+  le TYPE (move puis resize) est découplé du bouton physique côté client —
+  l'alternance milieu/droit de la QA ne fait que contourner les drops du
+  canal PS/2 (SYN_DROPPED) ;
+- fenêtre active = focus clavier (au clic gauche : raise du `Space` +
+  `keyboard.set_focus`, puis reconfigure des fenêtres) ; visible = sommet
+  du stacking ;
 - close : délégation au client (`xdg_toplevel.close`) puis purge au délai.
 
 ## Intégration build (étape 04, conventions phases Rust)
@@ -121,8 +137,14 @@ Détail par module :
 - Étape « session » (courante) : binaire/usage/version, seatd actif, session KMS
   tenue 12 s, socket Wayland publiée, client `waytest` connecté et fenêtre mappée
   (screendump : contenu client sur fond du compositor), sortie au SIGTERM.
-- Étapes suivantes : fenêtres xdg (focus, move/resize), double fenêtre (disposition),
-  fenêtre X11 (XWayland) — complètent TEST-GFX-003.
+- Étape « gestion des fenêtres » (harnais dédié `t-yaor-comp-wm.py`) :
+  deux fenêtres `waytest --two` (W1 vert / W2 orange) au pas de cascade
+  320x200, focus clavier par clic (compteurs par fenêtre du client),
+  raise au clic (pixels verts dans la zone de chevauchement), move
+  (`xdg_toplevel_move`, bbox verte déplacée) et resize
+  (`xdg_toplevel_resize`, buffer client recréé à la taille mesurée).
+- Étapes suivantes : fenêtre X11 (XWayland), profils graphiques —
+  complètent TEST-GFX-003.
 - Critère ouvert assumé : le canal PS/2 sacrifie occasionnellement un événement
   de bouton (leçon v0.4) ; la QA applique l'alternance + les reprises.
 

@@ -66,9 +66,17 @@ propre sur SIGTERM avec restauration de l'état CRTC et remise du maître.
 Statut v0.4 (étape 2, session) : **vert** — `t-yaor-comp.py` 16/16 (virtio-gpu)
 et `t-yaor-comp-simpledrm.py` 18/18 (repli `-vga std`), RC=0 : session KMS,
 socket Wayland, client mappé au scanout, console restituée après SIGTERM
-(screendump fbcon) et maître DRM rendu sans erreur de permission. Les étapes
-« fenêtres xdg » (focus, move/resize, double fenêtre) et XWayland complètent ce
-cas ; détails et triage dans `graphics-tests.md`.
+(screendump fbcon) et maître DRM rendu sans erreur de permission.
+
+Statut v0.4 (étape 3, gestion des fenêtres) : **vert** — harnais dédié
+`t-yaor-comp-wm.py` **23/23** (virtio) et repli simpledrm **23/23** :
+deux fenêtres `waytest --two` (W1 vert / W2 orange) à la taille
+initiale 640x480 posée par le compositor, focus clavier au clic
+(touches livrées à la fenêtre cliquée, jamais aux autres), raise au
+clic (pixels de la fenêtre du fond dans la zone de chevauchement),
+`xdg_toplevel_move` + glisser (bbox déplacée de 644 px au screendump)
+et `xdg_toplevel_resize` + glisser (buffer client recréé à la taille
+mesurée 794x589). Détails et triage dans `graphics-tests.md`.
 
 ## TEST-AUD-001 — Audio (PipeWire + WirePlumber)
 **Vérifie :** ADR-024

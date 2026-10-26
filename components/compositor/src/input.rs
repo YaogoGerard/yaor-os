@@ -44,8 +44,13 @@ pub fn process_input_event<I: InputBackend>(
         InputEvent::PointerMotion { event, .. } => {
             // Mouvement relatif (libinput) : accumulation dans la
             // position du pointeur, bornée au rectangle des sorties.
+            // Delta BRUT (delta_unaccel) : le déplacement du pointeur
+            // vaut le delta du dispositif, sans accélération
+            // matérielle — mouvement reproductible (QA positionnelle)
+            // et 1:1 sur PS/2 ; la politique d'accélération viendra
+            // avec la configuration v0.5.
             let serial = SERIAL_COUNTER.next_serial();
-            let mut location = data.pointer_location + event.delta();
+            let mut location = data.pointer_location + event.delta_unaccel();
 
             if let Some(rect) = combined_output_geometry(data) {
                 location.x = location.x.clamp(rect.loc.x as f64, (rect.loc.x + rect.size.w) as f64);

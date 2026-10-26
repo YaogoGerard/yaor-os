@@ -8,7 +8,14 @@
 use crate::state::Yaor;
 
 /// Décalage en cascade d'une nouvelle fenêtre.
-const CASCADE_OFFSET: (i32, i32) = (20, 20);
+///
+/// Le pas est volontairement grand (320x200, face aux tailles initiales
+/// 640x480) pour que les fenêtres empilées restent largement visibles
+/// en même temps : chaque fenêtre laisse dépasser une bande franche de
+/// la précédente, ce qui rend les preuves QA observables à l'écran
+/// (screendump « deux fenêtres distinctes », clic sur une bande
+/// visible de la fenêtre du fond).
+const CASCADE_OFFSET: (i32, i32) = (320, 200);
 
 /// Emplacement de la prochaine fenêtre : à droite du haut de la pile,
 /// borné aux sorties (simple en v0.4 — la gestion de layout viendra
@@ -40,8 +47,8 @@ const COLLAPSE_MARGIN: i32 = 20;
 /// simplifié : pas de décoration ni layout dynamique en v0.4).
 pub fn fixup_positions(state: &mut Yaor) {
     // v0.4 : les fenêtres gèrent leur position via leurs grabs ; le
-    // repositionnement au changement de sorties reste local aux éléments
-    // my simple. À l'étape de window decorations cette fonction prend
-    // son extension.
+    // repositionnement au changement de sorties reste local aux
+    // éléments de l'espace. À l'étape des décorations de fenêtre
+    // cette politique prendra son extension.
     let _ = state;
 }

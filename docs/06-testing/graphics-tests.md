@@ -143,8 +143,72 @@ Notes de triage (non scorées) :
   un blob nul).
 
 Les entrées réelles et les grabs xdg (move/resize, focus) relèvent de
-l'étape « gestion des fenêtres » du jalon et seront couverts par des cas
-TEST-GFX-003 dédiés.
+l'étape « gestion des fenêtres » du jalon : couvertes par l'étape 3
+ci-dessous.
+
+### Étape 3 — gestion des fenêtres (2 fenêtres : focus, raise, move, resize)
+
+Harnais dédié : `t-yaor-comp-wm.py` (base `t-yaor-comp.py` + injections
+QMP adaptatives façon `t-anvil` ; pression PS/2 ⇒ arrivée au journal
+client « W… pointer button ... press » ⇒ décision, jamais un timer).
+
+Côté client :
+
+- `waytest --two` crée **deux toplevels** — W1 (bord vert) puis
+  W2 (bord orange) — chaque fenêtre dispose de ses compteurs et de son
+  buffer (journal préfixé `W1 :`/`W2 :`) ;
+- le compositor guide la **taille initiale** (640x480 envoyé à la
+  configure initiale — le client suit) et **place en cascade** avec un
+  pas de 320x200 : W2 recouvre largement W1, mais une bande franche de
+  W1 reste visible (clic possible sur la fenêtre du fond) ;
+- les preuves pixels classent les couleurs du screendump : verts
+  (accent W1) et oranges (accent W2) sont comptés avec bboxes,
+  le chevauchement est lu pixel par pixel.
+
+Preuves de la phase interactive (scénario unique par boot) :
+
+`t-yaor-comp-wm.py` **vert — 23/23, RC=0** (virtio-gpu) ; **repli
+simpledrm : 23/23, RC=0** (`t-yaor-comp-wm-simpledrm.py`, `-vga std`).
+Chiffres du run vert (virtio-gpu) :
+
+- **deux fenêtres distinctes rendues** : 11 924 px verts / 16 352 px
+  oranges, bboxes W1 (20,20,659,499) et W2 (340,220,979,699) — deux
+  fenêtres 640x480 décalées du pas de cascade 320x200 ; baseline du
+  chevauchement (340,220)-(660,500) : oranges > 0 ET verts == 0
+  (W2 au premier plan, W1 totalement en dessous) ;
+- **focus clavier au clic** : clic gauche sur W2 → `keyboard enter`
+  reçu par W2 (focus posé par le compositor), touches a/b/c →
+  `W2 KEY press`=3 et AUCUN `W1 KEY press` (aucune fuite) ;
+- **clic + raise de la fenêtre du fond** : clic gauche sur la bande
+  visible de W1 (30,30) → `keyboard enter` reçu par W1 (focus
+  transféré), touches d/e → `W1 KEY press`=2 ; screendump : 4 428 px
+  verts et 0 px oranges dans le chevauchement, bbox verte restreinte
+  (340,220,659,499) — W1 est passée au premier plan au-dessus de W2
+  (preuve purement pixel) ;
+- **déplacer** : pression interactive (bouton milieu) sur W1 → journal
+  client `W1 move request envoyé` → glisser +200,+140 → bbox verte
+  (20,20,659,499) → (221,141,860,620) : déplacement mesuré de 644 px ;
+- **redimensionner** : pression interactive suivante sur W1 → journal
+  client `W1 resize request envoyé` → glisser +170,+120 : le client
+  recrée ses buffers à la taille propagée (cascade 709x529 → … →
+  794x589, jeton invité `BFR1-1` calculé sur le journal client) et la
+  bbox verte passe à (221,141,1014,729) (largeur +153 px).
+
+Fiabilité des pressions (canal PS/2) : le harnais draine, alterne les
+boutons et reprend par round lorsque AUCUNE pression n'a été livrée ;
+la séquence des types (1re interactive = move, 2e = resize) reste du
+côté client (compteur `icount` PAR FENÊTRE), et la QA verrouille la
+cible de chaque pression par le marqueur `W1 pointer button 274/273
+press` du journal client (pression livrée DANS la fenêtre visée) —
+jamais un timer. La position du pointeur est commandée exactement :
+le compositor cumule le delta **brut** de libinput (`delta_unaccel`,
+sans accélération matérielle — cf. LLD), donc les déplacements
+commandés en unités PS/2 tombent au pixel près à l'écran. Pour le
+clic gauche, la preuve primaire est la variation de `keyboard enter`
+de la fenêtre visée (le focus n'est posé que par le compositor, sur
+la pression SOUS cette surface) : le canal PS/2 peut avaler la ligne
+« pointer button 272 press » côté journal client (le harnais affine
+alors : pression confirmée par l'effet, jamais par un timer).
 
 ## TEST-GFX-001 — Compositor
 
