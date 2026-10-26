@@ -78,6 +78,21 @@ clic (pixels de la fenêtre du fond dans la zone de chevauchement),
 et `xdg_toplevel_resize` + glisser (buffer client recréé à la taille
 mesurée 794x589). Détails et triage dans `graphics-tests.md`.
 
+## TEST-GFX-004 — Compatibilité X11 via XWayland (v0.4)
+**Vérifie :** ADR-005, REQ-SW-005 (partie compositor), ADR-024
+
+Chaîne X épinglée (14 archives, cf. `sources/manifest.tsv`) et phases chroot
+`ch7.*` sans réseau ; le compositor démarre Xwayland, joue le gestionnaire
+X11 (`XwmHandler`) et une fenêtre X11 de test (`xwtest`, libX11 seule) est
+rendue au scanout, cliquable (ButtonPress livré au client) et livrée clavier
+(focus par clic → `SetInputFocus`/`WM_TAKE_FOCUS`).
+
+Statut v0.4 (étape 4) : **vert** — `t-yaor-comp-xwl.py` **11/11, RC=0**
+(virtio-gpu) : `WM X11 attaché (display :0)`, socket `X0` + verrou publié,
+`xwtest: MAP id=0x400001`, px bleus + carré blanc au screendump, `BTN n=1`,
+`KEY keysym=0x61|0x62|0x63`, sortie propre sur la touche q. Détails et triage
+dans `graphics-tests.md`.
+
 ## TEST-AUD-001 — Audio (PipeWire + WirePlumber)
 **Vérifie :** ADR-024
 

@@ -555,6 +555,11 @@ pub fn run_udev() {
         })
         .unwrap();
 
+    // Xwayland (v0.4 étape 4) : lancé une fois les sources branchées, la
+    // sortie primaire configurée par l'ajout du device ci-dessus
+    // (modèle anvil udev.rs : après les sortie « up »).
+    state.start_xwayland();
+
     // Boucle principale (anvil : dispatch 16 ms puis refresh + flush).
     // `STOP_REQUESTED` permet un arrêt propre sur SIGTERM/SIGINT.
     while state.running.load(Ordering::SeqCst) && !STOP_REQUESTED.load(Ordering::SeqCst) {
@@ -593,10 +598,33 @@ pub fn run_udev() {
     info!("démontage : sorties DRM libérées");
     drop(udev);
     info!("démontage : données udev libérées");
+    let socket_name = state.socket_name.take();
     drop(state);
     info!("démontage : état Wayland libéré");
     drop(event_loop);
     info!("démontage : boucle et siège libérés");
+    // Retrait explicite de la socket (`ListeningSocket::drop` de smithay ne
+    // s'est pas exécuté ab initio : ses clones résident dans des sources
+    // Calloop encore référencées par l'état du compositor — constat QA
+    // TEST-GFX-003/004). Le retrait à la main garantit la promesse
+    // « session fermée proprement » (pas de socket résiduelle) et évite
+    // qu'un prochain client se connecte à un compositor mort.
+    if let Some(name) = socket_name {
+        if let Some(rt) = std::env::var_os("XDG_RUNTIME_DIR") {
+            let mut path = std::path::PathBuf::from(rt);
+            path.push(&name);
+            match std::fs::remove_file(&path) {
+                Ok(()) => info!("socket wayland retirée : {}", path.display()),
+                Err(err) => tracing::warn!("retrait socket wayland : {}", err),
+            }
+            let mut lock = path;
+            lock.as_mut_os_string().push(".lock");
+            match std::fs::remove_file(&lock) {
+                Ok(()) => info!("verrou socket retiré : {}", lock.display()),
+                Err(err) => tracing::warn!("retrait verrou socket : {}", err),
+            }
+        }
+    }
 }
 
 impl Yaor {

@@ -16,8 +16,8 @@ use smithay::{
         keyboard::FilterResult,
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
-    reexports::wayland_server::protocol::wl_surface::WlSurface,
     utils::{Point, Rectangle, SERIAL_COUNTER},
+    wayland::seat::WaylandFocus,
 };
 
 use crate::state::Yaor;
@@ -113,20 +113,38 @@ pub fn process_input_event<I: InputBackend>(
                     .map(|(w, l)| (w.clone(), l))
                 {
                     data.space.raise_element(&window, true);
-                    keyboard.set_focus(
-                        data,
-                        Some(window.toplevel().unwrap().wl_surface().clone()),
-                        serial,
-                    );
+                    // Fenêtre X11 : on demande à Xwayland de la remonter
+                    // côté X aussi (sinon stacking du serveur diverge).
+                    let focus = if let Some(surface) = window.x11_surface().cloned() {
+                        if let Some(xwm) = data.xwm.as_mut() {
+                            let _ = xwm.raise_window(&surface);
+                        }
+                        crate::focus::FocusTarget::X11(surface)
+                    } else {
+                        crate::focus::FocusTarget::Wl(
+                            window.wl_surface().map(|w| w.into_owned()).expect(
+                                "adversaire : fenêtre wayland sans surface",
+                            ),
+                        )
+                    };
+                    keyboard.set_focus(data, Some(focus), serial);
                     data.space.elements().for_each(|window| {
-                        window.toplevel().unwrap().send_pending_configure();
+                        if let Some(toplevel) = window.toplevel() {
+                            toplevel.send_pending_configure();
+                        }
                     });
                 } else {
                     data.space.elements().for_each(|window| {
                         window.set_activated(false);
-                        window.toplevel().unwrap().send_pending_configure();
+                        if let Some(toplevel) = window.toplevel() {
+                            toplevel.send_pending_configure();
+                        }
                     });
-                    keyboard.set_focus(data, Option::<WlSurface>::None, serial);
+                    keyboard.set_focus(
+                        data,
+                        Option::<crate::focus::FocusTarget>::None,
+                        serial,
+                    );
                 }
             }
 

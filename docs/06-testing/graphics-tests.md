@@ -210,6 +210,74 @@ la pression SOUS cette surface) : le canal PS/2 peut avaler la ligne
 « pointer button 272 press » côté journal client (le harnais affine
 alors : pression confirmée par l'effet, jamais par un timer).
 
+## TEST-GFX-004 — Compatibilité X11 via XWayland (v0.4, étape 4)
+
+**Vérifie :** ADR-005, REQ-SW-005 (partie compositor), ADR-024 (validation QEMU)
+
+Chaîne X épinglée dans `sources/manifest.tsv` (14 archives, SHA-256) : xorgproto,
+xtrans, libpthread-stubs, xcb-proto, libXau, libxcb, libX11, libxkbfile,
+libfontenc, libXfont2 (`--disable-freetype --disable-fc`), libxcvt, libxshmfence,
+xkbcomp et Xwayland 24.1.14 (options meson : sans glamor/GLX/Xvfb/EGL,
+`-Dsha1=libcrypto`, écoute TCP désactivée). Étendue réduite au socle QA : la validation porte sur le chemin « fenêtre
+rendue, cliquable, clavier livré », pas sur toute la surface du serveur X
+(extensions optionnelles, IPv6, XDMCP, etc. hors périmètre v0.4). Les phases
+chroot `ch7.*` suivent l'ordre des dépendances (libXau avant libxcb, libxcb
+avant libX11) et la phase `ch7.xwtest` bâtit le client de validation.
+
+Client de validation `xwtest` (`components/xwtest/`, libX11 seule) : fenêtre
+bleue 0x2A6ADB avec carré blanc central, journal `xwtest: MAP id=…`,
+`xwtest: BTN n=…`, `xwtest: KEY keysym=… char=…` — les preuves texte sont
+lues côté invité (`grep /tmp/xt.log`), l'écho console hôte pouvant être
+tronqué.
+
+Harnais : `t-yaor-comp-xwl.py` (virtio-gpu, base `t-gfx-live` + QMP local pour
+les injections `input-send-event` et les screendumps). Comportement :
+après le compositor (`/tmp/yc.log`), `xwtest` est lancé sur le display choisi
+(`DISPLAY=:N`), puis phase interactive (screendump pixel, clic adaptatif au
+centre de la fenêtre bleue, touches a/b/c, sortie sur la touche q).
+
+`t-yaor-comp-xwl.py` **vert — 11/11, RC=0** (ISO 0.2.0, run du jalon v0.4
+étape 4) :
+
+- **Xwayland attaché** : le compositor prépare `/tmp/.X11-unix` (0o1777) et
+  publie `WM X11 attaché (display :0)`, socket `X0` et verrou `.X0-lock`
+  (jetons `XM+1`, `XS-X0`, `XLOCK+0`, `display :0`) ;
+- **session KMS** : seatd actif, session libseat tenue 12 s, socket
+  `wayland-1` publiée (comme TEST-GFX-003 étape 2) ;
+- **xwtest mappée** : connexion X réussie, `xwtest: MAP id=0x400001`
+  (MapNotify client) ;
+- **fenêtre rendue au scanout** : px bleus ≥ 8 000 (bord et fond de la
+  fenêtre) et contenu client dessiné (carré blanc ≥ 5 000 px) au screendump
+  QMP — le rendu passe Xwayland → wl_surface → compositor → DRM ;
+- **clic livré** : clic gauche adaptatif (canal PS/2, même leçon que l'étape 3)
+  au centre de la fenêtre → `xwtest: BTN n=1` (ButtonPress client) ;
+- **clavier livré après focus** : touches a/b/c →
+  `KEY keysym=0x61/0x62/0x63` (jeton `KEY keysym=0x6[12]` = 3 livraisons) ;
+  le focus clavier est posé par le compositor sur la cible `FocusTarget::X11`
+  (délégation smithay `KeyboardTarget for X11Surface` : `SetInputFocus` et
+  `WM_TAKE_FOCUS` côté X, modèle anvil) ;
+- **sortie propre** : la touche q ferme la fenêtre (DestroyWindow côté X) ;
+  xwtest sort de lui-même (processus disparu, journaux complets).
+
+Notes de triage (non scorées) :
+
+- le canal PS/2 peut sacrifier un événement de bouton (cf. étape 3) : le
+  harnais reprend jusqu'à 6 essais, vérifiés au journal client (`XT+1`), et
+  draine les boutons avant chaque essai ;
+- le client X11 détruit à sa sortie relâche sa wl_surface : les fenêtres
+  suivantes du `Space` ne sont pas perturbées (chemins `_shell_commit`
+  défensifs sur `toplevel()`) ;
+- retrait de la socket Wayland rendu **déterministe** au démontage du
+  compositor (socket `wayland-N` et verrou retirés à la main après la boucle :
+  le `Drop` de la source smithay n'a pas été observé comme exécuté dans tous
+  les chemins de libération, avec Xwayland en arrière-plan) — la régression
+  constatée au harnais étapes 1/2 (KO « socket Wayland retirée ») est repassée
+  au vert avec ce correctif (`t-yaor-comp.py` 16/16).
+
+Pas de repli simpledrm dédié pour cette étape : la couverture de session du
+repli est déjà démontrée par TEST-GFX-003 (session + entrées + console), et
+la partie X11 de cette QA n'en dépend pas (chemin Xwayland identique).
+
 ## TEST-GFX-001 — Compositor
 
 **Vérifie :** REQ-SW-005

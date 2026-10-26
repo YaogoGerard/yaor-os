@@ -150,10 +150,16 @@ ALL_PHASES=(
     # xkeyboard-config (données règles evdev), seatd (libseat), puis anvil
     # bâti après tout le graphique (drm/gbm/egl/libinput).
     hwdata displayinfo pixman libxkbcommon xkeyboard-config seatd smithay
-    # Client de validation Wayland (rectangle + horloge, journal des
-    # entrées) : la libwayland et wayland-protocols (xdg-shell.xml) sont
-    # déjà installées ; le binaire part dans le live pour la QA compositor.
-    waytest
+    # Chaîne X pour XWayland (v0.4 étape 4) : le serveur autonome exige
+    # pkg-config('x11') — tout l'arbre Xlib/XCB — plus libxcvt, libxkbfile
+    # et libxfont2 ; xkbcomp est l'outil runtime XKB. Après xkeyboard-config
+    # (données) et avant smithay (dont le compositor hébergera Xwayland :
+    # smithay/xwayland via x11rb — vendu).
+    xorgproto xtrans libpthread-stubs xcb-proto libxau libxcb libx11 \
+    libxkbfile libfontenc libxfont2 libxcvt libxshmfence xkbcomp xwayland
+    # Clients de validation graphique (après leur socle : waytest exige
+    # wayland-scanner, xwtest la libX11 de la chaîne X — phases ci-dessus).
+    waytest xwtest
     kernel
     # Phase de configuration système : copie config/rootfs et active les
     # services. Elle précède les composants Rust pour s'appuyer sur les outils
@@ -1481,12 +1487,179 @@ phase_xkeyboard_config() {
     run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
 }
 
+# ============================================================================
+# Chaîne X pour XWayland (v0.4 étape 4, ADR-005, TEST-GFX-003) : le serveur
+# standalone Xwayland exige pkg-config('x11') — donc libxcb (dep. xcb-proto +
+# libpthread-stubs + xtrans + xorgproto) et libX11 — plus libxcvt,
+# libxkbfile, libxfont2 (dep. libfontenc). xkbcomp est un outil runtime de
+# démarrage XKB (les données, c'est xkeyboard-config, déjà épinglées).
+
+# --- xorgproto : en-têtes du protocole X11 (pc xproto, randrproto ...) et
+# le pc « xwaylandproto » requis par le serveur autonome.
+phase_xorgproto() {
+    require_archive xorgproto
+    local d; d="$(ci_work xorgproto)"
+    log "configure xorgproto (autoconf ; specs doc écartées)"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --sysconfdir=/etc --disable-specs"
+    run chroot_run "cd '$d' && make && make install"
+}
+
+# --- xtrans : en-têtes seuls (transports de socket), pas de bibliothèque.
+phase_xtrans() {
+    require_archive xtrans
+    local d; d="$(ci_work xtrans)"
+    log "configure xtrans (en-têtes)"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --sysconfdir=/etc"
+    run chroot_run "cd '$d' && make && make install"
+}
+
+# --- libpthread-stubs : pc vide consommée par libxcb.
+phase_libpthread_stubs() {
+    require_archive libpthread-stubs
+    local d; d="$(ci_work libpthread-stubs)"
+    log "configure libpthread-stubs"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --sysconfdir=/etc"
+    run chroot_run "cd '$d' && make && make install"
+}
+
+# --- xcb-proto : descriptions XML du protocole XCB (fichiers .xml + .pc)
+# + générateur python consommé par libxcb.
+phase_xcb_proto() {
+    require_archive xcb-proto
+    local d; d="$(ci_work xcb-proto)"
+    log "configure xcb-proto (données python)"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --sysconfdir=/etc"
+    run chroot_run "cd '$d' && make && make install"
+}
+
+# --- libxcb : liaison XCB « C-Binding » ; la génération du protocole
+# exige xcb-proto. Extensions optionnelles découpées une à une par
+# configure : seuls le noyau + SHM sont consommés par la QA (client X11 et
+# Xwayland) ; chaque module tire son .pc supplémentaire.
+phase_libxcb() {
+    require_archive libxcb
+    local d; d="$(ci_work libxcb)"
+    log "configure libxcb (xcb-proto ; extensions optionnelles découpées)"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --sysconfdir=/etc --disable-static --with-doxygen=no"
+    run chroot_run "cd '$d' && make && make install"
+}
+
+# --- libXau : gestion d'autorisations X (XauReadAuth).
+phase_libxau() {
+    require_archive libxau
+    local d; d="$(ci_work libxau)"
+    log "configure libxau (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload -Dxthreads=true"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# --- libX11 : la bibliothèque Xlib (fond du client xwtest de la QA et
+# exigence build du serveur autonome : pkg-config('x11') est requise).
+phase_libx11() {
+    require_archive libx11
+    local d; d="$(ci_work libx11)"
+    log "configure libX11 (libxcb ; specs écartées)"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --sysconfdir=/etc --disable-static --disable-specs"
+    run chroot_run "cd '$d' && make && make install"
+}
+
+# --- libxkbfile : manipulation keycodes/symdef pour xkbcomp.
+phase_libxkbfile() {
+    require_archive libxkbfile
+    local d; d="$(ci_work libxkbfile)"
+    log "configure libxkbfile (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# --- libfontenc : décodage des polices compressées (zlib du chroot) ; le
+# socle qu'exige libXfont2 au rapport d'éditeur de liens.
+phase_libfontenc() {
+    require_archive libfontenc
+    local d; d="$(ci_work libfontenc)"
+    log "configure libfontenc (meson ; zlib du chroot)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# --- libXfont2 : la rasterisation des polices du serveur X ; seuls les
+# formats bitmap (PCF/BDF) — pas de freetype au live (v0.4), le client QA
+# xwtest ne dessine pas de texte via les polices cœur.
+# --disable-fc : couche fontserver écartée (par défaut dès 2.0.9).
+phase_libxfont2() {
+    require_archive libxfont2
+    local d; d="$(ci_work libxfont2)"
+    log "configure libXfont2 (autoconf ; sans freetype ni fontserver)"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --sysconfdir=/etc --disable-static --disable-freetype --disable-fc"
+    run chroot_run "cd '$d' && make && make install"
+}
+
+# --- libxcvt : calcule les modes (modelines CVT) pour le RandR consacré ;
+# exigence stricte du serveur autonome : dependency('libxcvt') requise.
+phase_libxcvt() {
+    require_archive libxcvt
+    local d; d="$(ci_work libxcvt)"
+    log "configure libxcvt (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# --- libxshmfence : barrière de synchronisation partagée — dans l'arbre
+# commun du serveur (miext/sync), requis même sans glamor/dri3.
+phase_libxshmfence() {
+    require_archive libxshmfence
+    local d; d="$(ci_work libxshmfence)"
+    log "configure libxshmfence (autoconf)"
+    run chroot_run "cd '$d' && ./configure --prefix=/usr --sysconfdir=/etc --disable-static"
+    run chroot_run "cd '$d' && make && make install"
+}
+
+# --- xkbcomp : compile les descriptions XKB ; consommé par Xwayland au
+# démarrage (les données, c'est xkeyboard-config, plus haut).
+phase_xkbcomp() {
+    require_archive xkbcomp
+    local d; d="$(ci_work xkbcomp)"
+    log "configure xkbcomp (meson)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+}
+
+# --- xwayland : le serveur X sur Wayland (branche 24.1, publication
+# autonome — pas l'intégralité de xorg-server). Sous la QA :
+#   -Dglamor=false -Dglx=false : pas d'accélération native (softpipe).
+#   -Dxvfb=false -Dlibunwind=false -Ddocs=false : cibles hôte hors QA.
+#   -Ddri3=false, -Dxv=false : extensions non consommées par la QA.
+#   -Dxdmcp=false, -Dsecure-rpc=false : authentification réseau hors QA.
+#   -Dlisten_tcp=false : sockets UNIX locales seules (pas d'écoute TCP).
+#   -Dsha1=libcrypto : SHA1 via openssl (déjà bâti avant systemd).
+#   -Dxselinux=false -Dxcsecurity=false : SELinux/X-Resource hors QA.
+#   -Dxinerama=false : multimoniteur hors QA ; screensaver/mitshm auto.
+#   -Dlibdecor=false : décoration faite par le compositor.
+#   -Dsha1=libcrypto : SHA1 via openssl (déjà bâti avant systemd).
+#   -Dxselinux=false -Dxcsecurity=false : SELinux/scr (AUDIT) hors QA.
+#   -Dxinerama=false, -Dscreensaver=true -Dmitshm=auto : cas kdump.
+#   -Dlibdecor=false : décoration par l'extérieur (compositor).
+#   -Dxwayland_ei=false : injection d'émulation d'entrée hors QA.
+#   -Dsystemd_notify=auto : sd_notify (libsystemd) est au chroot.
+phase_xwayland() {
+    require_archive xwayland
+    local d; d="$(ci_work xwayland)"
+    log "configure xwayland (meson ; somme des dépendances de la chaîne X)"
+    run chroot_run "rm -rf '$d/build7' && cd '$d' && meson setup build7 --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nodownload \
+        -Dglamor=false -Dglx=false -Dxvfb=false -Dlibunwind=false -Ddocs=false -Ddocs-pdf=false \
+        -Ddri3=false -Dxv=false -Dxdmcp=false -Dxdm-auth-1=false -Dsecure-rpc=false \
+        -Dlisten_tcp=false -Dsha1=libcrypto -Dxselinux=false -Dxcsecurity=false \
+        -Dxinerama=false -Dlibdecor=false -Dxwayland_ei=false -Dipv6=false"
+    run chroot_run "cd '$d' && ninja -C build7 && ninja -C build7 install"
+    run chroot_run "test -x /usr/bin/Xwayland && echo 'Xwayland installé'"
+}
+
 # smithay : compositor de validation v0.4 (ADR-024) — l'exemple « anvil » est
 # un membre du workspace de la source. Build hors-ligne (dépendances vendues
 # par 01_download, ADR-018/019) ; xkbcommon est une caisse Rust PUR (pas de
 # libxkbcommon C, économie d'un paquet). Seule la cible KMS est exigée :
 # udev (drm + gbm + egl + libinput + libseat + renderer GLES2) — pas de
-# winit/x11 ; ne cliquent pas sur les C libs X11 ni Wayland client hôte.
+# winit/x11 ; pas de liaison C X11 ni client Wayland côté hôte.
 phase_smithay() {
     require_archive smithay
     ensure_host_rust
@@ -1531,6 +1704,16 @@ phase_waytest() {
     log "compilation de waytest (client de validation, libwayland-client seule)"
     run chroot_run "cc -O2 -Wall -Wextra -I'$gen' -o /usr/bin/waytest /build/components/waytest/waytest.c '$gen/xdg-shell-protocol.c' -lwayland-client"
     run chroot_run "test -x /usr/bin/waytest && echo 'waytest installé'"
+}
+
+# xwtest : client X11 de validation (TEST-GFX-004, v0.4 étape 4). Sources
+# internes du dépôt (components/xwtest) : fenêtre Xlib bleue, journal des
+# entrées ; servie par Xwayland via le bus XWM du compositor (x11.rs).
+# libX11 seule (par la chaîne X des phases ci-dessus).
+phase_xwtest() {
+    log "compilation de xwtest (client de validation X11, libX11 seule)"
+    run chroot_run "cc -O2 -Wall -Wextra -o /usr/bin/xwtest /build/components/xwtest/xwtest.c -lX11"
+    run chroot_run "test -x /usr/bin/xwtest && echo 'xwtest installé'"
 }
 
 # pipewire : serveur de session audio ADR-024 (sortie spa-alsa vers le HDA de

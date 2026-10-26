@@ -6,7 +6,8 @@
 // curseur laissé au statut par défaut (pas d'xcursor en v0.4).
 
 use smithay::{
-    delegate_data_device, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell,
+    delegate_data_device, delegate_output, delegate_primary_selection, delegate_seat, delegate_shm,
+    delegate_xdg_shell,
     backend::renderer::utils::on_commit_buffer_handler,
     desktop::{
         find_popup_root_surface, get_popup_toplevel_coords, PopupKind, PopupManager, Window,
@@ -24,6 +25,7 @@ use smithay::{
     },
     utils::{Rectangle, Serial},
     wayland::{
+        seat::WaylandFocus,
         buffer::BufferHandler,
         compositor::{get_parent, is_sync_subsurface, with_states},
         output::OutputHandler,
@@ -31,6 +33,7 @@ use smithay::{
             set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, ServerDndGrabHandler,
         },
         selection::SelectionHandler,
+        selection::SelectionTarget,
         shell::xdg::{
             PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
             XdgToplevelSurfaceData,
@@ -61,6 +64,12 @@ impl smithay::wayland::compositor::CompositorHandler for Yaor {
     }
 
     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a smithay::wayland::compositor::CompositorClientState {
+        // Client Xwayland : données propres à XWayland (modèle anvil) —
+        // pas de ClientState de dispatcher de clients (le client est
+        // inséré par smithay::xwayland::XWayland::spawn).
+        if let Some(state) = client.get_data::<smithay::xwayland::XWaylandClientData>() {
+            return &state.compositor_state;
+        }
         &client.get_data::<ClientState>().unwrap().compositor_state
     }
 
@@ -127,7 +136,12 @@ impl XdgShellHandler for Yaor {
             let window = self
                 .space
                 .elements()
-                .find(|w| w.toplevel().unwrap().wl_surface() == wl_surface)
+                .find(|w| {
+                    w.toplevel()
+                        .as_ref()
+                        .map(|t| t.wl_surface() == wl_surface)
+                        .unwrap_or(false)
+                })
                 .unwrap()
                 .clone();
             let initial_window_location = self.space.element_location(&window).unwrap();
@@ -158,7 +172,12 @@ impl XdgShellHandler for Yaor {
             let window = self
                 .space
                 .elements()
-                .find(|w| w.toplevel().unwrap().wl_surface() == wl_surface)
+                .find(|w| {
+                    w.toplevel()
+                        .as_ref()
+                        .map(|t| t.wl_surface() == wl_surface)
+                        .unwrap_or(false)
+                })
                 .unwrap()
                 .clone();
             let initial_window_location = self.space.element_location(&window).unwrap();
@@ -216,10 +235,15 @@ pub fn shell_commit(
     space: &mut smithay::desktop::Space<Window>,
     surface: &WlSurface,
 ) {
-    // commits de toplevel
+    // commits de toplevel — les fenêtres X11 n'ont pas de toplevel xdg
+    // (elles ne concernent que le bus XWM) : elles sont ignorées ici.
     if let Some(window) = space
         .elements()
-        .find(|w| w.toplevel().unwrap().wl_surface() == surface)
+        .find(|w| {
+            w.toplevel()
+                .map(|t| t.wl_surface() == surface)
+                .unwrap_or(false)
+        })
         .cloned()
     {
         let initial_configure_sent = with_states(surface, |states| {
@@ -289,7 +313,7 @@ impl Yaor {
 //
 
 impl SeatHandler for Yaor {
-    type KeyboardFocus = WlSurface;
+    type KeyboardFocus = crate::focus::FocusTarget;
     type PointerFocus = WlSurface;
     type TouchFocus = WlSurface;
 
@@ -303,9 +327,12 @@ impl SeatHandler for Yaor {
         self.cursor_status = image;
     }
 
-    fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
+    fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&crate::focus::FocusTarget>) {
         let dh = &self.display_handle;
-        let client = focused.and_then(|s| dh.get_client(s.id()).ok());
+        // data device : le client qui porte la surface (wayland OU x11)
+        let client = focused
+            .and_then(|f| f.wl_surface())
+            .and_then(|s| dh.get_client(s.id()).ok());
         set_data_device_focus(dh, seat, client);
     }
 }
@@ -318,7 +345,49 @@ delegate_seat!(Yaor);
 
 impl SelectionHandler for Yaor {
     type SelectionUserData = ();
+
+    // Relais vers Xwayland (v0.4 étape 4) : toute sélection wayland mise
+    // à jour/demandée est notifiée au WM X11 (portage anvil). Sans xwm
+    // actif, les branches xwayland tombent en no-op.
+    fn new_selection(
+        &mut self,
+        ty: SelectionTarget,
+        source: Option<smithay::wayland::selection::SelectionSource>,
+        _seat: Seat<Self>,
+    ) {
+        if let Some(xwm) = self.xwm.as_mut() {
+            if let Err(err) = xwm.new_selection(ty, source.map(|source| source.mime_types())) {
+                tracing::warn!(?err, ?ty, "échec de la sélection Xwayland (côté X)");
+            }
+        }
+    }
+
+    fn send_selection(
+        &mut self,
+        ty: SelectionTarget,
+        mime_type: String,
+        fd: std::os::unix::io::OwnedFd,
+        seat: Seat<Self>,
+        _user_data: &(),
+    ) {
+        if let Some(xwm) = self.xwm.as_mut() {
+            if let Err(err) = xwm.send_selection(ty, mime_type, fd, self.handle.clone()) {
+                tracing::warn!(?err, "échec de l'envoi de sélection vers X");
+            }
+        }
+        let _ = seat;
+    }
 }
+
+impl smithay::wayland::selection::primary_selection::PrimarySelectionHandler for Yaor {
+    fn primary_selection_state(
+        &self,
+    ) -> &smithay::wayland::selection::primary_selection::PrimarySelectionState {
+        &self.primary_selection_state
+    }
+}
+
+delegate_primary_selection!(Yaor);
 
 impl DataDeviceHandler for Yaor {
     fn data_device_state(&self) -> &smithay::wayland::selection::data_device::DataDeviceState {

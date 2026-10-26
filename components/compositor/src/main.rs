@@ -6,14 +6,15 @@
 // (docs/04-design-lld/compositor/compositor.md).
 
 mod config;
+mod focus;
 mod grabs;
 mod input;
+mod x11;
 mod policy;
 mod render;
 mod session;
 mod shell;
 mod state;
-mod xway;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const PROG: &str = "yaor-compositor";

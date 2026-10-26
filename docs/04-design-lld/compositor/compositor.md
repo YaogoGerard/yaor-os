@@ -43,7 +43,8 @@ components/compositor/src/
 ├── shell.rs       # xdg-shell (toplevel/popup), seat, data device, shm
 ├── policy.rs      # politique de fenêtres (placement en cascade) — ancre v1
 ├── grabs.rs       # move/resize interactifs (référence : anvil/smallvil)
-├── xway.rs        # démarrage/arrêt XWayland + surfaces X11 (stub v0.4 étape 2)
+├── focus.rs       # cible de focus clavier (FocusTarget : Wayland ou X11)
+├── x11.rs         # gestionnaire XWayland (XwmHandler) + sélections X11
 └── config.rs      # façade de configuration minimale (stub ; Desktop Core v0.5)
 ```
 
@@ -66,11 +67,22 @@ Détail par module :
   le maître DRM dès que le client libseat se ferme. La restauration de
   l'instantané fbcon capturé à l'ouverture échoue (EINVAL) — limite connue de
   Smithay, sans effet sur la remise du maître (le fd est fermé sans erreur) ni
-  sur la console, que la QA vérifie au scanout après sortie.
+  sur la console, que la QA vérifie au scanout après sortie. La socket Wayland
+  et son verrou sont retirés explicitement en fin de démontage (le `Drop` de
+  `ListeningSocket` de smithay n'est pas jugé fiable dans cet ordre de
+  libération : QA étape 1/2 — socket restante constatée, corrigée par retrait
+  explicite).
 - **state.rs** — état partagé `Yaor` : globals (compositor, xdg-shell, shm, output,
   seat, data device, dmabuf), `Space` des fenêtres, `PopupManager`, position du
-  pointeur, socket Wayland ; helpers de feedback de présentation et de scan-out
-  primaire (transposition d'anvil, sans layer-shell).
+  pointeur, socket Wayland ; **XWayland** (v0.4 étape 4) : `start_xwayland` est
+  appelé une fois les sorties primaires configurées (modèle anvil udev) —
+  création de `/tmp/.X11-unix` (0o1777), `XWayland::spawn` de smithay (smithay
+  lui-même publie la socket X `X%N` et le verrou `.X%N-lock`, insère le client
+  Wayland de Xwayland et passe la connexion via `WAYLAND_SOCKET` fd), source
+  source calloop branchée par `insert_source` ; l'événement `Ready` attache le
+  WM (`X11Wm::start_wm`, `x11.rs`), `xdisplay`/`xwm` gardés dans l'état ;
+  helpers de feedback de présentation et de scan-out primaire (transposition
+  d'anvil, sans layer-shell).
 - **render.rs** — assemblage des éléments d'une sortie : fenêtres de l'espace +
   curseur. Le curseur est rendu par le compositor (pas un client), en **buffer
   mémoire statique** (pas de thème xcursor au v0.4) ; le rythme vient des vblanks.
@@ -81,10 +93,33 @@ Détail par module :
   adaptables molette/trackpad) sera une option de configuration (v0.5).
 - **shell.rs** — surfaces xdg-shell (toplevel/popup) insérées dans un `Space`
   Smithay ; mappage sur ack de configure, popup positionnée par le compositor.
+  Les types de focus seat sont transposés au périmètre v0.4 étape 4 :
+  `type KeyboardFocus = crate::focus::FocusTarget` (Wayland **ou** X11),
+  `type PointerFocus = WlSurface` (une fenêtre X11 expose sa propre
+  wl_surface côté Xwayland, donc le pointeur reste sur le chemin Wayland) ;
+  `focus_changed` met le data device au client de la surface porteuse.
+  Sélections : presse-papiers/primaire façon anvil étendu aux sélections X
+  (`set_data_device_selection`/`set_primary_selection` vers le WM).
 - **grabs.rs** — requêtes xdg interactives `xdg_toplevel_move/resize` armées sur
   le vérificateur `pointer.has_grab(serial)` (sérial de la pression, chaîné au
   grab implicite) — transposé de la référence anvil `shell/xdg.rs`
   (`PointerMoveSurfaceGrab` / `PointerResizeSurfaceGrab`, vérifiées en QA v0.3).
+  Les grabs move/resize X11 réutilisent le `MoveSurfaceGrab` (le `Window` du
+  `Space` porte un `X11Surface`, pas seulement un toplevel xdg).
+- **focus.rs** (nouveau, étape 4) — `FocusTarget { Wl(WlSurface), X11(X11Surface) }`
+  implémenté comme `KeyboardTarget`/`PointerTarget`/`WaylandFocus`/`IsAlive`
+  (délégation par branche). La branche X11 délègue à smithay
+  (`KeyboardTarget for X11Surface`) qui pose le focus côté X :
+  `SetInputFocus` et `WM_TAKE_FOCUS` selon le mode d'entrée du client
+  (`Passive` par défaut via WM_HINTS) — c'est le chemin de la livraison des
+  touches aux applications X11. Le pointeur reste `WlSurface` (voie Wayland).
+- **x11.rs** (nouveau, étape 4) — `XwmHandler` de YAOR : mapping des fenêtres
+  (insertion dans le `Space` au lieu de la policy cascade, taille negociée
+  comme les xdg), `configure_request`, fenêtre override-redirect (cercle
+  intervention du WM), move-request réutilisant `MoveSurfaceGrab`,
+  `destroyed/unmapped_window` purgeant le `Space`, sélections
+  presse-papiers/primaire (accès limité aux clients d'une fenêtre X11 avec
+  le focus clavier), `delegate_xwayland_shell!`.
 - **policy.rs** — v0.4 : **empilement simple** (stacking) : placement en cascade
   au pas **320x200** (face aux tailles initiales 640x480 : chaque fenêtre laisse
   dépasser une bande franche de la précédente, les fenêtres empilées restent
@@ -112,6 +147,25 @@ Détail par module :
   du stacking ;
 - close : délégation au client (`xdg_toplevel.close`) puis purge au délai.
 
+### Fenêtres X11 (XWayland, v0.4 étape 4)
+
+- la même politique et la même gestion de fenêtres s'appliquent : les surfaces
+  X11 sont des `Window` du `Space` (mapping au `map_window_request`, taille
+  posée à la policy cascade, raise au clic via `xwm.raise_window` en
+  plus du raise du `Space` — le stacking du serveur X est tenu conforme au
+  stacking compositor) ;
+- le **focus clavier** est porté par `FocusTarget::X11` : à `keyboard.enter`
+  smithay traduit (SetInputFocus + WM_TAKE_FOCUS) — le client X11 voit
+  `FocusIn`/`KeyPress` dans son mode d'entrée sans code spécifique YAOR ;
+- les **sélections** (presse-papiers et primaire) traversent le WM dans les
+  deux sens (délégation smithay : `set_data_device_selection` côté Wayland,
+  `send_selection` côté X) ;
+- Xwayland lui-même est le serveur : YAOR n'implémente que le WM, pas le
+  serveur X (ADR-005 : compositor seul, pas de serveur X séparé) ;
+- parties hors périmètre v0.4 : thème xcursor (curseur X11 court en fil),
+  clavier X11 par grab (`xwayland_keyboard_grab`), `set_client_scale`
+  (HiDPI), XDMCP (IP/TCP désactivés à la construction).
+
 ## Intégration build (étape 04, conventions phases Rust)
 
 - la crate est **membre du workspace `components/`** (comme yaor-common,
@@ -129,7 +183,7 @@ Détail par module :
 - lancement en session utilisateur selon ADR-014 (au pari des services
   de la session de référence).
 
-## QA (TEST-GFX-003, v0.4)
+## QA (TEST-GFX-003/004, v0.4)
 
 - Harnais : `t-yaor-comp.py`, réutilisation de `t-anvil` (boot live, injections
   QMP, greps invités CNT-, screendumps QMP) et des leçons PS/2 v0.4 (alternance
@@ -145,6 +199,14 @@ Détail par module :
   (`xdg_toplevel_resize`, buffer client recréé à la taille mesurée).
 - Étapes suivantes : fenêtre X11 (XWayland), profils graphiques —
   complètent TEST-GFX-003.
+- Étape « compatibilité X11 » (harnais dédié `t-yaor-comp-xwl.py`,
+  TEST-GFX-004) : le compositor attache Xwayland (`WM X11 attaché
+  (display :0)`, socket `X0` + verrou), le client `xwtest` (libX11 seule)
+  mappe sa fenêtre bleue 0x2A6ADB (carré blanc central), rendue au scanout
+  (px bleus + blancs au screendump QMP), clic livré (`BTN n=1`) et
+  touches livrées après focus par clic (`KEY keysym=0x6[12]`,
+  journalisations côté invité dans `/tmp/xt.log`) ; sortie propre sur la
+  touche q (DestroyWindow).
 - Critère ouvert assumé : le canal PS/2 sacrifie occasionnellement un événement
   de bouton (leçon v0.4) ; la QA applique l'alternance + les reprises.
 

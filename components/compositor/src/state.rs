@@ -7,6 +7,7 @@
 
 use std::{
     ffi::OsString,
+    os::unix::fs::PermissionsExt,
     sync::{atomic::AtomicBool, Arc},
     time::Duration,
 };
@@ -40,7 +41,10 @@ use smithay::{
         shell::xdg::XdgShellState,
         shm::ShmState,
         socket::ListeningSocketSource,
+        xwayland_shell::XWaylandShellState,
+        selection::primary_selection::PrimarySelectionState,
     },
+    xwayland::{X11Wm, XWayland, XWaylandEvent},
 };
 
 use crate::session::UdevData;
@@ -88,10 +92,22 @@ pub struct Yaor {
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<Yaor>,
     pub data_device_state: DataDeviceState,
+    /// Protocole xwayland_shell_v1 : association surfaces wayland ↔ fenêtres
+    /// X11 d'un client (gestion des demandes d'override-redirect).
+    pub xwayland_shell_state: XWaylandShellState,
+    /// Sélection primaire (bouton du milieu — x11 copie dans les deux).
+    pub primary_selection_state: PrimarySelectionState,
 
     pub seat: Seat<Self>,
 
     pub backend_data: Option<UdevData>,
+
+    /// WM X11 d'une instance Xwayland vivante (Option : pas encore prête —
+    /// XWayland::spawn, puis XWaylandEvent::Ready quand le socket X11
+    /// est connecté).
+    pub xwm: Option<X11Wm>,
+    /// Numéro du display X11 (::N) choisi par Xwayland (QA : `DISP-0`).
+    pub xdisplay: Option<u32>,
 }
 
 impl Yaor {
@@ -141,6 +157,8 @@ impl Yaor {
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Yaor>(&dh);
         let mut seat_state = SeatState::new();
         let data_device_state = DataDeviceState::new::<Yaor>(&dh);
+        let xwayland_shell_state = XWaylandShellState::new::<Yaor>(&dh);
+        let primary_selection_state = PrimarySelectionState::new::<Yaor>(&dh);
         let popups = PopupManager::default();
 
         let seat_name = backend_data.session.seat().clone();
@@ -167,8 +185,79 @@ impl Yaor {
             output_manager_state,
             seat_state,
             data_device_state,
+            xwayland_shell_state,
+            primary_selection_state,
             seat,
             backend_data: Some(backend_data),
+            xwm: None,
+            xdisplay: None,
+        }
+    }
+
+    /// Démarrage de Xwayland (v0.4 étape 4, portage anvil start_xwayland).
+    ///
+    /// Smithay prépare les sockets UNIX `/tmp/.X11-unix/X%N`
+    /// (`prepare_x11_sockets`) et le verrou `/tmp/.X%N-lock`, puis lance le
+    /// binaire ; le client Wayland correspondant est inséré par spawn. Le
+    /// WM (X11Wm) n'existe qu'à l'événement Ready, quand les sockets X11
+    /// sont connectées (x11rb) — d'ici là les clients X11 n'ont rien à
+    /// attaquer.
+    pub fn start_xwayland(&mut self) {
+        use std::process::Stdio;
+
+        // Le répertoire des sockets X11 des sessions locales : smithay le
+        // suppose existant (convention FHS fixée par l'amont Xorg) ; le
+        // live ne crée que /tmp au boot. Mode 1777 (collaboratif, comme
+        // /tmp) pour un partage multi-sessions ultérieur.
+        match std::fs::create_dir_all("/tmp/.X11-unix") {
+            Ok(()) => {
+                if let Err(err) = std::fs::set_permissions(
+                    "/tmp/.X11-unix",
+                    std::fs::Permissions::from_mode(0o1777),
+                ) {
+                    tracing::warn!("permissions /tmp/.X11-unix : {}", err);
+                }
+            }
+            Err(err) => tracing::warn!("répertoire /tmp/.X11-unix : {}", err),
+        }
+
+        let (xwayland, client) = match XWayland::spawn(
+            &self.display_handle,
+            None,
+            std::iter::empty::<(String, String)>(),
+            true,
+            Stdio::null(),
+            Stdio::null(),
+            |_| (),
+        ) {
+            Ok(ret) => ret,
+            Err(err) => {
+                tracing::error!("échec du démarrage de Xwayland : {}", err);
+                return;
+            }
+        };
+
+        let ret = self.handle.insert_source(xwayland, move |event, _, data| match event {
+            XWaylandEvent::Ready {
+                x11_socket,
+                display_number,
+            } => match X11Wm::start_wm(data.handle.clone(), x11_socket, client.clone()) {
+                Ok(wm) => {
+                    tracing::info!("WM X11 attaché (display :{display_number})");
+                    data.xdisplay = Some(display_number);
+                    data.xwm = Some(wm);
+                }
+                Err(err) => {
+                    tracing::error!("échec du WM X11 : {err}");
+                }
+            },
+            XWaylandEvent::Error => {
+                tracing::warn!("Xwayland a planté au démarrage");
+            }
+        });
+
+        if let Err(err) = ret {
+            tracing::error!("source Xwayland : {}", err);
         }
     }
 

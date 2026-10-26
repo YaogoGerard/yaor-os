@@ -442,9 +442,15 @@ pub fn handle_commit(
     space: &mut smithay::desktop::Space<Window>,
     surface: &WlSurface,
 ) -> Option<()> {
+    // fenêtres xdg uniquement — les fenêtres X11 n'ont pas de toplevel
+    // (state xdg de resize inexistant) et sont écartées du filtre.
     let window = space
         .elements()
-        .find(|w| w.toplevel().unwrap().wl_surface() == surface)
+        .find(|w| {
+            w.toplevel()
+                .map(|t| t.wl_surface() == surface)
+                .unwrap_or(false)
+        })
         .cloned()?;
 
     let mut window_loc = space.element_location(&window)?;

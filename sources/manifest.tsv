@@ -107,4 +107,30 @@ base	libxkbcommon	1.13.2	https://github.com/xkbcommon/libxkbcommon/archive/refs/
 # chemin par défaut /usr/share/X11/xkb ; sans elles anvil échoue à l'init du
 # clavier (constat QA v0.4 : XKB-338 rules/evdev introuvable).
 base	xkeyboard-config	2.49	https://gitlab.freedesktop.org/xkeyboard-config/xkeyboard-config/-/archive/xkeyboard-config-2.49/xkeyboard-config-2.49.tar.gz	deda99f75a41532db85661cac01793c9b48b5e68a78ecd259fe8b3a7d8fddd61	xkeyboard-config-2.49.tar.gz
+# ---------------------------------------------------------------------------
+# Chaîne X pour XWayland (v0.4 étape 4, ADR-005, TEST-GFX-003) : le serveur
+# Xwayland autonome (branche 24.1) exige pkg-config('x11') à la
+# configuration (code commun du serveur X) — donc libxcb + xcb-proto +
+# xtrans + xorgproto — et libxcvt, libxkbfile, libxfont2 (plus libfontenc). libXau et
+# libpthread-stubs complètent les dépendances d'édition. xkbcomp et
+# xkeyboard-config (déjà là, ligne au-dessus) couvrent le démarrage XKB au
+# runtime. libX11 sert aussi au client de validation X11 de la QA (xwtest).
+# ---------------------------------------------------------------------------
+base	xorgproto	2026.1	https://xorg.freedesktop.org/archive/individual/proto/xorgproto-2026.1.tar.xz	f9bfe4a9ed8c8ab9d2a3b0d49797f046052dadd06b7a8b45dbffaffb137e8290	xorgproto-2026.1.tar.xz
+base	xtrans	1.6.0	https://xorg.freedesktop.org/archive/individual/lib/xtrans-1.6.0.tar.xz	faafea166bf2451a173d9d593352940ec6404145c5d1da5c213423ce4d359e92	xtrans-1.6.0.tar.xz
+base	libpthread-stubs	0.5	https://xorg.freedesktop.org/archive/individual/lib/libpthread-stubs-0.5.tar.xz	59da566decceba7c2a7970a4a03b48d9905f1262ff94410a649224e33d2442bc	libpthread-stubs-0.5.tar.xz
+base	xcb-proto	1.17.0	https://xorg.freedesktop.org/archive/individual/proto/xcb-proto-1.17.0.tar.xz	2c1bacd2110f4799f74de6ebb714b94cf6f80fb112316b1219480fd22562148c	xcb-proto-1.17.0.tar.xz
+base	libxcb	1.17.0	https://xorg.freedesktop.org/archive/individual/lib/libxcb-1.17.0.tar.xz	599ebf9996710fea71622e6e184f3a8ad5b43d0e5fa8c4e407123c88a59a6d55	libxcb-1.17.0.tar.xz
+base	libxau	1.0.12	https://xorg.freedesktop.org/archive/individual/lib/libXau-1.0.12.tar.xz	74d0e4dfa3d39ad8939e99bda37f5967aba528211076828464d2777d477fc0fb	libXau-1.0.12.tar.xz
+base	libx11	1.8.14	https://xorg.freedesktop.org/archive/individual/lib/libX11-1.8.14.tar.xz	bbc78c46217174655c2b32b138ad119f3ac15f50808b4d0b3a2677a4b1afc950	libX11-1.8.14.tar.xz
+base	libxkbfile	1.2.0	https://xorg.freedesktop.org/archive/individual/lib/libxkbfile-1.2.0.tar.xz	7f71884e5faf56fb0e823f3848599cf9b5a9afce51c90982baeb64f635233ebf	libxkbfile-1.2.0.tar.xz
+base	libfontenc	1.1.9	https://xorg.freedesktop.org/archive/individual/lib/libfontenc-1.1.9.tar.xz	9d8392705cb10803d5fe1d27d236cbab3f664e26841ce01916bbbe430cf273e2	libfontenc-1.1.9.tar.xz
+base	libxfont2	2.0.9	https://xorg.freedesktop.org/archive/individual/lib/libXfont2-2.0.9.tar.xz	f042a370666815e7b941e9b7019024755bd1c6c2954afbfa515af378251799e2	libXfont2-2.0.9.tar.xz
+base	libxcvt	0.1.3	https://xorg.freedesktop.org/archive/individual/lib/libxcvt-0.1.3.tar.xz	a929998a8767de7dfa36d6da4751cdbeef34ed630714f2f4a767b351f2442e01	libxcvt-0.1.3.tar.xz
+# libxshmfence : barrière de synchronisation partagée (fd mémoire) — dans
+# l'arbre commun du serveur X (miext/sync), requis MÊME sans glamor/dri3.
+base	libxshmfence	1.3.3	https://xorg.freedesktop.org/archive/individual/lib/libxshmfence-1.3.3.tar.xz	d4a4df096aba96fea02c029ee3a44e11a47eb7f7213c1a729be83e85ec3fde10	libxshmfence-1.3.3.tar.xz
+base	xkbcomp	1.5.0	https://xorg.freedesktop.org/archive/individual/app/xkbcomp-1.5.0.tar.xz	2ac31f26600776db6d9cd79b3fcd272263faebac7eb85fb2f33c7141b8486060	xkbcomp-1.5.0.tar.xz
+base	xwayland	24.1.14	https://xorg.freedesktop.org/archive/individual/xserver/xwayland-24.1.14.tar.xz	4eb6b98d678299a4b96138d886345b294130695760345ef84596225a8224078a	xwayland-24.1.14.tar.xz
+rust	smithay	0.7.0	https://github.com/Smithay/smithay/archive/refs/tags/v0.7.0.tar.gz	938fe52d5df1deada45525d3b908d3e71fa8d87cfd88bbe7b1f820e9805f31d9	smithay-0.7.0.tar.gz
 rust	smithay	0.7.0	https://github.com/Smithay/smithay/archive/refs/tags/v0.7.0.tar.gz	938fe52d5df1deada45525d3b908d3e71fa8d87cfd88bbe7b1f820e9805f31d9	smithay-0.7.0.tar.gz

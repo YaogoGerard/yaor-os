@@ -23,7 +23,9 @@ license.workspace = true
 [dependencies.smithay]
 path = "/build/work/smithay-0.7.0"
 default-features = false
-# Cible seule : udev/KMS comme anvil en QA (ADR-024). Pas de winit/x11.
+# Cible seule : udev/KMS + XWayland comme anvil en QA (ADR-024, v0.4 étape 4).
+# Pas de winit/x11 backend. xwayland apporte le WM X11 (x11rb, vendu avec
+# l'arbre Smithay — x11rb_event_source raccorde la connexion X à calloop).
 # use_system_lib : liaisons des bibliothèques système installées (mesa…).
 features = [
     "desktop",
@@ -38,6 +40,8 @@ features = [
     "renderer_gl",
     "renderer_pixman",
     "renderer_multi",
+    "xwayland",
+    "x11rb_event_source",
 ]
 
 # Énumération des sorties DRM (modes, connecteurs) — crate auxiliaire
@@ -52,6 +56,12 @@ path = "/build/work/smithay-0.7.0/smithay-drm-extras"
 version = "0.2.103"
 
 # Utilitaires partagés avec Smithay (versions vendues dans son arbre).
+# x11rb : liaison X11 pure Rust du WM interne (X11Wm) — vendue dans l'arbre
+# Smithay (0.13.x, même version que son Cargo.lock) ; consommée par le bus
+# XWM (sélections) du module x11.
+[dependencies.x11rb]
+version = "0.13"
+
 [dependencies.bitflags]
 version = "2.2.1"
 

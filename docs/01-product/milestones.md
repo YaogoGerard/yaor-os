@@ -253,8 +253,25 @@ sont établis par v0.3 et réutilisés tels quels.
 
 ### Compatibilité X11 (ADR-005)
 
-- [ ] XWayland intégré (épinglé, construit hors-ligne) ; une fenêtre X11 de test est
+- [x] XWayland intégré (épinglé, construit hors-ligne) ; une fenêtre X11 de test est
   rendue dans la session, cliquable et livrée clavier.
+
+  Preuves (`t-yaor-comp-xwl.py`, vert — 11/11, RC=0, ISO 0.2.0) : le
+  compositor publie `WM X11 attaché (display :0)` et la socket
+  `/tmp/.X11-unix/X0` (verrou `.X0-lock`) ; la fenêtre X11 de `xwtest`
+  (bleu 0x2A6ADB, carré blanc) est mappée côté X (`xwtest: MAP
+  id=0x400001`) et rendue au scanout (px bleus > 8 000, carré blanc >
+  5 000 px au screendump QMP) ; le clic est livré (`xwtest: BTN n=1`) et
+  les touches a/b/c atteignent la fenêtre après focus par clic
+  (`xwtest: KEY keysym=0x61|0x62|0x63` — focus posé via la cible
+  `FocusTarget::X11`, smithay pose `SetInputFocus`/`WM_TAKE_FOCUS` côté X) ;
+  la touche q ferme la fenêtre et xwtest sort proprement. Chaîne X épinglée
+  (14 archives SHA-256, `sources/manifest.tsv`), lectures détaillées :
+  `docs/06-testing/graphics-tests.md` (TEST-GFX-004), LLD
+  `docs/04-design-lld/compositor/compositor.md`.
+
+  Régression au passage : le démontage du compositor retire maintenant
+  explicitement la socket Wayland (`t-yaor-comp.py` 16/16).
 
 ### Sessions (ADR-004, ADR-005)
 
@@ -264,7 +281,7 @@ sont établis par v0.3 et réutilisés tels quels.
 
 ### Tests et traçabilité
 
-- [ ] Les cas TEST-GFX-003 (+ actualisation TEST-GFX-001/002 si périmètre commun) et
+- [ ] Les cas TEST-GFX-003/004 (+ actualisation TEST-GFX-001/002 si périmètre commun) et
   les critères du compositor sont exécutés et passent ; la matrice de traçabilité
   couvre les exigences compositor du jalon (REQ-SW-005 partie compositor, ADR-005).
 
