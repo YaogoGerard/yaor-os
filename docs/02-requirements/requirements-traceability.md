@@ -8,6 +8,7 @@
 | REQ-SW-004 | Component selection | TEST-ARCH-003 |
 | REQ-SW-005 | Graphics architecture | TEST-GFX-001 |
 | REQ-SW-005 | Graphics architecture (ADR-024) | TEST-GFX-002 |
+| REQ-SW-005 | Graphics architecture (compositor, ADR-005) | TEST-GFX-003 |
 | REQ-SW-006 | Desktop architecture | TEST-DESK-001 |
 | REQ-SW-007 | Desktop architecture | TEST-DESK-002 |
 | REQ-SW-008 | UI/UX | TEST-UI-001 |

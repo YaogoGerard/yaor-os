@@ -79,6 +79,73 @@ Repli simpledrm (`t-anvil-simpledrm.py`, vert — 13/13, RC=0, `-vga std`) :
   canal PS/2 documentée aux leçons v0.4, le couvert fonctionnel
   move/resize est démontré dans les runs verts.
 
+## TEST-GFX-003 — Compositor YAOR (v0.4)
+
+**Vérifie :** ADR-005, REQ-SW-005 (partie compositor), ADR-022
+
+Harnais : `t-yaor-comp.py` (virtio-gpu) et sa variante
+`t-yaor-comp-simpledrm.py` (repli `-vga std`), bâtis sur `t-gfx-live`
+(boot live, console série, screendump QMP, greps invités).
+
+### Étape 1 — binaire livré
+
+- la crate `components/compositor` est bâtie par la phase `yaor-components`
+  et installée dans le live (`/usr/bin/yaor-compositor`) ;
+- la version annoncée est celle du produit (`0.2.0`, ADR-022) ;
+- `--help` sort en 0 ; un argument inconnu est refusé avec rc=2.
+
+### Étape 2 — session KMS réelle (virtio-gpu)
+
+`t-yaor-comp.py` **vert — 16/16, RC=0** :
+
+- seatd actif ; le compositor ouvre une session libseat, prend le maître DRM
+  et tient la session 12 s (`GPU primaire : renderD128`, `DrmDevice
+  initializing`, EGL `PLATFORM_GBM_KHR`, connecteur `Virtual-1` 1280×800@75) ;
+- socket Wayland `wayland-1` publiée ; `waytest` s'y connecte, lie
+  `xdg_wm_base`/`wl_seat` et mappe sa fenêtre ;
+- screendump QMP avant sortie : 55,4 % de pixels clairs (fond du compositor)
+  contre 44,6 % sombres (fenêtre client) — contenu client rendu au scanout ;
+- SIGTERM : le processus s'arrête, le journal prend acte de l'arrêt et la
+  socket Wayland est retirée ;
+- **console restituée** : screendump QMP après sortie — 0,2 % de pixels
+  clairs / 99,8 % sombres (fbcon noir, texte clair) ; le scanout n'est plus
+  le rendu du compositor, la main est bien rendue à la console ;
+- **démontage DRM** : les notifiers DRM sont retirés de la boucle, puis les
+  sorties sont libérées (le `DrmDeviceNotifier` détenait le dernier `Arc` sur
+  l'`AtomicDrmDevice`) et le device est fermé tant que la session libseat est
+  ouverte : `Dropping device: /dev/dri/card0`, maître rendu **sans erreur de
+  permission** (aucun `EACCES`, aucun `Failed to drop drm master`).
+
+Repli simpledrm (`t-yaor-comp-simpledrm.py`, `-vga std`) **vert — 18/18,
+RC=0** :
+
+- dmesg charge `simpledrm` (pas de virtio-gpu) ; connecteur `Unknown-1` ;
+- mêmes preuves de session (screendumps identiques : 55,4 % clairs /
+  44,6 % sombres, puis 0,2 % / 99,8 % après sortie), même démontage propre.
+
+Notes de triage (non scorées) :
+
+- `virtio_gpu: driver missing` au premier rendu est un **stub mesa** : le
+  pilote gallium `virtio_gpu` n'est pas bâti (`-Dgallium-drivers=softpipe`) ;
+  l'avertissement est bénin, le rendu se fait par softpipe (GL_RENDERER
+  `softpipe`) ;
+- `Erroneous EGL call didn't set EGLError` apparaît au modeset initial et
+  n'affecte pas la session ;
+- **restauration de l'instantané DRM** : au drop, Smithay rejoue l'état
+  capturé à l'ouverture (`Failed to restore previous state. Error: Invalid
+  argument`) ; l'instantané de la console (mode du CRTC, blob associé) n'est
+  plus rejouable après la prise de contrôle du KMS. Ce n'est ni une erreur
+  de permission ni une fuite du maître : le device est fermé et le maître
+  rendu (contrôles `DM`/`DP`), et la console reprend l'écran (screendump
+  post-sortie). Limite connue de Smithay sur ce chemin, documentée ;
+- `Failed to destroy old mode property blob` (ENOENT) au modeset initial :
+  le CRTC n'a pas de mode à la création de la surface (Smithay détruit alors
+  un blob nul).
+
+Les entrées réelles et les grabs xdg (move/resize, focus) relèvent de
+l'étape « gestion des fenêtres » du jalon et seront couverts par des cas
+TEST-GFX-003 dédiés.
+
 ## TEST-GFX-001 — Compositor
 
 **Vérifie :** REQ-SW-005

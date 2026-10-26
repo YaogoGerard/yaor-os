@@ -40,13 +40,29 @@ features = [
     "renderer_multi",
 ]
 
-# Énumération des sorties DRM (modes, connecteurs) — crate auxiliaire de
-# l'arbre Smithay : ajoutée à l'étape 2 (réelles sorties). Elle tire
-# libdisplay-info (C, < 0.3.0, version épinglée du chroot) : conservée hors
-# du squelette pour garder la compilation de validation indépendante des
-# libs C de l'hôte.
-# [dependencies.smithay-drm-extras]
-# path = "/build/work/smithay-0.7.0/smithay-drm-extras"
+# Énumération des sorties DRM (modes, connecteurs) — crate auxiliaire
+# de l'arbre Smithay (chemin, pas de registre). Elle tire libdisplay-info
+# (C, < 0.3.0) : dans le chroot, la version épinglée correspondante est
+# installée par les phases ; côté hôte (itération dev), un .pc de repli
+# masque simplement la contrainte de version (check seul, pas de lien).
+[dependencies.smithay-drm-extras]
+path = "/build/work/smithay-0.7.0/smithay-drm-extras"
 
 [dependencies.libc]
 version = "0.2.103"
+
+# Utilitaires partagés avec Smithay (versions vendues dans son arbre).
+[dependencies.bitflags]
+version = "2.2.1"
+
+[dependencies.thiserror]
+version = "1.0"
+
+[dependencies.tracing]
+version = "0.1"
+
+# Journal de session (même convention qu'anvil) : RUST_LOG pour le filtre,
+# sortie compacte par défaut vers stderr (redirigée par la session).
+[dependencies.tracing-subscriber]
+version = "0.3"
+features = ["env-filter"]

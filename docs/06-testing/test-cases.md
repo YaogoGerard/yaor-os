@@ -55,6 +55,21 @@ repli `t-anvil-simpledrm.py` 13/13 (le rendu est softpipe, cf.
 `graphics-tests.md`) ; les événements livrés au client de validation
 `waytest` font foi pour le chemin libinput → compositor → client.
 
+## TEST-GFX-003 — Compositor YAOR (v0.4)
+**Vérifie :** ADR-005, REQ-SW-005 (partie compositor), ADR-022
+
+Le compositor propre à YAOR (`yaor-compositor`) est livré dans le live et tient
+une session KMS réelle : siège obtenu via seatd/libseat, maître DRM, socket
+Wayland publiée, client `waytest` connecté et fenêtre mappée au scanout, sortie
+propre sur SIGTERM avec restauration de l'état CRTC et remise du maître.
+
+Statut v0.4 (étape 2, session) : **vert** — `t-yaor-comp.py` 16/16 (virtio-gpu)
+et `t-yaor-comp-simpledrm.py` 18/18 (repli `-vga std`), RC=0 : session KMS,
+socket Wayland, client mappé au scanout, console restituée après SIGTERM
+(screendump fbcon) et maître DRM rendu sans erreur de permission. Les étapes
+« fenêtres xdg » (focus, move/resize, double fenêtre) et XWayland complètent ce
+cas ; détails et triage dans `graphics-tests.md`.
+
 ## TEST-AUD-001 — Audio (PipeWire + WirePlumber)
 **Vérifie :** ADR-024
 

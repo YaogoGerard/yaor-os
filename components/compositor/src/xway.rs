@@ -1,3 +1,4 @@
-//! Module xway du compositor YAOR (LLD docs/04-design-lld/compositor/compositor.md).
-//! Contenu rempli au fil des étapes du jalon v0.4 ; ce squelette n'a pas
-//! encore de code — voir git log et le LLD pour le jalonnement.
+//! XWayland du compositor YAOR (LLD docs/04-design-lld/compositor).
+//!
+//! v0.4 : XWayland n'est pas démarré par ce binaire (pas de feature
+//! xwayland de Smithay activée) — l'étape X11 dédiée du jalon l'ajoutera.

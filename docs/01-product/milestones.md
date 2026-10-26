@@ -198,11 +198,31 @@ sont établis par v0.3 et réutilisés tels quels.
 
 ### Crate compositor YAOR
 
-- [ ] La crate `components/compositor` (Rust + Smithay, dépendances vendues) est
+- [x] La crate `components/compositor` (Rust + Smithay, dépendances vendues) est
   intégrée à la chaîne de build (étape 04 ; hors-ligne, toolchain hôte, un besoin un
   fournisseur) et livrée comme binaire du live.
-- [ ] Le compositor tient une session KMS (virtio-gpu, repli simpledrm) : socket
+
+  Preuves : membre du workspace `components/`, bâti par la phase
+  `yaor-components` (toolchain Rust hôte, `CARGO_NET_OFFLINE=true`, sources
+  vendues de Smithay 0.7.0, `Cargo.lock` committé) ; binaire
+  `/usr/bin/yaor-compositor` présent dans le live, `--version` → `0.2.0`
+  (ADR-022), `--help` rc=0, argument inconnu rc=2 (QA `t-yaor-comp.py`,
+  phase 1 verte).
+- [x] Le compositor tient une session KMS (virtio-gpu, repli simpledrm) : socket
   Wayland publiée, screendump avec contenu client, sortie propre au SIGTERM.
+
+  Preuves : `t-yaor-comp.py` **16/16** (virtio-gpu) et
+  `t-yaor-comp-simpledrm.py` **18/18** (`-vga std`), RC=0. Session libseat
+  sur seatd, maître DRM, EGL `PLATFORM_GBM_KHR`/softpipe, connecteur
+  `Virtual-1` (repli `Unknown-1`) ; socket `wayland-1` publiée, client
+  `waytest` connecté et fenêtre mappée, screendump 55,4 % clairs /
+  44,6 % sombres ; SIGTERM : processus arrêté, socket retirée, console
+  restituée (screendump post-sortie 0,2 % clairs / 99,8 % sombres) et maître
+  DRM rendu sans erreur de permission (`Dropping device: /dev/dri/card0`).
+  Limite connue : Smithay ne peut pas rejouer l'instantané fbcon capturé à
+  l'ouverture (EINVAL au drop) — sans effet sur la remise du maître ni sur la
+  console. Détails : `docs/06-testing/graphics-tests.md` (TEST-GFX-003,
+  étape 2).
 
 ### Gestion des fenêtres (ADR-005 — pas de WM distinct)
 

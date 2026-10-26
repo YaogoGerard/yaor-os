@@ -1,3 +1,5 @@
-//! Module config du compositor YAOR (LLD docs/04-design-lld/compositor/compositor.md).
-//! Contenu rempli au fil des étapes du jalon v0.4 ; ce squelette n'a pas
-//! encore de code — voir git log et le LLD pour le jalonnement.
+//! Configuration du compositor YAOR (LLD docs/04-design-lld/compositor).
+//!
+//! v0.4 : pas de fichier de configuration (env YAOR_DRM_DEVICE,
+//! YAOR_SOFTWARE_OK pour le banc QEMU). Le format et le chargement
+//! viennent à une étape ultérieure du jalon.
