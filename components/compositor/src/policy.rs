@@ -355,7 +355,14 @@ pub fn parse_shortcut(spec: &str) -> Option<(ModifiersState, Keysym)> {
             "shift" => mods.shift = true,
             _ => {
                 key = Some(if token.chars().count() == 1 {
-                    Keysym::from_char(token.chars().next().unwrap())
+                    // Lettre insensible à la casse : « Mod+Q » désigne la
+                    // TOUCHE q, pas le keysym majuscule (leçon t-diag-key2 :
+                    // from_char('Q') = keysym Q — sans Shift, la touche
+                    // pressée donne le keysym q minuscule, le raccourci
+                    // n'était reconnu que par accident via Shift+E).
+                    Keysym::from_char(
+                        token.chars().next().unwrap().to_ascii_lowercase(),
+                    )
                 } else {
                     match token {
                         "Right" | "right" => Keysym::Right,
@@ -523,4 +530,35 @@ fn same_window(a: &Window, b: &Window) -> bool {
         return x1 == x2;
     }
     a.wl_surface() == b.wl_surface()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_shortcut;
+    use smithay::input::keyboard::Keysym;
+
+    /// Leçon t-diag-key2 (run du 2026-10-28) : « Mod+Q » désigne la
+    /// TOUCHE q, pas le keysym majuscule « Q ». from_char('Q') = keysym
+    /// 0x51 ; la touche pressée sans Shift donne le keysym q (0x71) —
+    /// le raccourci n'était alors reconnu que « par accident » quand
+    /// Shift changeait le modified_sym (Mod+Shift+E). L'affectation
+    /// ci-dessous est l'usine mêmes (default.toml).
+    #[test]
+    fn lettre_inscensible_a_la_casse() {
+        // Mod+Q (close) : keysym cible = touche q minuscule.
+        let (m, k) = parse_shortcut("Mod+Q").expect("parse Mod+Q");
+        assert!(m.logo, "Mod = logo seul");
+        assert!(!m.shift && !m.ctrl && !m.alt);
+        assert_eq!(k, Keysym::from_char('q'));
+
+        // Mod+Shift+E (quit) : la lettre reste minuscule — le match
+        // contre le keysym BRUT (raw), sway-like, absorbe le Shift.
+        let (m, k) = parse_shortcut("Mod+Shift+E").expect("parse quit");
+        assert!(m.logo && m.shift);
+        assert_eq!(k, Keysym::from_char('e'));
+
+        // Mod+g (ratio) et Mod+Tab (maître) inchangés.
+        assert_eq!(parse_shortcut("Mod+g").unwrap().1, Keysym::from_char('g'));
+        assert_eq!(parse_shortcut("Mod+Tab").unwrap().1, Keysym::Tab);
+    }
 }
