@@ -313,15 +313,19 @@ la partie X11 de cette QA n'en dépend pas (chemin Xwayland identique).
 
 - **Fenêtre ouverte** : ✓ démontré par la QA `t-anvil` (client xdg-shell
   `waytest` mappé, screendump avec contenu client, focus clavier obtenu au
-  clic) ;
+  clic) ; **assumé en v0.4 par le compositor livré** (TEST-GFX-003 : fenêtre
+  `waytest` mappée au scanout, socket Wayland publiée, sessions logind) ;
 - **déplacer/redimensionner** : ✓ démontré via les requêtes xdg interactives
   standard (`xdg_toplevel_move`/`resize`) reçues par anvil qui arme ses
   grabs `PointerMoveSurfaceGrab`/`PointerResizeSurfaceGrab` (`shell/xdg.rs`)
   et suit le pointeur jusqu'au relâchement — le client `waytest` déclenche
   lui-même ces requêtes (alternance : 1re pression interactive livrée =
-  move, 2e = resize) ;
+  move, 2e = resize) ; **assumé en v0.4 par le compositor livré**
+  (TEST-GFX-003 étape 3 : bbox déplacée 644 px, resize à la taille mesurée) ;
 - **rendu souris/clavier livré** : ✓ démontré par l'injection QMP (les
-  événements traversent evdev → libinput → compositor → client).
+  événements traversent evdev → libinput → compositor → client) ;
+  **assumé en v0.4 par le compositor livré** (TEST-GFX-003 étape 3 : focus
+  clavier par clic au client, touches livrées à la fenêtre cliquée).
 
 ## Non couvert / à faire (v0.4+)
 

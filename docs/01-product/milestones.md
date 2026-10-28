@@ -300,9 +300,21 @@ sont établis par v0.3 et réutilisés tels quels.
 
 ### Tests et traçabilité
 
-- [ ] Les cas TEST-GFX-003/004 (+ actualisation TEST-GFX-001/002 si périmètre commun) et
+- [x] Les cas TEST-GFX-003/004 (+ actualisation TEST-GFX-001/002 si périmètre commun) et
   les critères du compositor sont exécutés et passent ; la matrice de traçabilité
   couvre les exigences compositor du jalon (REQ-SW-005 partie compositor, ADR-005).
+
+  Preuves : TEST-GFX-003 **vert** (session 16/16, gestion des fenêtres
+  23/23 virtio **et** simpledrm, sessions logind `t-yaor-sess` 6/6) et
+  TEST-GFX-004 **vert** (XWayland 11/11, statuts dans
+  `docs/06-testing/test-cases.md`) ; la matrice
+  `docs/02-requirements/requirements-traceability.md` couvre REQ-SW-005 par
+  parties (compositor → TEST-GFX-003, compatibilité X11 → TEST-GFX-004, en
+  plus du socle v0.3 → TEST-GFX-001/002). Périmètre commun de
+  TEST-GFX-001/002 assumé par le compositor : la ligne « Statut v0.4 » de
+  TEST-GFX-001 (test-cases.md) reporte fenêtre/move-resize/entrées sur la
+  QA du compositor ; TEST-GFX-002 (session de référence) ne change pas —
+  anvil reste le repli de validation dans le live (ADR-005).
 
 ## v0.5 → v1.0
 

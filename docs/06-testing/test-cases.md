@@ -41,6 +41,13 @@ requêtes xdg interactives du client (alternance : 1re pression interactive
 livrée = `move`, 2e = `resize` ; run vert virtio : 507 px de déplacement
 mesuré au scanout + 8 buffers recréés ; repli simpledrm : 13/13).
 
+Statut v0.4 (session de référence → compositor YAOR) : le périmètre commun
+(REQ-SW-005 partie compositor) est désormais démontré **sur le compositor
+livré** — fenêtre ouverte et rendue, déplacement/redimensionnement, entrées
+souris/clavier : voir TEST-GFX-003 (statuts étapes 2, 3 et 5 ci-dessous ;
+`t-yaor-comp` 16/16, `t-yaor-comp-wm` 23/23, `t-yaor-sess` 6/6). La session
+de référence anvil reste dans le live comme repli de validation (ADR-005).
+
 ## TEST-GFX-002 — Pile graphique et session de référence (v0.3)
 **Vérifie :** ADR-024, REQ-SW-005 (partie pile)
 
