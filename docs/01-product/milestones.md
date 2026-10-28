@@ -334,12 +334,12 @@ REQ-SW-007 (profils) reste v0.6.
 
 ### Tiling (ADR-005 — desktop-core LLD)
 
-- [ ] Le layout **maître + pile** dispose automatiquement les fenêtres
+- [x] Le layout **maître + pile** dispose automatiquement les fenêtres
   xdg-shell : 2 fenêtres → moitié/moitié ; 3 fenêtres → maître (gauche)
   + pile divisée à droite ; la 4ᵉ s'empile, le maître garde son ratio.
   Preuves : largeurs mesurées au screendump QMP (±4 px) + journalisation
   du compositor (« tiling : … », jetons QA) ;
-- [ ] Les raccourcis par défaut (Mod =SUPER) pilotent le layout :
+- [x] Les raccourcis par défaut (Mod =SUPER) pilotent le layout :
   Mod+←/→ focus suivant/précédent, Mod+Shift+←/→ swap de deux fenêtres,
   Mod+Tab échange la fenêtre focusée avec le maître, Mod+Q ferme la
   fenêtre focusée (`xdg_toplevel.close`, client → DestroyWindow
@@ -348,26 +348,27 @@ REQ-SW-007 (profils) reste v0.6.
   Preuves : injections clavier QMP, jetons/effets observables (l'image
   n'a pas de terminal applicatif : la preuve passe par les clients
   `waytest`) ;
-- [ ] La régression v0.4 reste verte sur toute la pile :
+- [x] La régression v0.4 reste verte sur toute la pile :
   `t-yaor-comp` 16/16, `t-yaor-comp-wm` 23/23 (virtio et simpledrm),
   `t-yaor-comp-xwl` 11/11, `t-yaor-sess` 6/6.
 
 ### Configuration (REQ-SW-006, REQ-SW-015 ; LLD config-engine)
 
-- [ ] crate `components/config` (membre du workspace, version produit
+- [x] crate `components/config` (membre du workspace, version produit
   0.2.0, ADR-022) lit `desktop.toml` au démarrage du compositor, valeurs
   par défaut appliquées dans l'image si le fichier utilisateur est absent ;
   les dépendances ajoutées (`toml`…) sont vendues (ADR-017/018),
   `--locked` et build hors-ligne maintenus ;
-- [ ] SIGHUP recharge la configuration **sans quitter la session** :
+- [x] SIGHUP recharge la configuration **sans quitter la session** :
   comportement modifié à chaud — preuve : changement de ratio/gaps suivi
   d'une disposition re-mesurée au screendump (TEST-DESK-001,
   TEST-CONFIG-001) ;
-- [ ] Options exposées en v0.5 et vérifiées par changement de valeur :
+- [x] Options exposées en v0.5 et vérifiées par changement de valeur :
   ratio maître, espacement (gaps), raccourcis clavier rebindables
-  (rebind d'un raccourci reconnu à l'usage), artefact/chemin de la
-  socket (l'écriture du journal reflète la config chargée) ;
-- [ ] Journal du compositor affiche la configuration chargée (source du
+  (rebind d'un raccourci reconnu à l'usage) ; (le chemin de la socket,
+  non exposé en étape 1, reste un candidat de l'étape multi-écrans si
+  utile) ;
+- [x] Journal du compositor affiche la configuration chargée (source du
   fichier, options) — preuve QA en jetons.
 
 ### Multi-écrans (v0.5 : 2 sorties)
@@ -387,13 +388,26 @@ REQ-SW-007 (profils) reste v0.6.
 - [ ] Nouveaux harnais : `t-yaor-tiling.py` (dispositions mesurées),
   `t-yaor-config.py` (rechargement + rebind), extension multi-sorties
   (2 outputs) ; sortie **verte RC=0** pour chacun ;
-- [ ] La matrice de traçabilité couvre REQ-SW-006 → TEST-DESK-001 et
+  — étape 1 : `t-yaor-tiling.py` 26/26 + 6/6 et `t-yaor-config.py`
+  20/20 vertes (QEMU virtio) ; extension multi-sorties : étape 2 ;
+- [x] La matrice de traçabilité couvre REQ-SW-006 → TEST-DESK-001 et
   REQ-SW-015 → TEST-CONFIG-001 (nouvelles parties REQ notées dans
   `requirements-traceability.md`) ; REQ-SW-007 (profils) explicitement
   repoussé v0.6 ;
-- [ ] Docs : LLD `desktop-core.md` (layout/raccourcis/et config) et
+- [x] Docs : LLD `desktop-core.md` (layout/raccourcis/config) et
   `config-engine.md` développés à hauteur de l'implémentation,
   `compositor.md` étayé au fil des étapes ; scans Unicode verts.
+
+### Clôture de l'étape 1 (28 octobre 2026)
+
+Étape 1 « tiling maître+pile + moteur de config TOML + raccourcis »
+livrée : commits `afbd82e` (crate yaor-config, layout, SIGHUP,
+`/etc/yaor/desktop.toml` d'usine), `68238f3` (correctif clavier :
+casse du keysym des raccourcis — leçon diag live). QA complète
+(ISO `out/yaor-live-x86_64-0.2.0.iso` reconstruite, SHA-256 vérifiée) :
+`t-yaor-tiling` 26/26 + 6/6, `t-yaor-config` 20/20, régressions v0.4
+obligatoires vertes (16/16, 23/23virtio+simpledrm, 11/11, 6/6).
+Reste à v0.5 : multi-écrans (étape 2 — harnais 2 têtes virtio-gpu).
 
 ## v0.6 → v1.0
 

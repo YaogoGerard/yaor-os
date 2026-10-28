@@ -329,7 +329,66 @@ la partie X11 de cette QA n'en dépend pas (chemin Xwayland identique).
 
 ## Non couvert / à faire (v0.4+)
 
-- Multi-écrans, workspaces, changement de profil graphique, accessibilité.
 - Stabilisation du canal PS/2 injections boutons (un événement de bouton
   par run parfois sacrifié par evdev/libinput — contourné côté QA par
   l'alternance milieu/droit, les drains et la reprise par round).
+
+## Desktop Core v0.5 (étape 1) — TEST-DESK-001, TEST-CONFIG-001
+
+**Vérifient :** REQ-SW-006 (TEST-DESK-001), REQ-SW-015 (TEST-CONFIG-001).
+Harnais : `t-yaor-tiling.py` (26/26 mesures + 6/6 sortie, RC=0) et
+`t-yaor-config.py` (20/20, RC=0) — virtio 1280x800 mesuré au screendump
+QMP (jamais forcé), config banc `/root/.config/yaor/desktop.toml`
+(master-stack, ratio 0.5, gaps 0), jetons calculés côté invité
+(`echo X-$?` / `echo X-$n` — jamais littéraux dans la ligne tapée,
+leçon du run initial : l'écho tty « MQ+1 » validait un échec).
+
+### Tiling maître + pile (`t-yaor-tiling`, vert)
+
+- **2 fenêtres** : moitié/moitié — frontière mesurée à W/2 exact
+  (SD1 : vert 0..639, orange dès 640, ±4 px) ;
+- **4 fenêtres** : maître W1 (vert) à gauche + pile partagée au tiers :
+  bands orange (0..265)/(532..799) encadrant le tiers central vert
+  (266..531, ±4 px) — SD2 ;
+- **Mod+Q** : le maître focusé au clic (keyboard enter +1 client) est
+  fermé : journal compositor « raccourci : fermeture de la fenêtre
+  focusée », client « W1 toplevel close » ; le reste re-tile (4 → 2 :
+  waytest QUITTE le processus entier au close — S.quit) : maître W3
+  vert 0..639 pleine hauteur, pile W4 orange dès 640 — SD3 ;
+- **Mod+Tab** : la pile W4 échangée au maître (SD5 : orange 0..639,
+  vert à droite) ; **Mod+g** : ratio 0.5 → 0.55 (SD6 : maître 703 px
+  mesurés / 704 attendus, ±6 px) ;
+- **Mod+Shift+E** : arrêt propre (« arrêt demandé par un raccourci »),
+  processus sorti, socket retirée, console restituée, maître DRM rendu
+  sans erreur (4/4 « démontage » — 6/6 sortie).
+
+### Moteur de configuration (`t-yaor-config`, vert — 20/20)
+
+- Démarrage SANS fichier utilisateur : la valeur d'usine
+  `/etc/yaor/desktop.toml` est chargée et le journalise (« configuration chargée :
+  /etc/yaor/desktop.toml », « mode cascade ») — REQ-SW-006 ;
+- écriture de `/root/.config/yaor/desktop.toml` (master-stack, ratio
+  0.7, gaps 10, close=Mod+X) puis **SIGHUP** : rechargement vivant
+  (« configuration rechargée (SIGHUP) »), session + socket intactes,
+  nouvelle config journalisée ;
+- disposition re-mesurée aux fenêtres suivantes : frontière maître/pile
+  à 897 px (attendu 0.7·1260+10 = 892, gaps 10 ±4 px) — SD2 ;
+- **rebind à l'usage** : Mod+Q inactif (Q1-1), Mod+X ferme le maître
+  focusé (QX-0 + « toplevel close » côté client) ;
+- **2e SIGHUP** (ratio 0.5, gaps 0) : frontière re-mesurée à W/2 (±4 px)
+  — SD3.
+
+### Régressions v0.4 (obligatoires, toutes vertes)
+
+`t-yaor-comp.py` 16/16 · `t-yaor-comp-wm.py` 23/23 (virtio) et
+`t-yaor-comp-wm-simpledrm.py` 23/23 (repli simpledrm) ·
+`t-yaor-comp-xwl.py` 11/11 · `t-yaor-sess.py` 6/6.
+ISO de référence : `out/yaor-live-x86_64-0.2.0.iso` (SHA-256 vérifiée,
+compositor du 28 oct. 03:17 — commits `afbd82e` + `68238f3`).
+
+### Non couverts (v0.5 étape 2)
+
+Multi-écrans (2 sorties virtio-gpu, harnais dédié), raccourcis focus
+suivant/précédent et swap Mod+Shift+Left/Right (mêmes mécanismes que
+Mod+Tab, couverts unitairement par `parse_shortcut`), X11 dans le
+tiling (fenêtres Xwayland flottantes en étape 1).

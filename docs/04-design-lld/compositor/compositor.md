@@ -41,11 +41,12 @@ components/compositor/src/
 │                  #   curseur mémoire statique, composition de la sortie
 ├── input.rs       # événements libinput → seat ; focus clavier/pointeur
 ├── shell.rs       # xdg-shell (toplevel/popup), seat, data device, shm
-├── policy.rs      # politique de fenêtres (placement en cascade) — ancre v1
+├── policy.rs      # politique de fenêtres : cascade (v0.4) et
+│                  #   maître+pile + raccourcis de bureau (v0.5)
 ├── grabs.rs       # move/resize interactifs (référence : anvil/smallvil)
 ├── focus.rs       # cible de focus clavier (FocusTarget : Wayland ou X11)
 ├── x11.rs         # gestionnaire XWayland (XwmHandler) + sélections X11
-└── config.rs      # façade de configuration minimale (stub ; Desktop Core v0.5)
+└── config.rs      # desktop.toml : chargement au démarrage + SIGHUP (v0.5)
 ```
 
 Détail par module :
@@ -237,6 +238,42 @@ Détail par module :
   touche q (DestroyWindow).
 - Critère ouvert assumé : le canal PS/2 sacrifie occasionnellement un événement
   de bouton (leçon v0.4) ; la QA applique l'alternance + les reprises.
+
+## Desktop Core v0.5 — tiling, raccourcis, configuration (étape 1)
+
+Étape 1 du jalon v0.5 (commits `afbd82e`, `68238f3`) ; LLD et schéma :
+[`desktop-core.md`](../desktop-core/desktop-core.md),
+[`config-engine.md`](../config-engine/config-engine.md),
+[`data-models/config-schema.md`](../data-models/config-schema.md).
+
+- **policy.rs** : le placement devient paramétré — mode `cascade`
+  (v0.4 strict : les QA établies restent exactement identiques, garde
+  dans `run_action`) ou `master-stack` par sortie : maître à gauche
+  (largeur `ratio·(W−2·gaps)`), pile à droite en parts égales ;
+  fenêtres flottantes (grabs v0.4) et Xwayland hors du tiling ; le
+  recompute est journalisé par tuile (« tiling : géométrie WxH à (x,y) »).
+- **config.rs + crate yaor-config** : `desktop.toml` (TOML, serde du
+  vendored Smithay), chemin candidat hiérarchisé (env > utilisateur >
+  `/etc/yaor`, la phase de build pose la valeur d'usine), défauts
+  compilés pour tout champ absent, **SIGHUP** → rechargement sans
+  quitter la session ; le mutateur `config::update` sert aussi aux
+  raccourcis Mod+g / Mod+Shift+g.
+- **input.rs** : les touches sont évaluées à la presse ; un raccourci
+  reconnu est intercepté (`FilterResult::Intercept`) et l'action
+  exécutée (`policy::run_action`) — sinon la touche est transmise au
+  client (comportement v0.4 inchangé).
+- Correctif clavier `68238f3` : la lettre des affectations est
+  insensible à la casse (`parse_shortcut`) — « Mod+Q » = la touche *q*
+  (leçon diag : `from_char('Q')` donnait le keysym majuscule, jamais
+  produit par une touche pressée sans Shift ; Mod+Shift+E ne matchait
+  que par accident via le modified_sym). Test unitaire
+  `lettre_inscensible_a_la_casse` dans `policy.rs`.
+- QA étape 1 (détail :
+  [`graphics-tests.md`](../../06-testing/graphics-tests.md), section
+  « Desktop Core v0.5 ») : `t-yaor-tiling.py` 26/26 mesures + 6/6
+  sortie (frontières au pixel), `t-yaor-config.py` 20/20
+  (usine/SIGHUP/rebind/re-mesures), régressions v0.4 obligatoires
+  vertes (16/16, 23/23 ×2, 11/11, 6/6).
 
 ## Hors périmètre v0.4
 

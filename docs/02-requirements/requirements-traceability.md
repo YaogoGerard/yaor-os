@@ -11,6 +11,7 @@
 | REQ-SW-005 | Graphics architecture (compositor, ADR-005) | TEST-GFX-003 |
 | REQ-SW-005 | Graphics architecture (compatibilité X11, ADR-005) | TEST-GFX-004 |
 | REQ-SW-006 | Desktop architecture | TEST-DESK-001 |
+| REQ-SW-006 | Desktop Core LLD (tiling maître+pile, raccourcis, ADR-005) | TEST-DESK-001 |
 | REQ-SW-007 | Desktop architecture | TEST-DESK-002 |
 | REQ-SW-008 | UI/UX | TEST-UI-001 |
 | REQ-SW-009 | UI/UX | TEST-UI-002 |
@@ -20,6 +21,7 @@
 | REQ-SW-013 | Accessibility architecture | TEST-A11Y-002 |
 | REQ-SW-014 | Component selection | TEST-ARCH-004 |
 | REQ-SW-015 | Config engine | TEST-CONFIG-001 |
+| REQ-SW-015 | Config Engine LLD (desktop.toml, SIGHUP, rebind) | TEST-CONFIG-001 |
 | REQ-SW-016 | Deployment/build | TEST-BUILD-001 |
 | REQ-SW-017 | Deployment/build | TEST-BOOT-001 |
 | REQ-SW-018 | Testing strategy | TEST-TRACE-001 |

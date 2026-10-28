@@ -122,6 +122,14 @@ sortie active (routage ALSA par PipeWire).
 
 Modifier `desktop.toml`, recharger le bureau et vérifier que le comportement change.
 
+**V0.5 étape 1 — vert :** `t-yaor-tiling.py` 26/26 + 6/6 (RC=0) :
+mode `master-stack` via `desktop.toml` — moitié/moitié (frontière
+W/2 exacte), pile au tiers, Mod+Q (close livré + re-tile), Mod+Tab
+(échange maître), Mod+g (ratio 0.55 mesuré 703/704 px),
+Mod+Shift+E (arrêt propre). `t-yaor-config.py` 20/20 (RC=0) :
+SIGHUP vivant, rebind à l'usage, ratio 0.7/gaps 10 puis 0.5
+re-mesurés. Détail : [`graphics-tests.md`](graphics-tests.md).
+
 ## TEST-DESK-002 — Profils
 **Vérifie :** REQ-SW-007
 
@@ -231,6 +239,13 @@ inchangé.
 
 Modifier un fichier de configuration déclarative, recharger et vérifier que le changement
 prend effet sans recompilation.
+
+**V0.5 étape 1 — vert :** crate `components/yaor-config` (TOML, 4
+tests unitaires) ; modification de `/root/.config/yaor/desktop.toml`
++ SIGHUP au compositor : rechargement **sans quitter la session**
+(`t-yaor-config.py` 20/20, RC=0 — ratio/gaps/rebind re-mesurés,
+aucune recompilation). Valeur d'usine `/etc/yaor/desktop.toml`
+chargée au démarrage sans fichier utilisateur.
 
 ## TEST-BUILD-001 — Reproductibilité fonctionnelle
 **Vérifie :** REQ-SW-016
