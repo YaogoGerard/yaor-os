@@ -171,17 +171,8 @@ pub fn recompute(state: &mut Yaor) {
         }
     }
 
-    // groupement par sortie ; ordre de la liste tiling conservé
-    let outputs = state
-        .space
-        .outputs()
-        .filter_map(|o| {
-            let geo = state.space.output_geometry(o)?;
-            Some((o.clone(), geo))
-        })
-        .collect::<Vec<_>>();
-
     let tiled = state.layout.tiled.clone();
+    let outputs = outputs_of(state);
 
     for (output, geo) in &outputs {
         let group: Vec<Window> = tiled
@@ -191,6 +182,18 @@ pub fn recompute(state: &mut Yaor) {
             .collect();
         tile_group(state, *geo, &group);
     }
+}
+
+/// Sorties connues (géométrie globale) : côte à côte dans l'espace.
+fn outputs_of(state: &mut Yaor) -> Vec<(Output, Rectangle<i32, Logical>)> {
+    state
+        .space
+        .outputs()
+        .filter_map(|o| {
+            let geo = state.space.output_geometry(o)?;
+            Some((o.clone(), geo))
+        })
+        .collect()
 }
 
 /// Sortie à laquelle une fenêtre est rattachée : contient le centre de
@@ -460,9 +463,36 @@ pub fn run_action(state: &mut Yaor, action: Action) {
                 if idx == 0 {
                     tracing::info!("raccourci : fenêtre déjà au maître");
                 } else {
-                    state.layout.tiled.swap(0, idx);
-                    recompute(state);
-                    tracing::info!("raccourci : tuile {idx} ↔ maître");
+                    let outputs = outputs_of(state);
+                    let master = state.layout.tiled[0].clone();
+                    let focused = state.layout.tiled[idx].clone();
+                    let master_out = window_output_of(state, &master, &outputs);
+                    let focused_out = window_output_of(state, &focused, &outputs);
+                    if master_out == focused_out {
+                        // même sortie : l'échange d'ordre suffit (le re-tile
+                        // regroupe par sortie et le maître change de fenêtre)
+                        state.layout.tiled.swap(0, idx);
+                        recompute(state);
+                        tracing::info!("raccourci : tuile {idx} ↔ maître");
+                    } else {
+                        // trans-sortie (2 têtes, v0.5 étape 2) : les fenêtres
+                        // échangent leurs positions — la fenêtre focusée
+                        // rejoint la sortie du maître (et le maître
+                        // réciproquement la sienne) ; le re-tile regroupe
+                        // par centre et dispose chaque sortie ; le maître
+                        // de CHAQUE sortie suit l'ordre de la liste échangée.
+                        let gm = state.space.element_geometry(&master);
+                        let gf = state.space.element_geometry(&focused);
+                        if let (Some(gm), Some(gf)) = (gm, gf) {
+                            state.space.map_element(master.clone(), gf.loc, false);
+                            state.space.map_element(focused.clone(), gm.loc, false);
+                            state.layout.tiled.swap(0, idx);
+                            recompute(state);
+                            tracing::info!(
+                                "raccourci : maître trans-sortie — les fenêtres échangent de sortie"
+                            );
+                        }
+                    }
                 }
             }
         }
