@@ -279,6 +279,16 @@ test référence une exigence (analyse croisée des deux documents).
 Activer le profil classique et vérifier l'organisation de bureau attendue (barre des tâches,
 menu de démarrage).
 
+**v0.6 étape 1 (socle) — harnais `t-yaor-panel.py`, vert 22/22 + 4/4 :**
+la barre (`yaor-panel`, client layer-shell couche Top, zone exclusive 24 px) rendue en
+haut de la première sortie uniquement ; volet menu Overlay avec clavier exclusif (Escape
+referme) ; lancement des apps YAOR de démo du menu (waytest tuilé sous la barre, xwtest
+via Xwayland rendu bleu) ; zone exclusive prouvée par différence (tiling retiré de la
+bande sur la tête avec panneau, intact sur la tête sans). Détail :
+[`graphics-tests.md`](graphics-tests.md) (« v0.6 étape 1 »). Restant vers la clôture de
+TEST-UI-001 : maquettes SVG + identité visuelle (`docs/05-ui-ux/`), changement de profil
+(étape 3).
+
 ## TEST-UI-002 — Profil macOS-like
 **Vérifie :** REQ-SW-009
 
@@ -296,7 +306,8 @@ Les cas exécutables en machine virtuelle sont automatisés par le harnais
 QEMU (`-serial stdio`, autologin `root` sur `ttyS0`, marqueurs `QAEND-N`) et
 `t-*.py` enchaînent les scénarios (`t-boot` : TEST-BOOT-001 ; `t-net`/`t-sess`/
 `t-stor` : réseau, sessions, stockage ; `t-install` : TEST-INST-001/002 ;
-`t-update` : TEST-UPD-001 ; `t-sec-img` : TEST-SEC-001 partie image). Les
+`t-update` : TEST-UPD-001 ; `t-sec-img` : TEST-SEC-001 partie image ;
+`t-yaor-panel` : TEST-UI-001 v0.6 étape 1). Les
 artefacts de mise à jour sont servis par un serveur HTTP de l'hôte
 (`qa_http.py`, écarts QA documentés dans `../04-design-lld/installer/installer.md`,
 « Points ouverts »).

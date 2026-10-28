@@ -288,6 +288,63 @@ Détail par module :
   leçons : [`graphics-tests.md`](../../06-testing/graphics-tests.md)),
   régression `t-yaor-tiling` 26/26 + 6/6.
 
+## v0.6 étape 1 — socle layer-shell + client yaor-panel
+
+Étape 1 du jalon v0.6 Caméléon (commit `da13e19`) ; décisions produit :
+[`milestones.md`](../../01-product/milestones.md) (v0.6). Les panneaux
+sont des **clients layer-shell dédiés** (`wlr_layer_shell_v1`) — le
+compositor les sert comme n'importe quel client Wayland, l'UI évolue
+sans recompiler le compositor.
+
+- **state.rs** : global `WlrLayerShellState` du Smithay vendu 0.7 ;
+  `surface_under` hiérarchise **couches Overlay/Top au-dessus des
+  fenêtres** de l'espace, puis fenêtres, puis couches
+  Bottom/Background (fond — atteint seulement hors fenêtres) ;
+  `layer_under` interroge le `LayerMap` de chaque sortie en
+  coordonnées locales de sortie (modèle anvil `input_handler`) ;
+  `exclusive_layer_surface` trouve la layer à
+  `KeyboardInteractivity::Exclusive` (Top ou Overlay — volet de menu
+  ouvert).
+- **shell.rs** : handler `WlrLayerShellHandler` + delegate ; le
+  **configure initial est envoyé en réponse au premier commit** de la
+  surface layer (modèle `ensure_initial_configure` d'anvil) — un
+  client layer-shell n'est jamais configuré spontanément : sans ce
+  correctif, la barre ne rend pas et le client attend indéfiniment
+  (première QA v0.6 : 13/22, correctif → volet configuré). À la
+  destruction (`layer_destroyed`), la couche est démapmée de la sortie
+  (retour du clavier aux fenêtres).
+- **policy.rs** : la zone utile du tiling soustrait la zone exclusive
+  (`non_exclusive_zone`) — la barre 24 px retire sa bande du maître
+  comme de la pile (preuve au screendump : vert jamais au-dessus de
+  y=22 sur la tête avec panneau, jusqu'à y=0 sur la tête sans panneau).
+- **render.rs** : les couches Top/Overlay sont rendues au-dessus de
+  l'espace, Bottom/Background dessous (ordre de superposition cohérent
+  avec `surface_under`).
+- **input.rs** : quand une layer à clavier exclusif existe, la touche
+  lui est routée AVANT les fenêtres ET les raccourcis du bureau (focus
+  clavier posé sur la wl_surface de la layer, `FilterResult::Forward`
+  — modèle anvil `KeyAction::NonEscalate`) ; Escape referme le volet
+  du panel (preuve QA : jeton « menu fermé » dans le journal du
+  client).
+- **Crate `yaor-panel`** (nouvelle, composants) : barre supérieure
+  (Top, ancrée gauche+droite, largeur 0, zone exclusive 24) + volet
+  menu (Overlay, clavier exclusif, Escape) ; apps YAOR de démo
+  waytest/xwtest (pas de scan `.desktop` — décision produit) ;
+  wl_shm Argb8888, SlotPool pré-dimensionné (2 slots barre + 1 slot
+  menu — la croissance à l'exécution est rendue impossible) ; police
+  bitmap 5x7 intégrée ; build ch7 + installation `/usr/bin` + contrôle
+  `--version`.
+- **Leçon de géométrie** : la marge d'une layer s'empile AVEC la zone
+  exclusive des couches inférieures (layer map Smithay) —
+  `set_margin(BAR_H, …)` plaçait le volet à y=48 au lieu de 24 et
+  faussait tout le hit-test des entrées de menu (les clics étaient
+  traités à la seconde ; le « décrochage de 15 s » présumé n'a jamais
+  existé — voir leçons de diagnostic dans
+  [`graphics-tests.md`](../../06-testing/graphics-tests.md)).
+- QA (détail : `graphics-tests.md`, section « v0.6 étape 1 ») :
+  `t-yaor-panel.py` 22/22 mesures + 4/4 sortie ; régressions vertes
+  (26/26 + 6/6, 16/16, 23/23 ×2, 11/11, 6/6).
+
 ## Hors périmètre v0.4
 
 - Décors de fenêtres (relèvent du Desktop Core et des couches plugins, v0.5+) ; profils

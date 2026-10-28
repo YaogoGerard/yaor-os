@@ -492,6 +492,66 @@ déjà dans la matrice). Maquettes des profils et identité visuelle
 (`mockups/`, `branding/`) — les critères TEST-UI-001/002/003 y
 référeront.
 
+### Étape 1 — socle layer-shell + profil classique (28 octobre 2026)
+
+Étape 1 « socle layer-shell dans le compositor + barre/menu du profil
+classique » livrée : commit `da13e19` (11 fichiers, +1 200 lignes) —
+
+- **Compositor** : global `wl_layer_shell_v1` du Smithay vendu 0.7
+  (gabarit anvil, aucune extension du vendoring — ADR-018).
+  `state.rs` : `surface_under` avec les couches Overlay/Top au-dessus
+  des fenêtres et Bottom/Background en fond, plus
+  `exclusive_layer_surface` (Top/Overlay à clavier exclusif) ;
+  `shell.rs` : handler + delegate, **configure initial envoyé en
+  réponse au premier commit** (modèle `ensure_initial_configure`
+  d'anvil — sans lui le client layer-shell n'est jamais configuré et
+  ne rend pas) ; `policy.rs` : zone utile via `non_exclusive_zone`
+  (la zone exclusive 24 px de la barre retire la bande du tiling) ;
+  `render.rs` : couches Top/Overlay rendues au-dessus de l'espace,
+  Bottom/Background dessous ; `input.rs` : touches routées à la couche
+  à clavier exclusif AVANT fenêtres et raccourcis (modèle anvil
+  `KeyAction::NonEscalate`).
+- **`yaor-panel`** : premier client layer-shell du système — barre
+  supérieure (couche Top, ancrée gauche+droite, largeur 0 = pleine
+  largeur, zone exclusive 24 px) avec bouton menu et version du
+  produit ; volet menu (couche Overlay, clavier exclusif, Escape
+  referme) peuplé des apps YAOR de démo waytest/xwtest (décision
+  produit : pas de scan `.desktop`), lancées avec l'environnement
+  hérité (`WAYLAND_DISPLAY` + `DISPLAY=:0`) ; rendu logiciel wl_shm
+  Argb8888, police bitmap 5x7 intégrée (capitales + chiffres + « . ») ;
+  pool SlotPool pré-dimensionné (2 slots barre + 1 slot menu — la
+  croissance d'un SlotPool passe par `set_len` + remap mmap +
+  `wl_shm_pool.resize`, rendue impossible à l'exécution).
+
+QA complète (ISO reconstruite, rebuild `--from 04`) : nouveau harnais
+`t-yaor-panel` **22/22 mesures + 4/4 sortie** — barre rendue en haut
+de la tête 0 (25 396 px) et PAS sur la tête 1 (panneau = première
+sortie) ; zone exclusive prouvée par différence (vert jamais au-dessus
+de y=22 sur la tête 0, jusqu'à y=0 sur la tête 1 sans panneau) ; volet
+Overlay au clic ; Escape referme (routage clavier exclusif → panel) ;
+lancement des apps par le menu — délai clic → app prête **2,7 s**
+(waytest 640x388 tuilée sous la barre ; xwtest : fenêtre X11 bleue
+161 746 px) ; sortie propre 4/4 (panel détecte la coupure de socket,
+maître DRM rendu sans erreur). Régressions vertes : `t-yaor-tiling`
+26/26 + 6/6, `t-yaor-comp` 16/16, `t-yaor-comp-wm` 23/23 x2 (virtio +
+simpledrm), `t-yaor-comp-xwl` 11/11, `t-yaor-sess` 6/6.
+
+Leçons de diagnostic documentées dans `graphics-tests.md` :
+(1) configure initial d'une layer surface en réponse au premier
+commit — sans lui le client attend indéfiniment ; (2) la marge d'une
+layer s'empile AVEC la zone exclusive des couches inférieures (layer
+map Smithay) : un `set_margin` égal à la hauteur de la barre décale le
+volet de 24 px et fausse tout le hit-test — le « décrochage » de 15 s
+présumé n'a jamais existé, les clics étaient traités à la seconde,
+simplement pas là où on les croyait ; (3) sondage d'horodatage en
+uptime invité écrit par courtes lignes (< 75 caractères — la console
+série duplique parfois des octets sur les lignes longues), motifs QA
+sans accent ni parenthèse.
+
+Reste à l'étape 1 : maquettes SVG des profils et identité visuelle
+(logo) dans `docs/05-ui-ux/` (`mockups/`, `branding/`) — signalées au
+produit ; les critères TEST-UI-001/002/003 y référeront.
+
 ### Clôture de v0.4 (28 octobre 2026)
 
 Tous les critères de sortie du jalon sont cochés avec preuves (session KMS,

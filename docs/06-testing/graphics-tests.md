@@ -450,3 +450,67 @@ Multi-écran étendu (≥ 3 sorties), raccourcis focus suivant/précédent
 et swap Mod+Shift+Left/Right (mêmes mécanismes que Mod+Tab, couverts
 unitairement par `parse_shortcut`), X11 dans le tiling (fenêtres
 Xwayland flottantes en v0.4-étape-1).
+
+## v0.6 étape 1 — socle layer-shell + yaor-panel (TEST-UI-001)
+
+### Leçons de diagnostic (v0.6 — panel)
+
+Trois leçons, acquises au prix de quatre runs QA ; à réutiliser :
+
+1. **Configure initial d'une layer surface** : un client layer-shell
+   n'est JAMAIS configuré spontanément — le compositor doit envoyer le
+   configure **en réponse au premier commit** (modèle
+   `ensure_initial_configure` d'anvil, copié dans `shell.rs`). Sans
+   lui : la barre ne rend pas, le client attend indéfiniment
+   (symptôme : run QA 1 à 13/22, « menu ouvert » sans « menu
+   configuré »).
+2. **Géométrie des layers : marge ET zone exclusive s'empilent.** Le
+   layer map Smithay soustrait DÉJÀ la zone exclusive des couches
+   inférieures ; un `set_margin(BAR_H, …)` du volet la rajoutait
+   (volet à y=48 au lieu de 24). Les clics d'entrée du menu tombaient
+   alors dans le vide ou sur la mauvaise entrée — et le « décrochage
+   de 15 s » du panel présumé pendant trois runs n'a **jamais existé** :
+   les horodatages uptime invité (panel + compositor) ont montré des
+   clics traités à la seconde, simplement pas là où on les croyait.
+   Correctif : `set_margin(0, 0, 0, 4)` — délai clic → app prête
+   mesuré à 2,7 s.
+3. **Console série QEMU : octets dupliqués sur les lignes longues.**
+   L'écho tty révèle des duplications (« eccho », « 2>&11 »,
+   « prêt ((W1) ») — un motif de grep long est donc suspect. Règle :
+   écrire la sonde DANS l'invité par courtes lignes (< 75 caractères),
+   motifs sans accent ni parenthèse, horodatage en `/proc/uptime` ;
+   un motif accentué n'est fiable que si l'écho est vérifié.
+   Diagnostique aussi : SlotPool — pré-dimensionner (2×barre + menu)
+   plutôt que laisser croître (set_len + remap mmap +
+   `wl_shm_pool.resize` à chaque besoin).
+
+### Résultats (`t-yaor-panel`, vert — 22/22 + 4/4)
+
+Banc : QEMU virtio-gpu 2 têtes 1280x800 (`-vga none`, VGPU_JSON),
+session KMS + seatd, panel lancé à la main avec env hérité
+(`WAYLAND_DISPLAY` + `DISPLAY=:0`). Palette de détection : barre/volet
+(32,51,77) — `_is_bar` serré (b<130 exclut le bleu xwtest),
+vert/orange xwtest, fond (204,204,229) ; ~20 000 px par demi-tête.
+
+- **barre layer-shell** : rendue en haut de la tête 0 (25 396 px) et
+  PAS sur la tête 1 (panneau = première sortie, Virtual-1) ; configure
+  layer-shell reçu (journal « barre configurée 1280x24 ») ;
+- **zone exclusive** : preuve différentielle — tête 0 : maître vert
+  jamais au-dessus de y=22 ; tête 1 (sans panneau) : maître vert
+  jusqu'à y=0 ; swap trans-sortie intact ;
+- **volet menu Overlay** : clic bouton (20,12) → volet affiché sous la
+  barre (5 184 px mesurés au screendump) ; clavier exclusif : Escape
+  referme le volet et le panel journalise « menu fermé » (la touche ne
+  pouvait atteindre le client QUE par le routage compositor) ;
+- **lancement d'apps par le menu** : entrée WAYTEST → waytest lancé
+  par le panel (« lancement waytest (pid …) »), 2 fenêtres de plus
+  (0 → 2), tuilées sous la barre (640x388) ; entrée XWTEST → client
+  X11 lancé via Xwayland, fenêtre bleue rendue sous la barre
+  (161 746 px) ; délai clic → app prête 2,7 s (sonde uptime invité) ;
+- **sortie propre** : Mod+Shift+E → compositor arrêté, panel détecte
+  la coupure de socket (« arrêt »), socket retirée, maître DRM rendu
+  sans erreur (4/4).
+
+Régressions obligatoires vertes sur le même ISO : `t-yaor-tiling`
+26/26 + 6/6, `t-yaor-comp` 16/16, `t-yaor-comp-wm` 23/23 ×2 (virtio +
+simpledrm), `t-yaor-comp-xwl` 11/11, `t-yaor-sess` 6/6.
