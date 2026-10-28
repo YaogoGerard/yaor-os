@@ -26,7 +26,7 @@ l'approche de ce jalon : seuls `v0.1` et `v0.2` (atteints) sont figés ici.
 | v0.1 | Système de construction + boot Linux minimal | Phase 0 — Foundation | Atteint |
 | v0.2 | Userland fonctionnel et composants sélectionnés | Phase 1 — System | Atteint |
 | v0.3 | Base graphique | Phase 2 — Graphics | Atteint |
-| v0.4 | Compositor YAOR | Phase 2 — Graphics | En cours |
+| v0.4 | Compositor YAOR | Phase 2 — Graphics | Atteint |
 | v0.5 | Desktop Core configurable | Phase 3 — YAOR Desktop | À venir |
 | v0.6 | Profils Caméléon | Phase 4 — Caméléon | À venir |
 | v0.7 | Système de plugins | Phase 5 — Extensibilité | À venir |
@@ -186,7 +186,7 @@ Wayland (libwayland), périphériques d'entrée (libinput + libevdev) et audio
   xdg interactives — grabs d'anvil armés côté serveur) ; audio vert. Matrice
   de traçabilité : REQ-SW-005 → TEST-GFX-001 + TEST-GFX-002 (ADR-024).
 
-## v0.4 — Compositor YAOR (ouvert)
+## v0.4 — Compositor YAOR (atteint)
 
 **Périmètre :** remplacer la session de référence (anvil 0.7) par le compositor YAOR
 propre, bâti sur **Smithay** (ADR-005) : gestion des fenêtres intégrée (pas de «
@@ -321,3 +321,15 @@ sont établis par v0.3 et réutilisés tels quels.
 Les périmètres sont fixés par [`roadmap.md`](roadmap.md) ; les critères de sortie sont à
 détailler à l'ouverture de chaque jalon (Desktop Core, profils Caméléon, plugins,
 accessibilité, stabilisation).
+
+### Clôture de v0.4 (28 octobre 2026)
+
+Tous les critères de sortie du jalon sont cochés avec preuves (session KMS,
+gestion des fenêtres, XWayland, sessions logind, traçabilité REQ-SW-005).
+Étapes de réalisation : étape 1 « crate compositor » (`deb28c3`), étape 2
+« session udev/KMS, rendu et entrées » (`46ffefe`), étape 3 « gestion des
+fenêtres » (`7c4edd7`), étape 4 « XWayland » (`4ee641b`), étape 5
+« sessions logind » (`a3a5501`), étape 6 « traçabilité » (`2c367ce`). ISO de référence :
+`yaor-live-x86_64-0.2.0.iso` (0.2.0, ADR-022), empreinte SHA-256 publiée à
+côté. Enchaînement : v0.5 Desktop Core (tiling, moteur de configuration,
+multi-écrans).
