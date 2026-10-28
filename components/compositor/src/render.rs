@@ -185,8 +185,9 @@ where
 
 // Hotspot d'un curseur surface (lecture des attributs, comme anvil).
 /// Assemble les éléments de rendu d'une sortie : éléments personnalisés
-/// (curseur) puis les fenêtres de l'espace (modèle anvil output_elements,
-/// sans fullscreen ni preview).
+/// (curseur), puis layers Background/Bottom, fenêtres de l'espace, puis
+/// layers Top/Overlay (panneaux au-dessus — modèle anvil output_elements,
+/// sans fullscreen ni preview). v0.6 étape 1 : rendu layer-shell.
 pub fn output_elements<R>(
     output: &Output,
     space: &Space<smithay::desktop::Window>,
@@ -205,10 +206,59 @@ pub fn output_elements<R>(
             .map(OutputRenderElements::Custom)
             .collect();
 
+    let scale = Scale::from(output.current_scale().fractional_scale());
+    let scale_i = Scale::from(scale.x.round() as i32);
+
+    // couches basses (Background/Bottom) : sous les fenêtres
+    {
+        let map = smithay::desktop::layer_map_for_output(output);
+        for kind in [
+            smithay::wayland::shell::wlr_layer::Layer::Background,
+            smithay::wayland::shell::wlr_layer::Layer::Bottom,
+        ] {
+            for layer in map.layers_on(kind) {
+                let loc = map
+                    .layer_geometry(layer)
+                    .map(|g| g.loc)
+                    .unwrap_or_default()
+                    .to_physical(scale_i);
+                out.extend(
+                    layer
+                        .render_elements(renderer, loc, scale, 1.0)
+                        .into_iter()
+                        .map(OutputRenderElements::Window),
+                );
+            }
+        }
+    }
+
     if let Ok(space_elements) =
         smithay::desktop::space::space_render_elements(renderer, [space], output, 1.0)
     {
         out.extend(space_elements.into_iter().map(OutputRenderElements::Space));
+    }
+
+    // couches hautes (Top/Overlay) : panneaux au-dessus des fenêtres
+    {
+        let map = smithay::desktop::layer_map_for_output(output);
+        for kind in [
+            smithay::wayland::shell::wlr_layer::Layer::Top,
+            smithay::wayland::shell::wlr_layer::Layer::Overlay,
+        ] {
+            for layer in map.layers_on(kind) {
+                let loc = map
+                    .layer_geometry(layer)
+                    .map(|g| g.loc)
+                    .unwrap_or_default()
+                    .to_physical(scale_i);
+                out.extend(
+                    layer
+                        .render_elements(renderer, loc, scale, 1.0)
+                        .into_iter()
+                        .map(OutputRenderElements::Window),
+                );
+            }
+        }
     }
 
     (out, CLEAR_COLOR)

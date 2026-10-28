@@ -4,7 +4,7 @@
 # build est hors-ligne et reproductible (ADR-016).
 [workspace]
 resolver = "2"
-members = ["yaor-common", "yaor-slot", "yaor-install", "yaor-config", "compositor"]
+members = ["yaor-common", "yaor-slot", "yaor-install", "yaor-config", "compositor", "yaor-panel"]
 
 [workspace.package]
 version = "0.2.0"

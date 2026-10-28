@@ -98,10 +98,16 @@ fn cascade_location(state: &Yaor) -> (i32, i32) {
 
 /// Maître+pile : origine (premier gap) de la sortie sous le pointeur —
 /// les fenêtres naissent sur la sortie active (focus suit le pointeur).
+/// v0.6 étape 1 : dans la zone utile (bandes exclusives soustraites).
 fn master_slot_location(state: &Yaor) -> (i32, i32) {
     let gaps = crate::config::get().layout.gaps as i32;
-    if let Some(geo) = output_under(state).and_then(|o| state.space.output_geometry(o)) {
-        return (geo.loc.x + gaps, geo.loc.y + gaps);
+    if let Some(o) = output_under(state) {
+        if let Some(geo) = state.space.output_geometry(o) {
+            let map = smithay::desktop::layer_map_for_output(o);
+            let zone = map.non_exclusive_zone();
+            let usable = Rectangle::new(geo.loc + zone.loc, zone.size);
+            return (usable.loc.x + gaps, usable.loc.y + gaps);
+        }
     }
     (gaps, gaps)
 }
@@ -185,13 +191,20 @@ pub fn recompute(state: &mut Yaor) {
 }
 
 /// Sorties connues (géométrie globale) : côte à côte dans l'espace.
+/// v0.6 étape 1 : la géométrie est la **zone utile** de la sortie —
+/// `layer_map_for_output(o).non_exclusive_zone()` — c.-à-d. la sortie
+/// entière moins les bandes exclusives des panneaux layer-shell
+/// (barre des tâches…). Sans layer mappé, c'est la sortie entière
+/// (comportement v0.4/v0.5 inchangé, garde de régression).
 fn outputs_of(state: &mut Yaor) -> Vec<(Output, Rectangle<i32, Logical>)> {
     state
         .space
         .outputs()
         .filter_map(|o| {
             let geo = state.space.output_geometry(o)?;
-            Some((o.clone(), geo))
+            let map = smithay::desktop::layer_map_for_output(o);
+            let zone = map.non_exclusive_zone();
+            Some((o.clone(), Rectangle::new(geo.loc + zone.loc, zone.size)))
         })
         .collect()
 }

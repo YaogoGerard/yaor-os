@@ -1,0 +1,25 @@
+# yaor-panel — panneau du bureau YAOR (jalon v0.6 « Caméléon », étape 1).
+#
+# Membre du workspace des composants internes (components/), bâti avec la
+# toolchain Rust de l'hôte dans le chroot (ADR-019). Premier client
+# layer-shell du système : barre supérieure ancrée avec zone exclusive
+# (zwlr_layer_shell_v1 via smithay-client-toolkit). Les dépendances
+# externes résident dans l'arbre vendu de Smithay 0.7.0 (ADR-018) —
+# la config components/.cargo/config.toml remplace crates.io par le
+# dossier vendored, donc aucune résolution réseau.
+[package]
+name = "yaor-panel"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Client toolkit épinglé : la version vendue dans l'arbre Smithay 0.7.0
+# (son Cargo.lock l'épingle à 0.19.2 — « un besoin = un fournisseur »).
+[dependencies.smithay-client-toolkit]
+version = "0.19.2"
+
+# Types wayland directs (Connection, protocoles) — réexportés par sctk ;
+# dépendance explicite pour la lisibilité des imports (0.31 vendu).
+[dependencies.wayland-client]
+version = "0.31"

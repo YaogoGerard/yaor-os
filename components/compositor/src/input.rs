@@ -37,7 +37,24 @@ pub fn process_input_event<I: InputBackend>(
             // est consommée (pas de transmission au client — modèle
             // anvil, FilterResult::Intercept).
             let key_state = event.state();
-            data.seat.get_keyboard().unwrap().input::<(), _>(
+            let keyboard = data.seat.get_keyboard().unwrap();
+
+            // v0.6 étape 1 : layer-shell à clavier exclusif (Top ou
+            // Overlay — menu de panneau ouvert) — les touches lui sont
+            // routées AVANT les fenêtres ET les raccourcis du bureau
+            // (modèle anvil input_handler : KeyAction::NonEscalate).
+            if let Some(layer) = data.exclusive_layer_surface() {
+                // Cible maison : la wl_surface du layer (le focus
+                // clavier Smithay délivre les touches à son arbre).
+                let surface = layer.wl_surface().clone();
+                keyboard.set_focus(data, Some(crate::focus::FocusTarget::Wl(surface)), serial);
+                keyboard.input::<(), _>(data, event.key_code(), key_state, serial, time, |_, _, _| {
+                    FilterResult::Forward
+                });
+                return;
+            }
+
+            keyboard.input::<(), _>(
                 data,
                 event.key_code(),
                 key_state,

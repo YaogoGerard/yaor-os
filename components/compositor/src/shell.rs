@@ -6,11 +6,12 @@
 // curseur laissé au statut par défaut (pas d'xcursor en v0.4).
 
 use smithay::{
-    delegate_data_device, delegate_output, delegate_primary_selection, delegate_seat, delegate_shm,
-    delegate_xdg_shell,
+    delegate_data_device, delegate_layer_shell, delegate_output, delegate_primary_selection,
+    delegate_seat, delegate_shm, delegate_xdg_shell,
     backend::renderer::utils::on_commit_buffer_handler,
     desktop::{
-        find_popup_root_surface, get_popup_toplevel_coords, PopupKind, PopupManager, Window,
+        find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, PopupKind,
+        PopupManager, Window, WindowSurfaceType,
     },
     input::{
         pointer::{Focus, GrabStartData as PointerGrabStartData},
@@ -19,11 +20,12 @@ use smithay::{
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
-            protocol::{wl_seat, wl_surface::WlSurface},
+            protocol::{wl_output, wl_seat, wl_surface::WlSurface},
             Client, Resource,
         },
     },
     utils::{Rectangle, Serial},
+    output::Output,
     wayland::{
         seat::WaylandFocus,
         buffer::BufferHandler,
@@ -34,6 +36,7 @@ use smithay::{
         },
         selection::SelectionHandler,
         selection::SelectionTarget,
+        shell::wlr_layer::{Layer, LayerSurface as WlrLayerSurfaceResource, WlrLayerShellHandler},
         shell::xdg::{
             PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
             XdgToplevelSurfaceData,
@@ -89,11 +92,96 @@ impl smithay::wayland::compositor::CompositorHandler for Yaor {
                 window.on_commit();
             }
         }
+        // layer-shell : le configure initial est envoyé EN RÉPONSE au
+        // premier commit du client (la spec interdit de l'envoyer avant
+        // — gabarit anvil ensure_initial_configure, branche layer :
+        // arrange d'abord pour respecter la taille demandée, puis
+        // send_configure) ; les commits suivants re-déclenchent
+        // l'arrange (ancre/taille changées).
+        for output in self.space.outputs().cloned().collect::<Vec<_>>() {
+            let found = layer_map_for_output(&output)
+                .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+                .cloned();
+            if let Some(layer) = found {
+                let mut map = layer_map_for_output(&output);
+                map.arrange();
+                let initial_configure_sent = with_states(surface, |states| {
+                    states
+                        .data_map
+                        .get::<smithay::wayland::shell::wlr_layer::LayerSurfaceData>()
+                        .expect("layer sans données")
+                        .lock()
+                        .unwrap()
+                        .initial_configure_sent
+                });
+                if !initial_configure_sent {
+                    layer.layer_surface().send_configure();
+                }
+                break;
+            }
+        }
         shell_commit(&mut self.popups, &mut self.space, surface);
     }
 }
 smithay::delegate_compositor!(Yaor);
 delegate_shm!(Yaor);
+
+// Panneaux layer-shell (v0.6 Caméléon — UI Engine, gabarit anvil).
+impl WlrLayerShellHandler for Yaor {
+    fn shell_state(&mut self) -> &mut smithay::wayland::shell::wlr_layer::WlrLayerShellState {
+        &mut self.layer_shell_state
+    }
+
+    fn new_layer_surface(
+        &mut self,
+        surface: WlrLayerSurfaceResource,
+        wl_output: Option<wl_output::WlOutput>,
+        _layer: Layer,
+        namespace: String,
+    ) {
+        let output = match wl_output
+            .as_ref()
+            .and_then(Output::from_resource)
+            .or_else(|| output_under_first(self))
+        {
+            Some(output) => output,
+            None => {
+                // Aucune sortie encore (démarrage) : la surface sera
+                // ignorée — le client layer-shell reconnectera.
+                tracing::warn!("layer-shell : aucune sortie pour « {} »", namespace);
+                return;
+            }
+        };
+        tracing::info!(
+            "layer-shell : panneau « {} » sur {}",
+            namespace,
+            output.name()
+        );
+        let mut map = layer_map_for_output(&output);
+        if let Err(err) = map.map_layer(&smithay::desktop::LayerSurface::new(surface, namespace)) {
+            tracing::warn!("layer-shell : map_layer refusé : {}", err);
+        }
+    }
+
+    fn layer_destroyed(&mut self, surface: smithay::wayland::shell::wlr_layer::LayerSurface) {
+        for output in self.space.outputs().cloned().collect::<Vec<_>>() {
+            let mut map = layer_map_for_output(&output);
+            let layer = map
+                .layers()
+                .find(|&layer| layer.layer_surface() == &surface)
+                .cloned();
+            if let Some(layer) = layer {
+                map.unmap_layer(&layer);
+            }
+        }
+    }
+}
+delegate_layer_shell!(Yaor);
+
+/// Première sortie connue (repli d'un layer-shell sans wl_output).
+fn output_under_first(state: &Yaor) -> Option<Output> {
+    state.space.outputs().next().cloned()
+}
 
 impl XdgShellHandler for Yaor {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {

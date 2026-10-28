@@ -22,7 +22,9 @@ use smithay::{
         update_surface_primary_scanout_output, with_surfaces_surface_tree,
         OutputPresentationFeedback,
     },
-    desktop::{PopupManager, Space, Window, WindowSurfaceType},
+    desktop::{
+        layer_map_for_output, PopupManager, Space, Window, WindowSurfaceType,
+    },
     input::{Seat, SeatState},
     output::Output,
     reexports::{
@@ -38,6 +40,7 @@ use smithay::{
         compositor::{CompositorClientState, CompositorState},
         output::OutputManagerState,
         selection::data_device::DataDeviceState,
+        shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, WlrLayerShellState},
         shell::xdg::XdgShellState,
         shm::ShmState,
         socket::ListeningSocketSource,
@@ -89,6 +92,9 @@ pub struct Yaor {
     // Smithay states
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
+    /// Protocole wlr_layer_shell_v1 : panneaux/docks/barres (clients
+    /// layer-shell — v0.6 Caméléon, UI Engine de l'HLD).
+    pub layer_shell_state: WlrLayerShellState,
     pub shm_state: ShmState,
     /// Global wl_output manager (conservé vivant pendant la session).
     #[allow(dead_code)]
@@ -156,6 +162,7 @@ impl Yaor {
 
         let compositor_state = CompositorState::new::<Yaor>(&dh);
         let xdg_shell_state = XdgShellState::new::<Yaor>(&dh);
+        let layer_shell_state = WlrLayerShellState::new::<Yaor>(&dh);
         let shm_state = ShmState::new::<Yaor>(&dh, vec![]);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Yaor>(&dh);
         let mut seat_state = SeatState::new();
@@ -185,6 +192,7 @@ impl Yaor {
             cursor_status: crate::render::CursorImageStatus::default_named(),
             compositor_state,
             xdg_shell_state,
+            layer_shell_state,
             shm_state,
             output_manager_state,
             seat_state,
@@ -273,15 +281,85 @@ impl Yaor {
     /// Surface sous le pointeur : l'élément le plus haut (xdg_popup
     /// inclus), avec sa position absolue en logique f64 (convention
     /// smallvil pour le focus pointeur).
+    ///
+    /// Ordre de superposition (v0.6 étape 1) : layers Overlay/Top
+    /// au-dessus des fenêtres (panneaux, docks), puis fenêtres de
+    /// l'espace, puis layers Bottom/Background (fond — atteint
+    /// seulement là où aucune fenêtre ne couvre le point ; conforme
+    /// à nos clients : panneaux en Top, aucun client Background en
+    /// v0.6).
     pub fn surface_under(
         &self,
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
-        self.space.element_under(pos).and_then(|(window, location)| {
+        // 1) couches hautes (panneaux) — au-dessus des fenêtres
+        if let Some(found) = self.layer_under(pos, &[WlrLayer::Overlay, WlrLayer::Top]) {
+            return Some(found);
+        }
+        // 2) fenêtres de l'espace
+        if let Some(found) = self.space.element_under(pos).and_then(|(window, location)| {
             window
                 .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
                 .map(|(s, p)| (s, (p + location).to_f64()))
-        })
+        }) {
+            return Some(found);
+        }
+        // 3) couches basses (fond, décor éventuel)
+        self.layer_under(pos, &[WlrLayer::Bottom, WlrLayer::Background])
+    }
+
+    /// Recherche d'une surface layer-shell sous le pointeur, dans les
+    /// couches demandées, sortie par sortie (coordonnées locales de
+    /// sortie, comme anvil input_handler).
+    fn layer_under(
+        &self,
+        pos: Point<f64, Logical>,
+        kinds: &[WlrLayer],
+    ) -> Option<(WlSurface, Point<f64, Logical>)> {
+        for output in self.space.outputs() {
+            let output_geo = match self.space.output_geometry(output) {
+                Some(geo) => geo,
+                None => continue,
+            };
+            let local = pos - output_geo.loc.to_f64();
+            let map = layer_map_for_output(output);
+            for kind in kinds {
+                if let Some(layer) = map.layer_under(*kind, local) {
+                    let layer_geo = map.layer_geometry(layer).unwrap_or_default();
+                    if let Some((s, p)) = layer.surface_under(
+                        local - layer_geo.loc.to_f64(),
+                        WindowSurfaceType::ALL,
+                    ) {
+                        let abs = p.to_f64() + layer_geo.loc.to_f64() + output_geo.loc.to_f64();
+                        return Some((s, abs));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// La surface est-elle un layer-shell à clavier exclusif (Top ou
+    /// Overlay) ? Les touches lui sont routées AVANT les fenêtres
+    /// (menu de panneau ouvert — modèle anvil input_handler).
+    pub fn exclusive_layer_surface(&self) -> Option<smithay::desktop::LayerSurface> {
+        use smithay::wayland::shell::wlr_layer::LayerSurfaceCachedState;
+        for layer in self.layer_shell_state.layer_surfaces().rev() {
+            let data = smithay::wayland::compositor::with_states(layer.wl_surface(), |states| {
+                *states.cached_state.get::<LayerSurfaceCachedState>().current()
+            });
+            if data.keyboard_interactivity == KeyboardInteractivity::Exclusive
+                && (data.layer == WlrLayer::Top || data.layer == WlrLayer::Overlay)
+            {
+                return self.space.outputs().find_map(|o| {
+                    layer_map_for_output(o)
+                        .layers()
+                        .find(|l| l.layer_surface() == &layer)
+                        .cloned()
+                });
+            }
+        }
+        None
     }
 }
 

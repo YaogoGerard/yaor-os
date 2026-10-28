@@ -1,12 +1,14 @@
 # Dépendances vendues (YAOR, ADR-018) : compilation hors-ligne.
 #
 # Le workspace des composants YAOR ne dépend d'aucun registre, SAUF le
-# compositor (ADR-005) qui dépend de Smithay 0.7.0 — archive épinglée de
-# l'étape 01, décompressée par le build dans /build/work. Les sources de
-# registre sont donc remplacées par le dossier vendored de l'arbre
-# Smithay : aucune résolution réseau, même environnement dans le chroot
-# (build) et côté hôte (itération dev — créer un lien /build vers le
-# dossier build/ du dépôt).
+# compositor (ADR-005) et yaor-panel (v0.6) qui dépendent de crates de
+# l'arbre Smithay 0.7.0 (Smithay ; smithay-client-toolkit et les crates
+# wayland du panneau layer-shell) — archive épinglée de l'étape 01,
+# décompressée par le build dans /build/work. Les sources de registre
+# sont donc remplacées par le dossier vendored de l'arbre Smithay :
+# aucune résolution réseau, même environnement dans le chroot (build)
+# et côté hôte (itération dev — créer un lien /build vers le dossier
+# build/ du dépôt).
 
 [source.crates-io]
 replace-with = "vendored-sources"
