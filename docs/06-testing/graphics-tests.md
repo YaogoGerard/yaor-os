@@ -384,11 +384,69 @@ leçon du run initial : l'écho tty « MQ+1 » validait un échec).
 `t-yaor-comp-wm-simpledrm.py` 23/23 (repli simpledrm) ·
 `t-yaor-comp-xwl.py` 11/11 · `t-yaor-sess.py` 6/6.
 ISO de référence : `out/yaor-live-x86_64-0.2.0.iso` (SHA-256 vérifiée,
-compositor du 28 oct. 03:17 — commits `afbd82e` + `68238f3`).
+compositor du 28 oct. 04:01 — commits `afbd82e`, `68238f3`, `fdd002a`).
 
-### Non couverts (v0.5 étape 2)
+## Desktop Core v0.5 (étape 2) — multi-écrans, 2 sorties virtio-gpu
 
-Multi-écrans (2 sorties virtio-gpu, harnais dédié), raccourcis focus
-suivant/précédent et swap Mod+Shift+Left/Right (mêmes mécanismes que
-Mod+Tab, couverts unitairement par `parse_shortcut`), X11 dans le
-tiling (fenêtres Xwayland flottantes en étape 1).
+**Vérifie :** REQ-SW-006 (partie multi-écrans de TEST-DESK-001).
+Harnais : `t-yaor-out2.py` (16/16 mesures + 6/6 sortie, RC=0) — 2
+têtes virtio-gpu 1280x800, mesure couleur au screendump QMP **par
+tête** (`device:"vgpu", head:0/1`), instance A (waytest, W1 vert/W2
+orange) sur la tête 0, instance B (W3/W4) sur la tête 1. Sondes :
+`t-probe-ptr.py` (adoption des fenêtres neuves par la sortie sous le
+pointeur) et `t-probe-click.py` (où tombent les clics, matrice des
+`keyboard enter` des deux journaux waytest).
+
+### Recette QEMU multi-têtes headless (QEMU 11.1.2 — leçons du diagnostic)
+
+1. **`-vga none` obligatoire** : sans lui, QEMU crée un VGA std par
+   défaut EN PLUS du périphérique 2 têtes — deux cartes DRM coexistent
+   et Smithay retient la mauvaise (une seule sortie, `Unknown-1`, sans
+   EDID). Preuve : `query-pci` — VGA controller + Display controller
+   avant correctif, un seul `vgpu` après.
+2. **Chaque tête doit être déclarée** : dans `virtio-gpu-base.c`, une
+   tête n'est « enabled » dans GET_DISPLAY_INFO que si
+   `outputs[i].xres/yres` est posé (ou qu'un backend graphique pousse
+   un `ui_info` — absent en headless) ; sinon le connecteur noyau
+   (`Virtual-2`) reste « disconnected ». Syntaxe **JSON** de `-device`
+   (la forme plate `outputs.1.xres` n'existe pas en CLI, l'élément
+   exige `name`) :
+   `-device '{"driver":"virtio-gpu-pci","max_outputs":2,"id":"vgpu","outputs":[{"name":"H0","xres":1280,"yres":800},{"name":"H1","xres":1280,"yres":800}]}'`
+3. **Canal pointeur PS/2 : petits pas uniquement.** Les deltas rel
+   sont livrés 1:1 (`delta_unaccel`, sans accélération) MAIS la file
+   PS/2 de QEMU ne fait que 16 octets et les paquets sont serrés à
+   ±127 (`hw/input/ps2.c`) : un grand delta en un évènement se
+   bufferise et se rejoue hors phase (pointeur qui « rate » x=1280 ou
+   retombe sur une position erronée). Recette : reset ET déplacement
+   en pas de ~66 px espacés de 40 ms (`_goto` du harnais).
+
+### Résultats (`t-yaor-out2`, vert — 16/16 + 6/6)
+
+- **2 sorties** : connecteurs KMS `Virtual-1`/`Virtual-2` connected,
+  2 globales `wl_output` énumérées, noms vérifiés, mode 1280x800@75 ;
+- **tiling indépendant par tête** : tête 0 — maître vert [0..640] /
+  pile orange [640..1280] (20 560/20 192 px) ; tête 1 — même
+  disposition locale (20 256/20 192 px) ; journal « tiling : géométrie
+  640x800 à (1280,0)/(1920,0) » pour les fenêtres de la tête 1 ;
+- **adoption au pointeur trans-sortie** (`t-probe-ptr`) : pointeur
+  tête 1 → fenêtres de la tête 1, tête 0 vide ; pointeur tête 0 →
+  tête 0 tuilée, tête 1 intacte — **pas de mirroring** ;
+- **clic de focus trans-sortie** (`t-probe-click`) : clic sur la pile
+  de B (tête 1) → `keyboard enter` dans le journal de B ;
+- **swap trans-sortie** (Mod+Tab sur W4, pile de la tête 1) :
+  journal « raccourci : maître trans-sortie — les fenêtres échangent
+  de sortie » ; **tête 0 tout orange** (19 984/20 384, plus aucun
+  vert), **tête 1 tout vert** (20 400/20 720, plus aucun orange) —
+  chaque fenêtre est devenue maître de sa nouvelle sortie ;
+- **sortie propre** : Mod+Shift+E → processus arrêté, socket retirée,
+  console restituée, maître DRM rendu sans erreur (6/6).
+
+Régression single-sortie sur le même binaire : `t-yaor-tiling`
+26/26 + 6/6 (le branchement même-sortie de Mod+Tab est inchangé).
+
+### Non couverts (v0.6+)
+
+Multi-écran étendu (≥ 3 sorties), raccourcis focus suivant/précédent
+et swap Mod+Shift+Left/Right (mêmes mécanismes que Mod+Tab, couverts
+unitairement par `parse_shortcut`), X11 dans le tiling (fenêtres
+Xwayland flottantes en v0.4-étape-1).

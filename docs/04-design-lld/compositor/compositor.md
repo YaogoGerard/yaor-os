@@ -274,6 +274,19 @@ Détail par module :
   sortie (frontières au pixel), `t-yaor-config.py` 20/20
   (usine/SIGHUP/rebind/re-mesures), régressions v0.4 obligatoires
   vertes (16/16, 23/23 ×2, 11/11, 6/6).
+- **Étape 2 — multi-écrans (2 sorties)** : `recompute` regroupe les
+  fenêtres tuilées par sortie (chaque sortie dispose son propre
+  maître+pile, aucune fusion) ; `master_slot_location` pose les
+  fenêtres neuves sur la sortie sous le pointeur (`output_under`) —
+  le focus suit le pointeur d'une sortie à l'autre ; le Mod+Tab
+  devient **trans-sortie** quand la fenêtre focusée n'est pas sur
+  celle du maître : échange des positions globales (`map_element`
+  croisés) + re-tile, chaque fenêtre devenant maître de sa nouvelle
+  sortie (journal « raccourci : maître trans-sortie — les fenêtres
+  échangent de sortie ») ; même sortie, branchement étape 1 inchangé.
+  QA : harnais 2 têtes `t-yaor-out2.py` 16/16 + 6/6 (recette QEMU et
+  leçons : [`graphics-tests.md`](../../06-testing/graphics-tests.md)),
+  régression `t-yaor-tiling` 26/26 + 6/6.
 
 ## Hors périmètre v0.4
 

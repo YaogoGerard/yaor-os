@@ -130,6 +130,14 @@ Mod+Shift+E (arrêt propre). `t-yaor-config.py` 20/20 (RC=0) :
 SIGHUP vivant, rebind à l'usage, ratio 0.7/gaps 10 puis 0.5
 re-mesurés. Détail : [`graphics-tests.md`](graphics-tests.md).
 
+**V0.5 étape 2 — vert :** multi-écrans (2 sorties virtio-gpu) —
+2 `wl_output` énumérées (`Virtual-1`/`Virtual-2`), tiling indépendant
+par sortie (mesuré au screendump QMP par tête), fenêtres neuves sur
+la sortie sous le pointeur (pas de mirroring), swap trans-sortie au
+Mod+Tab (tête 0 tout orange / tête 1 tout vert).
+`t-yaor-out2.py` 16/16 + 6/6 (RC=0). Détail :
+[`graphics-tests.md`](graphics-tests.md).
+
 ## TEST-DESK-002 — Profils
 **Vérifie :** REQ-SW-007
 

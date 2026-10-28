@@ -12,6 +12,7 @@
 | REQ-SW-005 | Graphics architecture (compatibilité X11, ADR-005) | TEST-GFX-004 |
 | REQ-SW-006 | Desktop architecture | TEST-DESK-001 |
 | REQ-SW-006 | Desktop Core LLD (tiling maître+pile, raccourcis, ADR-005) | TEST-DESK-001 |
+| REQ-SW-006 | Desktop Core LLD (multi-écrans : 2 sorties, swap trans-sortie) | TEST-DESK-001 |
 | REQ-SW-007 | Desktop architecture | TEST-DESK-002 |
 | REQ-SW-008 | UI/UX | TEST-UI-001 |
 | REQ-SW-009 | UI/UX | TEST-UI-002 |

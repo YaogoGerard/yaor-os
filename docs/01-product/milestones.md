@@ -27,7 +27,7 @@ l'approche de ce jalon : seuls `v0.1` et `v0.2` (atteints) sont figés ici.
 | v0.2 | Userland fonctionnel et composants sélectionnés | Phase 1 — System | Atteint |
 | v0.3 | Base graphique | Phase 2 — Graphics | Atteint |
 | v0.4 | Compositor YAOR | Phase 2 — Graphics | Atteint |
-| v0.5 | Desktop Core configurable | Phase 3 — YAOR Desktop | En cours |
+| v0.5 | Desktop Core configurable | Phase 3 — YAOR Desktop | Atteint |
 | v0.6 | Profils Caméléon | Phase 4 — Caméléon | À venir |
 | v0.7 | Système de plugins | Phase 5 — Extensibilité | À venir |
 | v0.8 | Accessibilité | Phase 6 — Accessibility | À venir |
@@ -373,23 +373,41 @@ REQ-SW-007 (profils) reste v0.6.
 
 ### Multi-écrans (v0.5 : 2 sorties)
 
-- [ ] Lancement du compositor avec 2 sorties virtio-gpu (`-device` avec
+- [x] Lancement du compositor avec 2 sorties virtio-gpu (`-device` avec
   2 têtes) : 2 globales `wl_output` énumérées (connecteurs distincts) ;
-- [ ] Le tiling est indépendant **par sortie** ; les fenêtres naissent
+  preuves : connecteurs KMS `Virtual-1`/`Virtual-2` « connected »
+  (jetons CC), « Creating new wl_output » ×2 au journal, mode
+  1280x800@75 par tête. **Recette QEMU 11.1.2 headless** (leçon du
+  diagnostic, voir `graphics-tests.md`) : `-vga none` — sinon QEMU
+  ajoute un VGA std par défaut, deux cartes DRM coexistent et Smithay
+  retient la mauvaise — et `-device` **JSON** déclarant chaque tête
+  (`outputs[i].xres/yres`) : une tête n'est « enabled » dans
+  GET_DISPLAY_INFO que si elle est déclarée, sinon le connecteur noyau
+  reste « disconnected » ;
+- [x] Le tiling est indépendant **par sortie** ; les fenêtres naissent
   sur la sortie active (le focus suit le pointeur d'une sortie à
-  l'autre) ; preuves : 2 globales `wl_output` listées, screendumps
-  par tête, déplacement d'une fenêtre d'une sortie à l'autre au swap ;
-  pas de mirroring en v0.5 ;
-- [ ] Nouveau harnais QA multi-sorties — jetons/effets observables
-  (2 `wl_output`, fenêtre sur la sortie active, swap entre sorties).
+  l'autre) ; preuves : sonde `t-probe-ptr.py` — pointeur tête 1 →
+  fenêtres tuilées à (1280,0)/(1920,0), tête 1 verte+orange mesurée,
+  tête 0 vide ; pointeur tête 0 → tête 0 tuilée, tête 1 INTACTE
+  (pas de mirroring) ; harnais 2 têtes : têtes mesurées au pixel
+  (vert/orange ~20 000 px par demi-tête) ;
+- [x] **Swap trans-sortie** (Mod+Tab sur une fenêtre de l'autre
+  sortie) : les fenêtres maître/focusée échangent de sortie — tête 0
+  TOUT orange, tête 1 TOUT vert mesurés au screendump, journal
+  « raccourci : maître trans-sortie — les fenêtres échangent de
+  sortie » (commit `fdd002a`) ;
+- [x] Nouveau harnais QA multi-sorties — `t-yaor-out2.py`
+  16/16 mesures + 6/6 sortie (RC=0), sondes `t-probe-ptr.py`
+  (adoption par sortie) et `t-probe-click.py` (clic→focus trans-sortie
+  prouvé ; leçon PS/2 : deltas rel en petits pas uniquement).
 
 ### Tests et traçabilité
 
-- [ ] Nouveaux harnais : `t-yaor-tiling.py` (dispositions mesurées),
-  `t-yaor-config.py` (rechargement + rebind), extension multi-sorties
-  (2 outputs) ; sortie **verte RC=0** pour chacun ;
-  — étape 1 : `t-yaor-tiling.py` 26/26 + 6/6 et `t-yaor-config.py`
-  20/20 vertes (QEMU virtio) ; extension multi-sorties : étape 2 ;
+- [x] Nouveaux harnais : `t-yaor-tiling.py` (dispositions mesurées),
+  `t-yaor-config.py` (rechargement + rebind), `t-yaor-out2.py`
+  (multi-sorties, 2 têtes) ; sortie **verte RC=0** pour chacun —
+  `t-yaor-tiling.py` 26/26 + 6/6 et `t-yaor-config.py` 20/20
+  (QEMU virtio), `t-yaor-out2.py` 16/16 + 6/6 (2 têtes) ;
 - [x] La matrice de traçabilité couvre REQ-SW-006 → TEST-DESK-001 et
   REQ-SW-015 → TEST-CONFIG-001 (nouvelles parties REQ notées dans
   `requirements-traceability.md`) ; REQ-SW-007 (profils) explicitement
@@ -408,6 +426,26 @@ casse du keysym des raccourcis — leçon diag live). QA complète
 `t-yaor-tiling` 26/26 + 6/6, `t-yaor-config` 20/20, régressions v0.4
 obligatoires vertes (16/16, 23/23virtio+simpledrm, 11/11, 6/6).
 Reste à v0.5 : multi-écrans (étape 2 — harnais 2 têtes virtio-gpu).
+
+### Clôture de l'étape 2 et de v0.5 (28 octobre 2026)
+
+Étape 2 « multi-écrans (2 sorties) » livrée : commit `fdd002a`
+(swap trans-sortie au Mod+Tab, facteur `outputs_of`, adoption des
+fenêtres neuves par la sortie sous le pointeur). QA complète (ISO
+reconstruite du 28 oct. 04:05, SHA-256 vérifiée) : harnais 2 têtes
+`t-yaor-out2` 16/16 + 6/6 — 2 `wl_output`, tiling indépendant par
+tête mesuré au screendump QMP, swap trans-sortie avec inversion de
+couleurs (tête 0 tout orange / tête 1 tout vert), sortie propre —,
+régression single-sortie `t-yaor-tiling` 26/26 + 6/6 sur le même
+binaire, régressions v0.4 obligatoires vertes (16/16, 23/23virtio+
+simpledrm, 11/11, 6/6). Leçons de diagnostic documentées dans
+`graphics-tests.md` (recette QEMU multi-têtes headless, canal PS/2).
+
+**Tous les critères de sortie de v0.5 sont cochés avec preuves**
+(tiling maître+pile, raccourcis, configuration déclarative TOML +
+SIGHUP, multi-écrans 2 sorties, traçabilité REQ-SW-006/015) :
+jalon **v0.5 — Desktop Core** atteint. Enchaînement : v0.6 profils
+Caméléon.
 
 ## v0.6 → v1.0
 
