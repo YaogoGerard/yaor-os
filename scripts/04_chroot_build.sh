@@ -1942,11 +1942,17 @@ phase_yaor_components() {
     cargover="$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$COMPONENTS_DIR/Cargo.toml")"
     [[ "$cargover" == "$prodver" ]] \
         || die "version des composants ($cargover) ≠ VERSION ($prodver) — ADR-022"
-    log "compilation des composants internes YAOR (yaor-install, yaor-slot, yaor-compositor) version $prodver"
+    log "compilation des composants internes YAOR (yaor-install, yaor-slot, yaor-compositor, yaor-config) version $prodver"
     run chroot_rust "cd /build/components && CARGO_TARGET_DIR=/build/work/yaor-target cargo build --release --locked"
     log "installation de yaor-install, yaor-slot et yaor-compositor dans /usr/bin"
     run chroot_run "install -m 0755 /build/work/yaor-target/release/yaor-install /build/work/yaor-target/release/yaor-slot /build/work/yaor-target/release/yaor-compositor /usr/bin/"
     run chroot_run "yaor-slot --help >/dev/null && yaor-install --help >/dev/null && yaor-compositor --help >/dev/null && echo 'composants YAOR opérationnels'"
+    # Configuration du bureau par défaut (v0.5, REQ-SW-006/015) : la
+    # valeur d'usine vit dans l'image (/etc/yaor/desktop.toml) — l'écran
+    # de cascade historique reste le comportement par défaut du produit ;
+    # l'utilisateur la surcharge dans ~/.config/yaor/desktop.toml.
+    log "pose de la configuration du bureau par défaut (/etc/yaor/desktop.toml)"
+    run chroot_run "install -d /etc/yaor && install -m 0644 /build/components/yaor-config/default.toml /etc/yaor/desktop.toml && grep -q 'mode = \"cascade\"' /etc/yaor/desktop.toml && echo 'config du bureau posée'"
 }
 
 # --- Exécution --------------------------------------------------------------

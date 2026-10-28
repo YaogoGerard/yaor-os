@@ -1,0 +1,29 @@
+# Configuration du bureau YAOR (desktop.toml) — valeurs de fabrication
+# (v0.5 « Desktop Core », /etc/yaor/desktop.toml).
+#
+# Champs admis : layout.mode (« cascade » | « master-stack »),
+# layout.ratio (0.0..1.0, largeur relative du maître), layout.gaps
+# (espacement en pixels), keys.* (chaînes « Mod+… », Mod = Super).
+# Champs absents : valeur par défaut compilée — fichier partiel valable.
+#
+# Configurable par l'utilisateur dans ~/.config/yaor/desktop.toml
+# (prioritaire) ; SIGHUP au compositor recharge sans quitter la session
+# (TEST-DESK-001, REQ-SW-006/015).
+
+[layout]
+# « cascade » : comportement historique v0.4 (aucune régression sur les
+# QA établies). « master-stack » : tiling maître + pile.
+mode = "cascade"
+ratio = 0.5
+gaps = 0
+
+[keys]
+focus_next = "Mod+Right"
+focus_prev = "Mod+Left"
+swap_next = "Mod+Shift+Right"
+swap_prev = "Mod+Shift+Left"
+master_swap = "Mod+Tab"
+close = "Mod+Q"
+ratio_grow = "Mod+g"
+ratio_shrink = "Mod+Shift+g"
+quit = "Mod+Shift+E"

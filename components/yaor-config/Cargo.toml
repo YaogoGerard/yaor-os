@@ -1,0 +1,15 @@
+[package]
+name = "yaor-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Configuration du bureau YAOR (desktop.toml) : lecture, valeurs par défaut"
+
+[lib]
+name = "yaor_config"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "1"

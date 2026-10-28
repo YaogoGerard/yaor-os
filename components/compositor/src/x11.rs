@@ -68,6 +68,12 @@ impl XwmHandler for Yaor {
         let window = Window::new_x11_window(window);
         let position = crate::policy::next_window_location(self);
         self.space.map_element(window.clone(), position, false);
+        // X11 hors tiling en v0.5 étape 1 (décision d'ouverture) : les
+        // fenêtres Xwayland sont flottantes, géométrie gérée côté X/XWM.
+
+        // X11 hors tiling en v0.5 étape 1 (décision d'ouverture) : les
+        // fenêtres Xwayland sont flottantes, géométrie gérée côté X/XWM.
+        crate::policy::mark_floating(self, &window);
 
         // Configure avec la taille du cadre de l'espace (bbox), comme
         // anvil : le client s'aligne sur la géométrie du compositor.

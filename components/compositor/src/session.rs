@@ -400,6 +400,11 @@ pub fn run_udev() {
         true,
     );
 
+    // Configuration du bureau (v0.5, REQ-SW-006/015) : desktop.toml ou
+    // défauts, journal de la source et des options chargées.
+    crate::config::init();
+    crate::config::install_reload_handler();
+
     if let Some(socket_name) = state.socket_name.as_ref() {
         info!(socket = %socket_name.to_string_lossy(), "socket wayland publiée");
     }
@@ -613,6 +618,15 @@ pub fn run_udev() {
         } else {
             state.space.refresh();
             state.popups.cleanup();
+            // SIGHUP constaté (v0.5) : rechargement de desktop.toml et
+            // re-tile immédiat — sans quitter la session (TEST-DESK-001).
+            if crate::config::RELOAD_REQUESTED.swap(false, Ordering::SeqCst) {
+                crate::config::reload();
+                crate::policy::recompute(&mut state);
+            }
+            // Re-tile périodique (v0.5 maître+pile : fenêtres nouvelles
+            // ou mortes ; en cascade : no-op — v0.4 inchangé).
+            crate::policy::recompute(&mut state);
             display_handle.flush_clients().unwrap();
         }
     }

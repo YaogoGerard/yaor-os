@@ -78,6 +78,9 @@ pub struct Yaor {
     pub running: AtomicBool,
 
     pub space: SpaceWindow,
+    /// Disposition automatique (v0.5 « Desktop Core ») : liste tiling
+    /// (maître + pile) et fenêtres flottantes — moteur crate::policy.
+    pub layout: crate::policy::LayoutState,
     pub popups: PopupManager,
 
     pub pointer_location: Point<f64, Logical>,
@@ -175,6 +178,7 @@ impl Yaor {
             handle,
             loop_signal,
             running: true.into(),
+            layout: Default::default(),
             space: Space::default(),
             popups,
             pointer_location: (0.0, 0.0).into(),

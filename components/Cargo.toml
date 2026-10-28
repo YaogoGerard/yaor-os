@@ -1,9 +1,10 @@
 # Composants internes YAOR (ADR-002), bâtis avec la toolchain Rust de l'hôte
-# (ADR-019). Aucune dépendance externe : le build est hors-ligne et ne
-# nécessite donc aucun vendoring (ADR-018).
+# (ADR-019). Dépendances externes (compositor : Smithay ; yaor-config :
+# toml/serde) prises dans l'arbre vendu de Smithay 0.7.0 (ADR-018) : le
+# build est hors-ligne et reproductible (ADR-016).
 [workspace]
 resolver = "2"
-members = ["yaor-common", "yaor-slot", "yaor-install", "compositor"]
+members = ["yaor-common", "yaor-slot", "yaor-install", "yaor-config", "compositor"]
 
 [workspace.package]
 version = "0.2.0"

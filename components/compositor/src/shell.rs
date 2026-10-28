@@ -108,6 +108,9 @@ impl XdgShellHandler for Yaor {
         // (QA : deux fenêtres 640x480 simultanées).
         surface.with_pending_state(|state| state.size = Some((640, 480).into()));
         let position = crate::policy::next_window_location(self);
+        // Recensement tiling (v0.5) avant la pose dans l'espace : la
+        // boucle re-tile à la frame suivante selon la configuration.
+        crate::policy::register(self, &window);
         self.space.map_element(window, position, false);
     }
 
@@ -144,6 +147,10 @@ impl XdgShellHandler for Yaor {
                 })
                 .unwrap()
                 .clone();
+            // Grab interactif de déplacement : la fenêtre quitte le
+            // tiling et reste flottante à sa géométrie après relâchement.
+            crate::policy::mark_floating(self, &window);
+
             let initial_window_location = self.space.element_location(&window).unwrap();
 
             let grab = MoveSurfaceGrab {
@@ -180,6 +187,10 @@ impl XdgShellHandler for Yaor {
                 })
                 .unwrap()
                 .clone();
+            // Grab interactif de redimensionnement : la fenêtre quitte
+            // le tiling (flottante).
+            crate::policy::mark_floating(self, &window);
+
             let initial_window_location = self.space.element_location(&window).unwrap();
             let initial_window_size = window.geometry().size;
 

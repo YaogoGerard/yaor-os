@@ -71,6 +71,12 @@ version = "1.0"
 [dependencies.tracing]
 version = "0.1"
 
+# Configuration déclarative du bureau (v0.5, REQ-SW-015) : crate interne
+# du workspace (dir yaor-config). Ses dépendances externes (toml/serde)
+# résident dans le même arbre vendu Smithay (ADR-018).
+[dependencies.yaor-config]
+path = "../yaor-config"
+
 # Journal de session (même convention qu'anvil) : RUST_LOG pour le filtre,
 # sortie compacte par défaut vers stderr (redirigée par la session).
 [dependencies.tracing-subscriber]

@@ -10,7 +10,7 @@
 use smithay::{
     backend::input::{
         AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
-        KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
+        KeyboardKeyEvent, KeyState, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
     },
     input::{
         keyboard::FilterResult,
@@ -32,13 +32,34 @@ pub fn process_input_event<I: InputBackend>(
             let serial = SERIAL_COUNTER.next_serial();
             let time = event.time_msec();
 
+            // Raccourcis du bureau (v0.5, affectations desktop.toml —
+            // REQ-SW-015) : évalués à la presse ; une touche reconnue
+            // est consommée (pas de transmission au client — modèle
+            // anvil, FilterResult::Intercept).
+            let key_state = event.state();
             data.seat.get_keyboard().unwrap().input::<(), _>(
                 data,
                 event.key_code(),
-                event.state(),
+                key_state,
                 serial,
                 time,
-                |_, _, _| FilterResult::Forward,
+                |data, mods, handle| {
+                    if key_state == KeyState::Pressed {
+                        let raw = handle
+                            .raw_syms()
+                            .first()
+                            .copied()
+                            .unwrap_or_else(|| handle.modified_sym());
+                        let modified = handle.modified_sym();
+                        if let Some(action) =
+                            crate::policy::find_action(mods, raw, modified)
+                        {
+                            crate::policy::run_action(data, action);
+                            return FilterResult::Intercept(());
+                        }
+                    }
+                    FilterResult::Forward
+                },
             );
         }
         InputEvent::PointerMotion { event, .. } => {
