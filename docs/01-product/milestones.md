@@ -28,7 +28,7 @@ l'approche de ce jalon : seuls `v0.1` et `v0.2` (atteints) sont figés ici.
 | v0.3 | Base graphique | Phase 2 — Graphics | Atteint |
 | v0.4 | Compositor YAOR | Phase 2 — Graphics | Atteint |
 | v0.5 | Desktop Core configurable | Phase 3 — YAOR Desktop | Atteint |
-| v0.6 | Profils Caméléon | Phase 4 — Caméléon | À venir |
+| v0.6 | Profils Caméléon | Phase 4 — Caméléon | En cours |
 | v0.7 | Système de plugins | Phase 5 — Extensibilité | À venir |
 | v0.8 | Accessibilité | Phase 6 — Accessibility | À venir |
 | v1.0 | Système intégré et documenté | Phase 7 — Stabilisation | À venir |
@@ -452,6 +452,45 @@ Caméléon.
 Les périmètres sont fixés par [`roadmap.md`](roadmap.md) ; les critères de sortie sont à
 détailler à l'ouverture de chaque jalon (profils Caméléon, plugins,
 accessibilité, stabilisation).
+
+## v0.6 — Caméléon (ouvert)
+
+**Périmètre (roadmap Phase 4 — Caméléon)** : les trois profils
+d'interface — **classique** (panneau principal type barre des tâches +
+menu d'applications, fenêtres flottantes), **macOS-like** (barre
+supérieure + dock), **tiling** (le socle maître+pile de v0.5, espaces
+de travail) — et le **changement de profil**. Conformément à l'HLD
+(`desktop-architecture.md`) : les profils sont des **configurations de
+l'expérience de bureau, pas trois systèmes indépendants** — un seul
+Desktop Core, coordonnant WM et UI Engine, pilote les trois.
+
+**Décisions d'ouverture (faites avec le produit, 28 octobre 2026)** :
+
+1. **Barre/dock/panneau = clients layer-shell dédiés** (ex. `yaor-panel`,
+   `yaor-dock`) : binaires Wayland parlant `wlr_layer_shell` au
+   compositor — conforme à l'HLD (UI Engine distinct du compositor),
+   les thèmes et variantes de panneaux évoluent sans recompiler le
+   compositor. Faisabilité vérifiée : le Smithay vendu 0.7 expose
+   `WlrLayerShellState`/`layer_map_for_output` (gabarit anvil),
+   aucune extension du vendoring (ADR-018) ;
+2. **Trois étapes progressives** : étape 1 — socle layer-shell dans le
+   compositor (mapping par sortie, zones exclusives soustraites de la
+   zone utile du tiling) + profil classique (barre des tâches, menu
+   d'applications) ; étape 2 — profil macOS-like (barre supérieure +
+   dock) ; étape 3 — changement de profil + espaces de travail du
+   profil tiling ;
+3. **Menu d'applications / dock peuplés d'apps YAOR** (clients internes
+   de démonstration + waytest) — pas de scan `.desktop` en v0.6
+   (l'image live n'a pas d'applications tierces à lister) ;
+4. **Changement de profil à chaud** via SIGHUP (même mécanisme que le
+   rechargement de configuration v0.5, prouvé en QA).
+
+Traçabilité : REQ-SW-007 → TEST-DESK-002, REQ-SW-008 → TEST-UI-001,
+REQ-SW-009 → TEST-UI-002, REQ-SW-010 → TEST-UI-003 (parties requises
+déjà dans la matrice). Maquettes des profils et identité visuelle
+(logo) : à produire en début d'étape 1, dans `docs/05-ui-ux/`
+(`mockups/`, `branding/`) — les critères TEST-UI-001/002/003 y
+référeront.
 
 ### Clôture de v0.4 (28 octobre 2026)
 
