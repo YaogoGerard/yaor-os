@@ -27,7 +27,7 @@ l'approche de ce jalon : seuls `v0.1` et `v0.2` (atteints) sont figés ici.
 | v0.2 | Userland fonctionnel et composants sélectionnés | Phase 1 — System | Atteint |
 | v0.3 | Base graphique | Phase 2 — Graphics | Atteint |
 | v0.4 | Compositor YAOR | Phase 2 — Graphics | Atteint |
-| v0.5 | Desktop Core configurable | Phase 3 — YAOR Desktop | À venir |
+| v0.5 | Desktop Core configurable | Phase 3 — YAOR Desktop | En cours |
 | v0.6 | Profils Caméléon | Phase 4 — Caméléon | À venir |
 | v0.7 | Système de plugins | Phase 5 — Extensibilité | À venir |
 | v0.8 | Accessibilité | Phase 6 — Accessibility | À venir |
@@ -316,10 +316,89 @@ sont établis par v0.3 et réutilisés tels quels.
   QA du compositor ; TEST-GFX-002 (session de référence) ne change pas —
   anvil reste le repli de validation dans le live (ADR-005).
 
-## v0.5 → v1.0
+## v0.5 — Desktop Core (ouvert)
+
+**Périmètre (roadmap Phase 3 — YAOR Desktop) :** le bureau lui-même devient
+vivable — **tiling maître+pile** dans le compositor, **moteur de
+configuration déclaratif** (TOML, `desktop.toml`), **multi-écrans (2
+sorties)**. Décisions d'ouverture (faites avec le produit, 28 octobre 2026) :
+format **TOML** (`~/.config/yaor/desktop.toml`), disposition **maître + pile**
+(fenêtre active principale, pile à droite), **2 sorties** virtio-gpu en QA
+(QEMU `-device virtio-gpu` avec 2 têtes), raccourcis clavier du type
+**sway/Hyprland** adaptés à l'image v0.4 (pas de terminal applicatif : focus,
+swap, close, ratio, quitter). Hors périmètre v0.5 — v0.6 et au-delà :
+layer-shell/barre, launcher, espaces de travail, DnD, profils Caméléon,
+plugins. La traçabilité cible REQ-SW-006 (bureau configurable,
+TEST-DESK-001) et REQ-SW-015 (configuration déclarative, TEST-CONFIG-001) ;
+REQ-SW-007 (profils) reste v0.6.
+
+### Tiling (ADR-005 — desktop-core LLD)
+
+- [ ] Le layout **maître + pile** dispose automatiquement les fenêtres
+  xdg-shell : 2 fenêtres → moitié/moitié ; 3 fenêtres → maître (gauche)
+  + pile divisée à droite ; la 4ᵉ s'empile, le maître garde son ratio.
+  Preuves : largeurs mesurées au screendump QMP (±4 px) + journalisation
+  du compositor (« tiling : … », jetons QA) ;
+- [ ] Les raccourcis par défaut (Mod =SUPER) pilotent le layout :
+  Mod+←/→ focus suivant/précédent, Mod+Shift+←/→ swap de deux fenêtres,
+  Mod+Tab échange la fenêtre focusée avec le maître, Mod+Q ferme la
+  fenêtre focusée (`xdg_toplevel.close`, client → DestroyWindow
+  journalisé), Mod+g / Mod+Shift+g grossissent/rétrécissent la zone
+  maître, Mod+Shift+E arrêt propre du compositor (équivalent SIGTERM).
+  Preuves : injections clavier QMP, jetons/effets observables (l'image
+  n'a pas de terminal applicatif : la preuve passe par les clients
+  `waytest`) ;
+- [ ] La régression v0.4 reste verte sur toute la pile :
+  `t-yaor-comp` 16/16, `t-yaor-comp-wm` 23/23 (virtio et simpledrm),
+  `t-yaor-comp-xwl` 11/11, `t-yaor-sess` 6/6.
+
+### Configuration (REQ-SW-006, REQ-SW-015 ; LLD config-engine)
+
+- [ ] crate `components/config` (membre du workspace, version produit
+  0.2.0, ADR-022) lit `desktop.toml` au démarrage du compositor, valeurs
+  par défaut appliquées dans l'image si le fichier utilisateur est absent ;
+  les dépendances ajoutées (`toml`…) sont vendues (ADR-017/018),
+  `--locked` et build hors-ligne maintenus ;
+- [ ] SIGHUP recharge la configuration **sans quitter la session** :
+  comportement modifié à chaud — preuve : changement de ratio/gaps suivi
+  d'une disposition re-mesurée au screendump (TEST-DESK-001,
+  TEST-CONFIG-001) ;
+- [ ] Options exposées en v0.5 et vérifiées par changement de valeur :
+  ratio maître, espacement (gaps), raccourcis clavier rebindables
+  (rebind d'un raccourci reconnu à l'usage), artefact/chemin de la
+  socket (l'écriture du journal reflète la config chargée) ;
+- [ ] Journal du compositor affiche la configuration chargée (source du
+  fichier, options) — preuve QA en jetons.
+
+### Multi-écrans (v0.5 : 2 sorties)
+
+- [ ] Lancement du compositor avec 2 sorties virtio-gpu (`-device` avec
+  2 têtes) : 2 globales `wl_output` énumérées (connecteurs distincts) ;
+- [ ] Le tiling est indépendant **par sortie** ; les fenêtres naissent
+  sur la sortie active (le focus suit le pointeur d'une sortie à
+  l'autre) ; preuves : 2 globales `wl_output` listées, screendumps
+  par tête, déplacement d'une fenêtre d'une sortie à l'autre au swap ;
+  pas de mirroring en v0.5 ;
+- [ ] Nouveau harnais QA multi-sorties — jetons/effets observables
+  (2 `wl_output`, fenêtre sur la sortie active, swap entre sorties).
+
+### Tests et traçabilité
+
+- [ ] Nouveaux harnais : `t-yaor-tiling.py` (dispositions mesurées),
+  `t-yaor-config.py` (rechargement + rebind), extension multi-sorties
+  (2 outputs) ; sortie **verte RC=0** pour chacun ;
+- [ ] La matrice de traçabilité couvre REQ-SW-006 → TEST-DESK-001 et
+  REQ-SW-015 → TEST-CONFIG-001 (nouvelles parties REQ notées dans
+  `requirements-traceability.md`) ; REQ-SW-007 (profils) explicitement
+  repoussé v0.6 ;
+- [ ] Docs : LLD `desktop-core.md` (layout/raccourcis/et config) et
+  `config-engine.md` développés à hauteur de l'implémentation,
+  `compositor.md` étayé au fil des étapes ; scans Unicode verts.
+
+## v0.6 → v1.0
 
 Les périmètres sont fixés par [`roadmap.md`](roadmap.md) ; les critères de sortie sont à
-détailler à l'ouverture de chaque jalon (Desktop Core, profils Caméléon, plugins,
+détailler à l'ouverture de chaque jalon (profils Caméléon, plugins,
 accessibilité, stabilisation).
 
 ### Clôture de v0.4 (28 octobre 2026)
