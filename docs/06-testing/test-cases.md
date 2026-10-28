@@ -59,7 +59,8 @@ repli `t-anvil-simpledrm.py` 13/13 (le rendu est softpipe, cf.
 **Vérifie :** ADR-005, REQ-SW-005 (partie compositor), ADR-022
 
 Le compositor propre à YAOR (`yaor-compositor`) est livré dans le live et tient
-une session KMS réelle : siège obtenu via seatd/libseat, maître DRM, socket
+une session KMS réelle : siège obtenu via libseat en **mode logind** (v0.4
+étape 5 ; repli `seatd` documenté), maître DRM, socket
 Wayland publiée, client `waytest` connecté et fenêtre mappée au scanout, sortie
 propre sur SIGTERM avec restauration de l'état CRTC et remise du maître.
 
@@ -67,6 +68,15 @@ Statut v0.4 (étape 2, session) : **vert** — `t-yaor-comp.py` 16/16 (virtio-gp
 et `t-yaor-comp-simpledrm.py` 18/18 (repli `-vga std`), RC=0 : session KMS,
 socket Wayland, client mappé au scanout, console restituée après SIGTERM
 (screendump fbcon) et maître DRM rendu sans erreur de permission.
+
+Statut v0.4 (étape 5, sessions) : **vert** — harnais dédié `t-yaor-sess.py`
+**6/6, RC=0** : siège via libseat en mode **logind** (défaut — systemd-logind
+et `dbus.socket` actifs, session logind à siège résolue puis reprise,
+journal « backend de siège : logind », socket Wayland publiée, aucune
+erreur d'ouverture), SIGTERM propre (socket retirée) et repli explicite
+`YAOR_LIBSEAT_BACKEND=seatd` (journal « backend de siège : seatd », aucune
+session logind de plus — le chemin v0.3 reste opérationnel). Détails et
+triage dans `graphics-tests.md` (TEST-GFX-003, étape 2bis).
 
 Statut v0.4 (étape 3, gestion des fenêtres) : **vert** — harnais dédié
 `t-yaor-comp-wm.py` **23/23** (virtio) et repli simpledrm **23/23** :

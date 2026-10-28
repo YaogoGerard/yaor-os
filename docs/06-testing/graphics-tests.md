@@ -98,7 +98,9 @@ Harnais : `t-yaor-comp.py` (virtio-gpu) et sa variante
 
 `t-yaor-comp.py` **vert — 16/16, RC=0** :
 
-- seatd actif ; le compositor ouvre une session libseat, prend le maître DRM
+- siège via **libseat en mode logind** (défaut, v0.4 étape 5) : le compositor
+  résout la session logind attachée au siège (détail en § session.rs du LLD),
+  ouvre la session libseat, prend le maître DRM
   et tient la session 12 s (`GPU primaire : renderD128`, `DrmDevice
   initializing`, EGL `PLATFORM_GBM_KHR`, connecteur `Virtual-1` 1280×800@75) ;
 - socket Wayland `wayland-1` publiée ; `waytest` s'y connecte, lie
@@ -122,6 +124,32 @@ RC=0** :
 - dmesg charge `simpledrm` (pas de virtio-gpu) ; connecteur `Unknown-1` ;
 - mêmes preuves de session (screendumps identiques : 55,4 % clairs /
   44,6 % sombres, puis 0,2 % / 99,8 % après sortie), même démontage propre.
+
+### Étape 2bis — sessions : siège via logind (v0.4, étape 5)
+
+`t-yaor-sess.py` **vert — 6/6, RC=0** (harnais dédié, reprend le module
+commun `t-gfx-live`) :
+
+- services actifs : `systemd-logind`, `dbus.socket` (et `seatd`, qui reste
+  le service du repli), sessions logind initiales de l'autologin (3,
+  via PAM) ;
+- lancement **sans variable** : journal « backend de siège : logind » et
+  « session logind : … » — la session logind attachée au siège est résolue
+  (triplé id/siège/VT journalisé) et son contrôle est repris : socket
+  Wayland publiée, **aucune session logind de plus**, aucune erreur
+  d'ouverture (`ERR-0`) ;
+- SIGTERM : arrêt propre (`arrêt demandé par un signal`), socket Wayland
+  retirée (0 socket `wayland-*` restante) ;
+- repli explicite : relance avec `YAOR_LIBSEAT_BACKEND=seatd` — journal
+  « backend de siège : seatd », session KMS tenue, **toujours aucune
+  session logind de plus** (seatd ne s'interface pas avec logind) ; le
+  chemin v0.3 reste opérationnel.
+
+Le piège documenté : l'`XDG_SESSION_ID` hérité d'un autologin peut pointer
+vers la session logind du gestionnaire utilisateur (ttyS0, **sans siège**)
+et le nommage `c1`/`c2`… varie selon les boots — d'où la résolution tri
+parties du compositor (§ session.rs du LLD) ; sans elle, libseat logind
+échoue avec ENODATA (`os error 61`).
 
 Notes de triage (non scorées) :
 
@@ -242,7 +270,8 @@ centre de la fenêtre bleue, touches a/b/c, sortie sur la touche q).
 - **Xwayland attaché** : le compositor prépare `/tmp/.X11-unix` (0o1777) et
   publie `WM X11 attaché (display :0)`, socket `X0` et verrou `.X0-lock`
   (jetons `XM+1`, `XS-X0`, `XLOCK+0`, `display :0`) ;
-- **session KMS** : seatd actif, session libseat tenue 12 s, socket
+- **session KMS** : siège via libseat en mode logind (défaut), session
+  tenue 12 s, socket
   `wayland-1` publiée (comme TEST-GFX-003 étape 2) ;
 - **xwtest mappée** : connexion X réussie, `xwtest: MAP id=0x400001`
   (MapNotify client) ;

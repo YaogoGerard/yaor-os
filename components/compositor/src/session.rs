@@ -299,6 +299,50 @@ delegate_dmabuf!(Yaor);
 /// Point d'entrée `--tty-udev` : session libseat + backend udev + boucle.
 pub fn run_udev() {
     install_signal_handlers();
+
+    // Backend de siège libseat (jalon v0.4 étape 5, ADR-004) : logind est
+    // la voie normale (systemd-logind actif, session tracée par logind,
+    // pam_systemd déjà en place) ; seatd reste le repli documenté du v0.3
+    // (chaînement via YAOR_LIBSEAT_BACKEND=seatd). libseat sans indication
+    // prefererait seatd si son service tourne — on tranche avant l'ouverture
+    // de la session, et le choix tombe au journal (preuve QA).
+    let backend = match std::env::var("YAOR_LIBSEAT_BACKEND").as_deref() {
+        Ok("logind") | Ok("") | Err(_) => "logind",
+        Ok("seatd") => "seatd",
+        Ok(other) => {
+            tracing::warn!(
+                valeur = other,
+                "YAOR_LIBSEAT_BACKEND inconnu — repli sur logind"
+            );
+            "logind"
+        }
+    };
+    std::env::set_var("LIBSEAT_BACKEND", backend);
+    tracing::info!("backend de siège : {backend}");
+
+    // Session logind (jalon v0.4, étape 5) : l'XDG_SESSION_ID hérité de
+    // l'autologin peut pointer vers une session logind sans siège (celle du
+    // gestionnaire utilisateur, p. ex. sur ttyS0) — libseat échoue alors avec
+    // ENODATA (« No data available ») à l'ouverture du siège. On résout donc
+    // la session réellement attachée à un siège : celle explicite de
+    // l'environnement si elle est valable, sinon la session du groupe cgroup
+    // du compositor (scope session-<id>.scope). Preuve au journal pour la QA.
+    if backend == "logind" {
+        match seat_session_id() {
+            Some((sid, seat, vt)) => {
+                std::env::set_var("XDG_SESSION_ID", &sid);
+                std::env::set_var("XDG_SEAT", &seat);
+                std::env::set_var("XDG_VTNR", &vt);
+                tracing::info!("session logind : {sid} · siège {seat} VT{vt}");
+            }
+            None => {
+                tracing::warn!(
+                    "aucune session logind à siège résolue — libseat pourrait échouer"
+                );
+            }
+        }
+    }
+
     let mut event_loop = EventLoop::try_new().unwrap();
     let display = Display::new().unwrap();
     let mut display_handle = display.handle();
@@ -1456,4 +1500,83 @@ fn render_surface_inner(
     }
 
     Ok((rendered, states))
+}
+
+/// Session logind du compositor, attachée à un siège (jalon v0.4, étape 5).
+///
+/// Ordre de résolution :
+///  1. l'`XDG_SESSION_ID` explicite de l'environnement, s'il désigne une
+///     session logind existante attachée à un siège (lancement par un
+///     futur gestionnaire graphique) ;
+///  2. la session du groupe cgroup du processus (`session-<id>.scope`),
+///     celle du lanceur (login, autologin) ;
+///  3. en repli, la (première) session logind attachée à un siège
+///     `SEAT=` non vide — privilégiée si son scope est le nôtre —, car le
+///     lancement d'un autologin peut être rattaché à la session du
+///     gestionnaire utilisateur, sans siège (le nommage c1/c2… varie
+///     selon les boots). Renvoie (id de session, siège, n° de VT) ou rien.
+fn seat_session_id() -> Option<(String, String, String)> {
+    if let Ok(sid) = std::env::var("XDG_SESSION_ID") {
+        if let Some((seat, vt)) = session_seat_vt(&sid) {
+            return Some((sid, seat, vt));
+        }
+    }
+    let scope = cgroup_scope();
+    if let Some(rest) = scope.as_deref().and_then(|s| s.strip_prefix("session-")) {
+        if let Some(sid) = rest.strip_suffix(".scope") {
+            if let Some((seat, vt)) = session_seat_vt(sid) {
+                return Some((sid.to_owned(), seat, vt));
+            }
+        }
+    }
+    let entries = std::fs::read_dir("/run/systemd/sessions").ok()?;
+    let mut first_seated: Option<(String, String, String)> = None;
+    for entry in entries.flatten() {
+        let sid = entry.file_name().to_string_lossy().to_string();
+        let Some((seat, vt)) = session_seat_vt(&sid) else {
+            continue;
+        };
+        let path = format!("/run/systemd/sessions/{sid}");
+        if let Some(w) = scope.as_deref() {
+            let notre_scope =
+                std::fs::read_to_string(&path).is_ok_and(|d| d.contains(&format!("SCOPE={w}")));
+            if notre_scope {
+                return Some((sid, seat, vt));
+            }
+        }
+        if first_seated.is_none() {
+            first_seated = Some((sid, seat, vt));
+        }
+    }
+    first_seated
+}
+
+/// Nom du scope systemd du processus d'après `/proc/self/cgroup`
+/// (dernier composant, p. ex. `session-c2.scope`) ou rien.
+fn cgroup_scope() -> Option<String> {
+    let cgroup = std::fs::read_to_string("/proc/self/cgroup").ok()?;
+    cgroup.lines().find_map(|line| {
+        let last = line.rsplit('/').next()?;
+        last.starts_with("session-").then(|| last.to_owned())
+    })
+}
+
+/// Siège et numéro de VT d'une session logind, d'après son fichier d'état
+/// `/run/systemd/sessions/<id>` (paires `CLE=valeur` ; une session sans
+/// siège a une valeur vide derrière `SEAT=`). Rien si la session est
+/// inconnue de logind ou dénuée de siège.
+fn session_seat_vt(sid: &str) -> Option<(String, String)> {
+    let data = std::fs::read_to_string(format!("/run/systemd/sessions/{sid}")).ok()?;
+    let field = |key: &str| -> Option<String> {
+        data.lines()
+            .find(|line| line.starts_with(key))
+            .and_then(|line| line.get(key.len()..))
+            .map(str::to_owned)
+    };
+    let seat = field("SEAT=")?;
+    if seat.is_empty() {
+        return None;
+    }
+    let vt = field("VTNR=").unwrap_or_default();
+    Some((seat, vt))
 }

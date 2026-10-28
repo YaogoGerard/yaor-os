@@ -50,9 +50,27 @@ components/compositor/src/
 
 Détail par module :
 
-- **session.rs** — l'acquisition du siège est faite par `libseat` (`seatd` dans le
-  live v0.3 ; le chemin **logind** de l'ADR-004 est branché à l'étape « sessions »).
-  La session prend le master KMS, énumère les sorties (`display-info` via
+- **session.rs** — l'acquisition du siège est faite par `libseat`, en **mode
+  logind par défaut** (ADR-004, v0.4 étape 5) : le compositor lit
+  `YAOR_LIBSEAT_BACKEND` (`logind` par défaut, `seatd` = repli explicite qui
+  reste le chemin du live v0.3, valeur inconnue = repli logind avec
+  avertissement), pose `LIBSEAT_BACKEND` en conséquence et journalise le
+  choix (« backend de siège : logind/seatd » — preuve QA).
+  Pour le mode logind, la **session logind attachée au siège** est résolue
+  par le compositor avant l'ouverture (`seat_session_id`) : (1)
+  `XDG_SESSION_ID` hérité, mais seulement s'il désigne une session logind
+  existante attachée à un siège ; (2) la session du groupe cgroup du
+  processus (`session-<id>.scope`, celle du lanceur) ; (3) en repli, la
+  première session logind dont le fichier d'état `/run/systemd/sessions/<id>`
+  porte un `SEAT=` non vide — privilégiée si son scope est le nôtre. Ce
+  repli est nécessaire : un autologin peut être rattaché à la session du
+  gestionnaire utilisateur (sans siège) et le nommage `c1`/`c2`… varie selon
+  les boots — sans résolution, libseat logind échoue avec ENODATA (« No
+  data available », `os error 61`). Le triplé (id, siège, VT) résolu est
+  posé dans `XDG_SESSION_ID`/`XDG_SEAT`/`XDG_VTNR` et journalisé (« session
+  logind : … »). Le compositor reprend alors le contrôle de la session
+  existante (pas de session logind de plus) ; libseat y ouvre le siège et
+  prend le master KMS, énumère les sorties (`display-info` via
   `smithay-drm-extras`), construit l'`EGLDisplay` (softpipe en QA, gate
   `YAOR_SOFTWARE_OK`) et pilote un `GpuManager`/`DrmOutputManager` par device.
   Lancement `--tty-udev`, conforme à anvil. Les vblanks (`DrmEvent::VBlank`) clôturent
@@ -63,8 +81,8 @@ Détail par module :
   `DrmDeviceNotifier` détient le dernier `Arc` sur l'`AtomicDrmDevice`), puis
   libération des sorties (le device est détruit ici, restauration CRTC et
   remise du maître comprises), puis de l'état Wayland, puis de la boucle.
-  L'ordre est imposé par le code, pas par l'ordre des champs : seatd révoque
-  le maître DRM dès que le client libseat se ferme. La restauration de
+  L'ordre est imposé par le code, pas par l'ordre des champs : libseat (logind
+  ou seatd) révoque le maître DRM dès que le client libseat se ferme. La restauration de
   l'instantané fbcon capturé à l'ouverture échoue (EINVAL) — limite connue de
   Smithay, sans effet sur la remise du maître (le fd est fermé sans erreur) ni
   sur la console, que la QA vérifie au scanout après sortie. La socket Wayland
@@ -188,9 +206,19 @@ Détail par module :
 - Harnais : `t-yaor-comp.py`, réutilisation de `t-anvil` (boot live, injections
   QMP, greps invités CNT-, screendumps QMP) et des leçons PS/2 v0.4 (alternance
   de boutons, reprises par round).
-- Étape « session » (courante) : binaire/usage/version, seatd actif, session KMS
+- Étape « session » (courante) : binaire/usage/version, siège via **libseat en
+  mode logind** (défaut), session KMS
   tenue 12 s, socket Wayland publiée, client `waytest` connecté et fenêtre mappée
   (screendump : contenu client sur fond du compositor), sortie au SIGTERM.
+- Étape « sessions — siège via logind » (harnais dédié `t-yaor-sess.py`,
+  jalon v0.4 étape 5) **vert — 6/6, RC=0** : services actifs
+  (`systemd-logind`, `dbus.socket`, `seatd`), lancement sans variable —
+  journal « backend de siège : logind » + « session logind : … » (session à
+  siège résolue, contrôle de la session existante repris, aucune session
+  logind de plus, erreur d'ouverture : 0), socket Wayland publiée, SIGTERM
+  propre (socket retirée), repli `YAOR_LIBSEAT_BACKEND=seatd` — journal
+  « backend de siège : seatd », AUCUNE session logind de plus (le chemin
+  v0.3 reste fonctionnel). Détail de la résolution : § session.rs.
 - Étape « gestion des fenêtres » (harnais dédié `t-yaor-comp-wm.py`) :
   deux fenêtres `waytest --two` (W1 vert / W2 orange) au pas de cascade
   320x200, focus clavier par clic (compteurs par fenêtre du client),

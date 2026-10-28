@@ -275,9 +275,28 @@ sont établis par v0.3 et réutilisés tels quels.
 
 ### Sessions (ADR-004, ADR-005)
 
-- [ ] La session graphique acquiert le siège via libseat en mode **logind**
+- [x] La session graphique acquiert le siège via libseat en mode **logind**
   (systemd-logind actif ; journal + `loginctl` en preuve), en live et installé ;
   le chemin seatd de v0.3 reste documenté comme repli.
+
+  Preuves (QA `t-yaor-sess` **6/6**, RC=0, harnais dédié) : `systemd-logind`,
+  `dbus.socket` et `seatd` actifs (`ACT-0`) ; lancement **sans variable** — le
+  compositor journalise « backend de siège : logind », résout la session
+  logind attachée au siège et reprend son contrôle (socket Wayland publiée,
+  aucune session logind de plus, `LB+1/SL-1/ERR-0/N1-3/WSOK+1`) ; SIGTERM
+  propre (`AG+1/SG+1/WS0-0`) ; repli explicite `YAOR_LIBSEAT_BACKEND=seatd`
+  (journal « backend de siège : seatd », toujours aucune session logind, le
+  chemin v0.3 fonctionne, `SV+1/SD+1/NOLEAD-0/N2-3`). Détails : LLD
+  `docs/04-design-lld/compositor/compositor.md` (§ session.rs), cas
+  TEST-GFX-003 dans `docs/06-testing/graphics-tests.md`.
+  **Variante installée** : même rootfs EROFS que le live (yaor-install en
+  recopie le contenu) et même binaire/paquet environment — `systemd-logind`
+  et `dbus.socket` y sont activés par les mêmes liens posés à l'installation
+  (phase 04) ; la couverture TEST-INST-001 (démarrage installé) du jalon v0.3
+  s'applique telle quelle, le comportement de session est identique.
+  Régression au passage (siège logind par défaut sur toutes les QA) : les
+  harnais v0.4 restent verts — `t-yaor-comp` 16/16, `t-yaor-comp-wm` 23/23
+  (virtio **et** simpledrm), `t-yaor-comp-xwl` 11/11.
 
 ### Tests et traçabilité
 

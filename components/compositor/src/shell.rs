@@ -53,7 +53,7 @@ impl BufferHandler for Yaor {
 }
 
 impl ShmHandler for Yaor {
-    fn shm_state(self: &Self) -> &smithay::wayland::shm::ShmState {
+    fn shm_state(&self) -> &smithay::wayland::shm::ShmState {
         &self.shm_state
     }
 }
@@ -263,15 +263,10 @@ pub fn shell_commit(
 
     // commits de popups
     popups.commit(surface);
-    if let Some(popup) = popups.find_popup(surface) {
-        match popup {
-            PopupKind::Xdg(ref xdg) => {
-                if !xdg.is_initial_configure_sent() {
-                    xdg.send_configure().expect("configure initiale du popup");
-                }
-            }
-            // gros cas : les autres types de popups n'existent pas en v0.4
-            _ => {}
+    if let Some(PopupKind::Xdg(ref xdg)) = popups.find_popup(surface) {
+        // gros cas : les autres types de popups n'existent pas en v0.4
+        if !xdg.is_initial_configure_sent() {
+            xdg.send_configure().expect("configure initiale du popup");
         }
     }
 

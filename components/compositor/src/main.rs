@@ -48,9 +48,8 @@ fn init_logging() {
 
 fn main() {
     init_logging();
-    let mut args = std::env::args().skip(1);
     let mut tty_udev = false;
-    while let Some(arg) = args.next() {
+    for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "--tty-udev" => tty_udev = true,
             "--help" | "-h" => {
