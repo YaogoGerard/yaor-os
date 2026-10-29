@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Maquette — profil classique (jalon v0.6 Caméléon, étape 1).
+     Identité « ambre sur noir » d'après docs/05-ui-ux/branding/.
+     Palette : voir docs/05-ui-ux/branding/README.md. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
+  <defs>
+    <linearGradient id="canyon" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#7A3E10"/>
+      <stop offset="0.55" stop-color="#E8862E"/>
+      <stop offset="1" stop-color="#FFB259"/>
+    </linearGradient>
+    <linearGradient id="fenetre" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1A1A20"/>
+      <stop offset="1" stop-color="#14141A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Fond de bureau -->
+  <rect width="1280" height="800" fill="#16161C"/>
+
+  <!-- ============ Fenêtres tuilées (maître + pile, sous la barre) -->
+  <!-- Maître -->
+  <rect x="8" y="32" width="624" height="760" rx="6" fill="url(#fenetre)" stroke="#2C2C34"/>
+  <rect x="8" y="32" width="624" height="22" rx="6" fill="#1E1E26"/>
+  <text x="20" y="48" font-family="monospace" font-size="13" fill="#F2E8DC">waytest — W1</text>
+  <rect x="24" y="72" width="592" height="700" fill="#101014"/>
+  <text x="40" y="96" font-family="monospace" font-size="12" fill="#6C6C78">zone client (app YAOR de démonstration)</text>
+
+  <!-- Pile : 2 fenêtres -->
+  <rect x="640" y="32" width="632" height="372" rx="6" fill="url(#fenetre)" stroke="#2C2C34"/>
+  <rect x="640" y="32" width="632" height="22" rx="6" fill="#1E1E26"/>
+  <text x="652" y="48" font-family="monospace" font-size="13" fill="#F2E8DC">xwtest — W2</text>
+  <rect x="652" y="62" width="608" height="330" fill="#101014"/>
+  <rect x="640" y="412" width="632" height="380" rx="6" fill="url(#fenetre)" stroke="#2C2C34"/>
+  <rect x="640" y="412" width="632" height="22" rx="6" fill="#1E1E26"/>
+  <text x="652" y="428" font-family="monospace" font-size="13" fill="#F2E8DC">waytest — W3</text>
+  <rect x="652" y="442" width="608" height="338" fill="#101014"/>
+
+  <!-- ============ Barre (couche Top, zone exclusive 24 px) -->
+  <rect x="0" y="0" width="1280" height="24" fill="#101014"/>
+
+  <!-- Logo 24x24 : emblème ambre simplifié -->
+  <g transform="translate(2,0) scale(0.0191)" opacity="1">
+    <path d="M330 640 L300 790 L940 790 L910 640 Z" fill="url(#canyon)"/>
+    <path d="M600 150 L470 790 L760 790 Z" fill="url(#canyon)"/>
+    <path d="M430 380 L360 790 L560 790 Z" fill="url(#canyon)" opacity="0.85"/>
+    <path d="M790 400 L700 790 L880 790 Z" fill="url(#canyon)" opacity="0.85"/>
+    <rect x="560" y="620" width="110" height="170" rx="55" fill="#101014"/>
+  </g>
+
+  <!-- Bouton menu (ambre) -->
+  <rect x="30" y="4" width="60" height="16" rx="2" fill="#E8862E"/>
+  <text x="43" y="16" font-family="monospace" font-size="10" font-weight="bold" fill="#101014">YAOR</text>
+
+  <!-- Version du produit -->
+  <text x="1274" y="16" text-anchor="end" font-family="monospace" font-size="10" fill="#F2E8DC">YAOR 0.2.0</text>
+
+  <!-- ============ Volet menu ouvert (couche Overlay, clavier exclusif) -->
+  <rect x="4" y="24" width="140" height="56" fill="#101014" stroke="#B96A1F"/>
+  <rect x="4" y="28" width="132" height="22" fill="#1A1A20"/>
+  <text x="14" y="43" font-family="monospace" font-size="11" fill="#F2E8DC">WAYTEST</text>
+  <rect x="4" y="52" width="132" height="22" fill="#101014"/>
+  <text x="14" y="67" font-family="monospace" font-size="11" fill="#F2E8DC">XWTEST</text>
+
+  <!-- ============ Annotations de conception (hors produit) -->
+  <g font-family="monospace" font-size="11" fill="#8C8C98">
+    <text x="1000" y="40">barre Top, zone exclusive 24 px</text>
+    <text x="1000" y="56">volet Overlay, clavier exclusif</text>
+    <text x="1000" y="72">menu = apps YAOR internes</text>
+  </g>
+  <line x1="996" y1="36" x2="910" y2="12" stroke="#8C8C98" stroke-width="1"/>
+  <line x1="996" y1="52" x2="150" y2="52" stroke="#8C8C98" stroke-width="1" stroke-dasharray="4 3"/>
+</svg>

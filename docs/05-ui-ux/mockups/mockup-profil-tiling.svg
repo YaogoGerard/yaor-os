@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Maquette — profil tiling (jalon v0.6 Caméléon, étape 3).
+     Identité « ambre sur noir » d'après docs/05-ui-ux/branding/.
+     Socle maître+pile de v0.5 + indicateurs d'espaces de travail.
+     Palette : voir docs/05-ui-ux/branding/README.md. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
+  <defs>
+    <linearGradient id="canyon" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#7A3E10"/>
+      <stop offset="0.55" stop-color="#E8862E"/>
+      <stop offset="1" stop-color="#FFB259"/>
+    </linearGradient>
+    <linearGradient id="fenetre" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1A1A20"/>
+      <stop offset="1" stop-color="#14141A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Fond de bureau -->
+  <rect width="1280" height="800" fill="#16161C"/>
+
+  <!-- ============ Tiling maître + pile (pleine surface, pas de barre) -->
+  <!-- Maître -->
+  <rect x="0" y="0" width="640" height="800" fill="url(#fenetre)" stroke="#2C2C34"/>
+  <rect x="0" y="0" width="640" height="22" fill="#1E1E26"/>
+  <text x="12" y="16" font-family="monospace" font-size="12" fill="#F2E8DC">maître — W1</text>
+  <!-- Pile -->
+  <rect x="640" y="0" width="640" height="400" fill="url(#fenetre)" stroke="#2C2C34"/>
+  <rect x="640" y="0" width="640" height="22" fill="#22222A"/>
+  <text x="652" y="16" font-family="monospace" font-size="12" fill="#F2E8DC">pile 1 — W2 (focus)</text>
+  <rect x="640" y="0" width="640" height="2" fill="#E8862E"/>
+  <rect x="640" y="400" width="640" height="400" fill="url(#fenetre)" stroke="#2C2C34"/>
+  <rect x="640" y="400" width="640" height="22" fill="#1E1E26"/>
+  <text x="652" y="416" font-family="monospace" font-size="12" fill="#F2E8DC">pile 2 — W3</text>
+
+  <!-- ============ Indicateurs d'espaces de travail (étape 3) -->
+  <!-- Petit panneau discret en haut à gauche (couche Top, SANS zone
+       exclusive agressive — indicateur fin) -->
+  <rect x="8" y="4" width="120" height="18" rx="4" fill="#101014" stroke="#B96A1F"/>
+  <text x="18" y="17" font-family="monospace" font-size="10" fill="#8C8C98">1</text>
+  <text x="40" y="17" font-family="monospace" font-size="10" font-weight="bold" fill="#E8862E">2</text>
+  <text x="62" y="17" font-family="monospace" font-size="10" fill="#8C8C98">3</text>
+  <text x="84" y="17" font-family="monospace" font-size="10" fill="#8C8C98">4</text>
+
+  <!-- ============ Annotations de conception (hors produit) -->
+  <g font-family="monospace" font-size="11" fill="#8C8C98">
+    <text x="1000" y="40">tiling maître+pile (v0.5)</text>
+    <text x="1000" y="56">espaces de travail (étape 3)</text>
+    <text x="1000" y="72">focus = liseré ambre</text>
+  </g>
+  <line x1="996" y1="52" x2="120" y2="13" stroke="#8C8C98" stroke-width="1" stroke-dasharray="4 3"/>
+  <line x1="996" y1="68" x2="1280" y2="1" stroke="#8C8C98" stroke-width="1"/>
+</svg>

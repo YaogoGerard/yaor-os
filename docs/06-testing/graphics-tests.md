@@ -514,3 +514,37 @@ vert/orange xwtest, fond (204,204,229) ; ~20 000 px par demi-tête.
 Régressions obligatoires vertes sur le même ISO : `t-yaor-tiling`
 26/26 + 6/6, `t-yaor-comp` 16/16, `t-yaor-comp-wm` 23/23 ×2 (virtio +
 simpledrm), `t-yaor-comp-xwl` 11/11, `t-yaor-sess` 6/6.
+
+## v0.6 étape 1 — habillage « ambre sur noir » + logo (TEST-UI-001)
+
+### Résultats (`t-yaor-panel`, vert — 23/23 + 4/4)
+
+Identité visuelle du produit appliquée au panel (palette et emblème :
+[`../05-ui-ux/branding/`](../05-ui-ux/branding/README.md)) :
+
+- **palette** : panneau `#101014` (noir), bouton menu `#E8862E`
+  (ambre, texte noir), bordure du volet `#B96A1F`, texte clair chaud
+  `#F2E8DC` ;
+- **logo 24×24** : emblème du produit incorporé en bitmap littéral
+  (`components/yaor-panel/src/logo.rs`, généré — recadrage +
+  ré-échantillonnage lanczos + fond noir rendu transparent ; pas de
+  décodeur PNG, convention « un besoin = un fournisseur »), rendu dans
+  la barre à gauche du bouton — **100 px ambre** mesurés dans la zone
+  (0,0,28,24) du screendump ; le bouton menu passe de x=4 à x=30
+  (clic QA (60,12)) ;
+- les 22 vérifications du socle restent vertes (barre, zone exclusive
+  différentielle, volet Overlay, Escape, lancements waytest/xwtest à
+  2,6 s, sortie propre 4/4).
+
+### Leçon de diagnostic (v0.6 — harnais)
+
+L'intérieur noir du panel (`#101014`) est **indiscernable** du fond
+sombre des fenêtres waytest (`0xFF100F0C` → RGB (16,15,12), barre de
+titre (28,27,21)) : l'ancienne détection du volet par « px sombres »
+confondait les deux (faux KO « volet resté ouvert » + lancements
+sautés). Correctif harnais : détection du volet par sa **bordure
+ambre** unique — région (4,24,144,80), ouvert > 200 px ambre, fermé
+< 100. Preuve par capture : après Escape, la région ne contient que
+du waytest ((16,15,12)/(28,27,21)) et du bord vert — aucun volet.
+Aucun changement compositor/panel : le panel fermait bien (jeton
+« menu fermé » à 65,280 s d'uptime invité).

@@ -285,9 +285,16 @@ haut de la première sortie uniquement ; volet menu Overlay avec clavier exclusi
 referme) ; lancement des apps YAOR de démo du menu (waytest tuilé sous la barre, xwtest
 via Xwayland rendu bleu) ; zone exclusive prouvée par différence (tiling retiré de la
 bande sur la tête avec panneau, intact sur la tête sans). Détail :
-[`graphics-tests.md`](graphics-tests.md) (« v0.6 étape 1 »). Restant vers la clôture de
-TEST-UI-001 : maquettes SVG + identité visuelle (`docs/05-ui-ux/`), changement de profil
-(étape 3).
+[`graphics-tests.md`](graphics-tests.md) (« v0.6 étape 1 »).
+
+**v0.6 étape 1 (habillage) — harnais `t-yaor-panel.py`, vert 23/23 + 4/4 :** identité
+visuelle « ambre sur noir » appliquée au panel (palette `docs/05-ui-ux/branding/`) et
+logo 24×24 incorporé rendu dans la barre (100 px ambre mesurés). Détection QA du volet
+par sa bordure ambre (l'intérieur noir du panneau est indiscernable du fond sombre de
+waytest `0xFF100F0C`).
+
+Restant vers la clôture de TEST-UI-001 : changement de profil (étape 3) ; maquettes SVG
+et identité visuelle livrées dans `docs/05-ui-ux/` (`mockups/`, `branding/`).
 
 ## TEST-UI-002 — Profil macOS-like
 **Vérifie :** REQ-SW-009

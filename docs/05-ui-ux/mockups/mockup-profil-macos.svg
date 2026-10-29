@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Maquette — profil macOS-like (jalon v0.6 Caméléon, étape 2).
+     Identité « ambre sur noir » d'après docs/05-ui-ux/branding/.
+     Barre de menus supérieure + dock inférieur. Palette : voir
+     docs/05-ui-ux/branding/README.md. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
+  <defs>
+    <linearGradient id="canyon" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#7A3E10"/>
+      <stop offset="0.55" stop-color="#E8862E"/>
+      <stop offset="1" stop-color="#FFB259"/>
+    </linearGradient>
+    <linearGradient id="fenetre" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1A1A20"/>
+      <stop offset="1" stop-color="#14141A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Fond de bureau -->
+  <rect width="1280" height="800" fill="#16161C"/>
+
+  <!-- ============ Fenêtres flottantes (profil macOS-like) -->
+  <rect x="180" y="90" width="560" height="420" rx="10" fill="url(#fenetre)" stroke="#2C2C34"/>
+  <rect x="180" y="90" width="560" height="24" rx="10" fill="#1E1E26"/>
+  <circle cx="196" cy="102" r="5" fill="#B96A1F"/>
+  <circle cx="212" cy="102" r="5" fill="#5A5A64"/>
+  <circle cx="228" cy="102" r="5" fill="#5A5A64"/>
+  <text x="400" y="107" text-anchor="middle" font-family="monospace" font-size="12" fill="#F2E8DC">waytest — W1</text>
+
+  <rect x="560" y="260" width="540" height="360" rx="10" fill="url(#fenetre)" stroke="#3C3C44"/>
+  <rect x="560" y="260" width="540" height="24" rx="10" fill="#22222A"/>
+  <text x="830" y="277" text-anchor="middle" font-family="monospace" font-size="12" fill="#F2E8DC">xwtest — W2 (focus)</text>
+  <rect x="560" y="260" width="540" height="2" fill="#E8862E"/>
+
+  <!-- ============ Barre de menus supérieure (couche Top, zone exclusive) -->
+  <rect x="0" y="0" width="1280" height="24" fill="#101014"/>
+  <!-- Logo (identité) -->
+  <g transform="translate(2,0) scale(0.0191)">
+    <path d="M330 640 L300 790 L940 790 L910 640 Z" fill="url(#canyon)"/>
+    <path d="M600 150 L470 790 L760 790 Z" fill="url(#canyon)"/>
+    <path d="M430 380 L360 790 L560 790 Z" fill="url(#canyon)" opacity="0.85"/>
+    <path d="M790 400 L700 790 L880 790 Z" fill="url(#canyon)" opacity="0.85"/>
+    <rect x="560" y="620" width="110" height="170" rx="55" fill="#101014"/>
+  </g>
+  <!-- Menus texte -->
+  <text x="34" y="16" font-family="monospace" font-size="11" font-weight="bold" fill="#F2E8DC">YAOR</text>
+  <text x="84" y="16" font-family="monospace" font-size="11" fill="#B96A1F">Fichier</text>
+  <text x="146" y="16" font-family="monospace" font-size="11" fill="#8C8C98">Édition</text>
+  <text x="216" y="16" font-family="monospace" font-size="11" fill="#8C8C98">Affichage</text>
+  <!-- Horloge à droite -->
+  <text x="1240" y="16" text-anchor="end" font-family="monospace" font-size="11" fill="#F2E8DC">12:34</text>
+
+  <!-- ============ Dock inférieur (couche Bottom/Top ancrée bas) -->
+  <rect x="330" y="744" width="620" height="50" rx="12" fill="#101014" stroke="#B96A1F"/>
+  <!-- Icônes apps (carrés ambre/gris alternés, apps YAOR internes) -->
+  <g>
+    <rect x="344" y="752" width="34" height="34" rx="8" fill="#E8862E"/>
+    <rect x="388" y="752" width="34" height="34" rx="8" fill="#B96A1F"/>
+    <rect x="432" y="752" width="34" height="34" rx="8" fill="#5A5A64"/>
+    <rect x="476" y="752" width="34" height="34" rx="8" fill="#2C2C34" stroke="#B96A1F"/>
+    <rect x="520" y="752" width="34" height="34" rx="8" fill="#2C2C34" stroke="#5A5A64"/>
+    <rect x="564" y="752" width="34" height="34" rx="8" fill="#2C2C34" stroke="#5A5A64"/>
+    <rect x="608" y="752" width="34" height="34" rx="8" fill="#2C2C34" stroke="#5A5A64"/>
+    <rect x="652" y="752" width="34" height="34" rx="8" fill="#2C2C34" stroke="#5A5A64"/>
+    <rect x="696" y="752" width="34" height="34" rx="8" fill="#2C2C34" stroke="#5A5A64"/>
+    <rect x="740" y="752" width="34" height="34" rx="8" fill="#2C2C34" stroke="#5A5A64"/>
+    <rect x="784" y="752" width="34" height="34" rx="8" fill="#2C2C34" stroke="#5A5A64"/>
+    <rect x="828" y="752" width="34" height="34" rx="8" fill="#2C2C34" stroke="#5A5A64"/>
+    <rect x="872" y="752" width="34" height="34" rx="8" fill="#2C2C34" stroke="#5A5A64"/>
+  </g>
+  <!-- Point d'app lancée sous l'icône -->
+  <circle cx="361" cy="790" r="2.5" fill="#E8862E"/>
+  <circle cx="449" cy="790" r="2.5" fill="#E8862E"/>
+
+  <!-- ============ Annotations de conception (hors produit) -->
+  <g font-family="monospace" font-size="11" fill="#8C8C98">
+    <text x="1000" y="40">barre de menus Top</text>
+    <text x="1000" y="56">dock ancré bas (étape 2)</text>
+    <text x="1000" y="72">fenêtres flottantes, focus ambre</text>
+  </g>
+  <line x1="996" y1="36" x2="910" y2="12" stroke="#8C8C98" stroke-width="1"/>
+  <line x1="996" y1="68" x2="1104" y2="268" stroke="#8C8C98" stroke-width="1"/>
+</svg>

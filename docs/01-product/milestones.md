@@ -488,9 +488,8 @@ Desktop Core, coordonnant WM et UI Engine, pilote les trois.
 Traçabilité : REQ-SW-007 → TEST-DESK-002, REQ-SW-008 → TEST-UI-001,
 REQ-SW-009 → TEST-UI-002, REQ-SW-010 → TEST-UI-003 (parties requises
 déjà dans la matrice). Maquettes des profils et identité visuelle
-(logo) : à produire en début d'étape 1, dans `docs/05-ui-ux/`
-(`mockups/`, `branding/`) — les critères TEST-UI-001/002/003 y
-référeront.
+(logo) produites en étape 1, dans `docs/05-ui-ux/` (`mockups/`,
+`branding/`) — les critères TEST-UI-001/002/003 s'y réfèrent.
 
 ### Étape 1 — socle layer-shell + profil classique (28 octobre 2026)
 
@@ -548,9 +547,22 @@ uptime invité écrit par courtes lignes (< 75 caractères — la console
 série duplique parfois des octets sur les lignes longues), motifs QA
 sans accent ni parenthèse.
 
-Reste à l'étape 1 : maquettes SVG des profils et identité visuelle
-(logo) dans `docs/05-ui-ux/` (`mockups/`, `branding/`) — signalées au
-produit ; les critères TEST-UI-001/002/003 y référeront.
+### Habillage « ambre sur noir » + logo (28 octobre 2026)
+
+Identité visuelle du produit appliquée au panel : palette ambre sur
+noir (panneau `#101014`, bouton `#E8862E`, bordure `#B96A1F`, texte
+`#F2E8DC`) et logo 24×24 incorporé en bitmap littéral
+(`components/yaor-panel/src/logo.rs` — généré depuis l'emblème
+`docs/05-ui-ux/branding/yaor-os-amber-emblem.png`, fond transparent ;
+pas de décodeur PNG, convention « un besoin = un fournisseur »).
+Emblème, palette documentée et maquettes SVG des trois profils
+(classique / macOS-like / tiling) dans `docs/05-ui-ux/` (`branding/`,
+`mockups/`). QA : `t-yaor-panel` **23/23 + 4/4** (nouveau contrôle
+« logo ambre rendu » : 100 px mesurés) ; régressions vertes (tiling
+26/26 + 6/6, comp 16/16, comp-wm 23/23 ×2, comp-xwl 11/11,
+sess 6/6). Leçon harnais documentée dans `graphics-tests.md` :
+détection du volet par sa bordure ambre (le fond noir du panneau est
+indiscernable du fond sombre de waytest).
 
 ### Clôture de v0.4 (28 octobre 2026)
 
