@@ -31,8 +31,9 @@ Déclinaisons en produit :
 
 Dans [`../mockups/`](../mockups/) :
 
-- `mockup-profil-classique.svg` — barre + volet menu (v0.6 étape 1,
-  l'implémenté habillé) ;
+- `mockup-profil-classique.svg` — taskbar basse + menu Démarrer +
+  fenêtres flottantes avec décorations serveur (cible REQ-SW-008,
+  étape 1b) ;
 - `mockup-profil-macos.svg` — barre de menus + dock (v0.6 étape 2) ;
 - `mockup-profil-tiling.svg` — maître+pile + espaces de travail
   (v0.6 étape 3).
