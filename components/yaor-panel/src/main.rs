@@ -43,6 +43,8 @@ use wayland_client::{
     Connection, QueueHandle,
 };
 
+mod logo;
+
 const PROG: &str = "yaor-panel";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -67,12 +69,19 @@ const MENU_ENTRY_H: u32 = 24;
 /// pas de scan .desktop). (libellé affiché, binaire à lancer.)
 const APPS: &[(&str, &str)] = &[("WAYTEST", "waytest"), ("XWTEST", "xwtest")];
 
-// Couleurs Argb8888 (0xAARRGGBB — converties en octets BGR/A au rendu).
-const BAR_BG: u32 = 0xFF_20_33_4D; // bleu nuit du panneau
-const BTN_BG: u32 = 0xFF_3D_5A_80; // bouton menu
-const MENU_BG: u32 = 0xFF_20_33_4D;
-const BORDER: u32 = 0xFF_6C_8E_AD; // bordure du volet
-const TEXT_FG: u32 = 0xFF_E8_EE_F2; // texte clair
+// Couleurs Argb8888 (0xAARRGGBB — converties en octets BGR/A au
+// rendu). Identité « ambre sur noir » d'après l'emblème du produit
+// (docs/05-ui-ux/branding/yaor-os-amber-emblem.png).
+const BAR_BG: u32 = 0xFF_10_10_14; // noir du panneau
+const BTN_BG: u32 = 0xFF_E8_86_2E; // bouton menu (ambre)
+const BTN_FG: u32 = 0xFF_10_10_14; // texte du bouton (noir)
+const MENU_BG: u32 = 0xFF_10_10_14;
+const BORDER: u32 = 0xFF_B9_6A_1F; // bordure du volet (ambre sombre)
+const TEXT_FG: u32 = 0xFF_F2_E8_DC; // texte clair chaud
+
+/// Position du bouton menu : le logo 24x24 occupe x=2..26, le bouton
+/// le suit (QA : clic au centre (60,12)).
+const BTN_X: u32 = 30;
 
 // ---------------------------------------------------------------------------
 // Police bitmap 5x7 (capitales, chiffres, « . ») — dessin littéral.
@@ -217,6 +226,32 @@ fn fill_rect(
     }
 }
 
+/// Logo 24x24 (module généré `logo.rs`) : blit sans mélange — pixel
+/// opaque (alpha > 0) écrit, pixel transparent sauté (le noir du
+/// panneau transparaît).
+fn draw_logo(canvas: &mut [u8], w: i32, h: i32, x0: i32, y0: i32) {
+    for (row, slice) in logo::LOGO_24.chunks_exact(24 * 4).enumerate() {
+        let y = y0 + row as i32;
+        if y < 0 || y >= h {
+            continue;
+        }
+        for col in 0..24usize {
+            if slice[col * 4 + 3] == 0 {
+                continue;
+            }
+            let x = x0 + col as i32;
+            if x < 0 || x >= w {
+                continue;
+            }
+            let off = (y as usize * w as usize + x as usize) * 4;
+            canvas[off] = slice[col * 4];
+            canvas[off + 1] = slice[col * 4 + 1];
+            canvas[off + 2] = slice[col * 4 + 2];
+            canvas[off + 3] = 0xFF;
+        }
+    }
+}
+
 fn draw_text(canvas: &mut [u8], w: i32, h: i32, text: &str, x0: i32, y0: i32, color: u32) {
     let mut x = x0;
     for ch in text.chars() {
@@ -272,7 +307,7 @@ impl Panel {
         }
     }
 
-    /// Rendu de la barre : fond + bouton menu + version du produit.
+    /// Rendu de la barre : logo + bouton menu (ambre) + version.
     fn draw_bar(&mut self, _qh: &QueueHandle<Self>) {
         let w = self.width;
         let h = self.height;
@@ -288,10 +323,12 @@ impl Panel {
         {
             let (cw, ch) = (w as i32, h as i32);
             fill_rect(&mut canvas, cw, ch, 0, 0, cw, ch, BAR_BG);
-            fill_rect(&mut canvas, cw, ch, 4, 4, BTN_W as i32, 16, BTN_BG);
+            // Logo du produit (emblème ambre 24x24, fond transparent).
+            draw_logo(&mut canvas, cw, ch, 2, 0);
+            fill_rect(&mut canvas, cw, ch, BTN_X as i32, 4, BTN_W as i32, 16, BTN_BG);
             let label = "YAOR";
-            let tx = 4 + (BTN_W as i32 - text_width(label)) / 2;
-            draw_text(&mut canvas, cw, ch, label, tx, 8, TEXT_FG);
+            let tx = BTN_X as i32 + (BTN_W as i32 - text_width(label)) / 2;
+            draw_text(&mut canvas, cw, ch, label, tx, 8, BTN_FG);
             // Version du produit à droite (ADR-022).
             let vers = format!("YAOR {VERSION}");
             draw_text(&mut canvas, cw, ch, &vers, cw - text_width(&vers) - 6, 8, TEXT_FG);
@@ -618,7 +655,11 @@ impl PointerHandler for Panel {
             if event.surface == *self.bar.wl_surface() {
                 // Bouton menu : (4,4)-(4+BTN_W,20).
                 if let Press { button, .. } = event.kind {
-                    if button == 0x110 && x >= 4.0 && x < (4 + BTN_W) as f64 && y >= 4.0 && y < 20.0
+                    if button == 0x110
+                        && x >= BTN_X as f64
+                        && x < (BTN_X + BTN_W) as f64
+                        && y >= 4.0
+                        && y < 20.0
                     {
                         if self.menu.is_some() {
                             self.close_menu();
