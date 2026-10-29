@@ -70,14 +70,16 @@ fn journal(cfg: &DesktopConfig, path: Option<&std::path::Path>, motif: &str) {
     let mode = match cfg.layout.mode {
         LayoutMode::Cascade => "cascade",
         LayoutMode::MasterStack => "master-stack",
+        LayoutMode::Floating => "floating",
     };
     tracing::info!(
-        "configuration : mode {mode}, ratio {:.3}, gaps {}, raccourcis close={} quit={} focus={}/{}",
+        "configuration : mode {mode}, ratio {:.3}, gaps {}, raccourcis close={} quit={} focus={}/{} minimize={}",
         cfg.layout.ratio,
         cfg.layout.gaps,
         cfg.keys.close,
         cfg.keys.quit,
         cfg.keys.focus_next,
         cfg.keys.focus_prev,
+        cfg.keys.minimize,
     );
 }

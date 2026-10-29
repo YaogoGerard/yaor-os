@@ -39,14 +39,20 @@ use crate::state::Yaor;
 // État du layout (jalon v0.5)
 // ---------------------------------------------------------------------------
 
-/// Liste des fenêtres tiling (ordre = maître d'abord) et flottantes.
-/// Les fenêtres mortes sont purgées à chaque re-tile (SIGHUP, boucle).
+/// Listes de fenêtrage : tiling (ordre = maître d'abord), flottantes
+/// (géométrie libre), minimisées (sorties du rendu, restaurables —
+/// jalon v0.6 étape 1b, bureau flottant du profil classique).
 #[derive(Default)]
 pub struct LayoutState {
     /// Fenêtres engagées dans la disposition automatique : l'index 0
     /// est le maître, les suivantes la pile.
-    pub tiled: Vec<Window>,    /// Fenêtres sorties du tiling (grab interactif) : géométrie figée.
+    pub tiled: Vec<Window>,
+    /// Fenêtres sorties du tiling (grab interactif) : géométrie figée.
     pub floating: Vec<Window>,
+    /// Fenêtres minimisées : (fenêtre, position de restauration).
+    /// Sorties du Space (unmap) — invisibles et intouchables, la
+    /// taskbar (étape 1b.c) ou Mod+m les restaurent.
+    pub minimized: Vec<(Window, i32, i32)>,
 }
 
 /// Décalage en cascade d'une nouvelle fenêtre (v0.4).
@@ -72,7 +78,53 @@ pub fn next_window_location(state: &mut Yaor) -> (i32, i32) {
     match crate::config::get().layout.mode {
         LayoutMode::MasterStack => master_slot_location(state),
         LayoutMode::Cascade => cascade_location(state),
+        LayoutMode::Floating => floating_location(state),
     }
+}
+
+/// Flottant (v0.6 étape 1b) : la fenêtre naît **centrée** dans la zone
+/// utile de la sortie sous le pointeur, décalée de 24 px par fenêtre
+/// déjà présente (lisible quand plusieurs naissent d'affilée), bornée
+/// à l'intérieur de la zone utile. Le grab move/resize la place
+/// ensuite librement — sa position n'est plus jamais réécrite.
+fn floating_location(state: &Yaor) -> (i32, i32) {
+    const FLOATING_STEP: i32 = 24;
+    let count = state.space.elements().count() as i32;
+    if let Some(o) = output_under(state) {
+        if let Some(geo) = state.space.output_geometry(o) {
+            let map = smithay::desktop::layer_map_for_output(o);
+            let zone = map.non_exclusive_zone();
+            let usable = Rectangle::new(geo.loc + zone.loc, zone.size);
+            let size = state
+                .space
+                .elements()
+                .filter_map(|w| state.space.element_geometry(w))
+                .map(|g| g.size)
+                // la première fenêtre peut ne pas être committée
+                // encore (géométrie 0x0) : ne PAS centrer sur elle —
+                // repli 640x480 (leçon run 1 : W2 éjectée au
+                // bord bas-droit sinon).
+                .find(|s| s.w > 0 && s.h > 0)
+                .unwrap_or(smithay::utils::Size::from((640, 480)));
+            let mut x = usable.loc.x + (usable.size.w - size.w).max(0) / 2
+                + count * FLOATING_STEP;
+            let mut y = usable.loc.y + (usable.size.h - size.h).max(0) / 2
+                + count * FLOATING_STEP;
+            // bornage : la fenêtre ne dépasse jamais la zone utile (à
+            // une marge de 8 px près pour rester agrippable).
+            let max_x = usable.loc.x + usable.size.w - size.w - 8;
+            let max_y = usable.loc.y + usable.size.h - size.h - 8;
+            if max_x > usable.loc.x {
+                x = x.min(max_x);
+            }
+            if max_y > usable.loc.y {
+                y = y.min(max_y);
+            }
+            return (x, y);
+        }
+    }
+    let count_off = count * FLOATING_STEP;
+    (COLLAPSE_MARGIN + count_off, COLLAPSE_MARGIN + count_off)
 }
 
 /// Cascade v0.4 — copie exacte (aucune régression permise).
@@ -133,7 +185,14 @@ fn output_under(state: &Yaor) -> Option<&Output> {
 
 /// Enregistre une fenêtre nouvelle : rejoint la fin de la pile. En
 /// cascade, la liste n'influence pas le placement (v0.4 inchangé).
+/// En flottant (v0.6 étape 1b), aucune disposition automatique : la
+/// fenêtre rejoint la liste flottante directement.
 pub fn register(state: &mut Yaor, window: &Window) {
+    if crate::config::get().layout.mode == LayoutMode::Floating {
+        state.layout.floating.push(window.clone());
+        tracing::debug!("layout : fenêtre flottante recensée");
+        return;
+    }
     state.layout.tiled.push(window.clone());
     tracing::debug!("layout : fenêtre recensée ({} tiling)", state.layout.tiled.len());
 }
@@ -148,6 +207,118 @@ pub fn mark_floating(state: &mut Yaor, window: &Window) {
     tracing::debug!("layout : fenêtre flottante ({} tiling)", state.layout.tiled.len());
 }
 
+/// Minimise/restaure (v0.6 étape 1b — bureau flottant du profil
+/// classique).
+///
+/// Sémantique : fenêtre focusée mappée → minimiser ; sinon (focus
+/// libéré, bureau vide cliqué) → restaurer la plus récemment
+/// minimisée. Le Mod+m sert donc de bascule minimiser/afficher en
+/// pratique, et la taskbar (1b.c) aura la restauration explicite.
+///
+/// Minimiser : la fenêtre SORT du Space (`unmap_elem`) — plus rendue,
+/// plus touchable (hors hit-test), focus transféré au sommet de pile
+/// restant (ou libéré). La position est mémorisée pour la
+/// restauration. Restaurer : re-map à la position mémorisée, à la
+/// tête de pile.
+///
+/// X11 : la surface Xwayland sort du Space de YAOR (le serveur X la
+/// croit toujours mappée — invisible côté YAOR, rendue au restaurer ;
+/// c'est le même modèle que le v0.4 pour les grabs X11).
+fn minimize_toggle(state: &mut Yaor) {
+    let focused = focused_window(state);
+    let focused_mapped = focused
+        .as_ref()
+        .map(|w| state.space.element_geometry(w).is_some())
+        .unwrap_or(false);
+
+    // 1) fenêtre focusée minimisée (défensif) → la restaurer.
+    if let Some(window) = focused.as_ref() {
+        if let Some(idx) = state
+            .layout
+            .minimized
+            .iter()
+            .position(|(w, _, _)| same_window(w, window))
+        {
+            restore_minimized(state, idx);
+            return;
+        }
+    }
+
+    // 2) fenêtre focusée mappée → la minimiser.
+    if let (true, Some(window)) = (focused_mapped, focused) {
+        minimize_window(state, &window);
+        return;
+    }
+
+    // 3) pas de focus mappé → restaurer la plus récente minimisée.
+    if let Some(idx) = state.layout.minimized.len().checked_sub(1) {
+        restore_minimized(state, idx);
+    }
+}
+
+/// Minimise une fenêtre : sortie du Space, position mémorisée,
+/// focus au sommet de pile flottante restant (ou libéré).
+fn minimize_window(state: &mut Yaor, window: &Window) {
+    let loc = state
+        .space
+        .element_geometry(window)
+        .map(|g| g.loc)
+        .unwrap_or_else(|| Point::from((COLLAPSE_MARGIN, COLLAPSE_MARGIN)));
+    state.space.unmap_elem(window);
+    state.layout.tiled.retain(|w| !same_window(w, window));
+    state.layout.floating.retain(|w| !same_window(w, window));
+    state
+        .layout
+        .minimized
+        .push((window.clone(), loc.x, loc.y));
+    tracing::info!(
+        "raccourci : minimisation ({} minimisée(s))",
+        state.layout.minimized.len()
+    );
+
+    // focus : au sommet de pile flottante restant (le dernier élément
+    // mappé), sinon libéré.
+    let next = state
+        .layout
+        .floating
+        .iter()
+        .rev()
+        .find(|w| state.space.element_geometry(*w).is_some())
+        .cloned();
+    let serial = smithay::utils::SERIAL_COUNTER.next_serial();
+    let keyboard = state.seat.get_keyboard().unwrap();
+    match next {
+        Some(w) => {
+            let focus = crate::focus::FocusTarget::Wl(
+                w.wl_surface()
+                    .map(|s| s.into_owned())
+                    .expect("fenêtre flottante wayland sans surface"),
+            );
+            keyboard.set_focus(state, Some(focus), serial);
+        }
+        None => keyboard.set_focus(state, None::<crate::focus::FocusTarget>, serial),
+    }
+}
+
+/// Restaure la fenêtre minimisée d'indice `idx` : re-map à la
+/// position mémorisée, à la tête de pile, focus rendu.
+fn restore_minimized(state: &mut Yaor, idx: usize) {
+    let (window, x, y) = state.layout.minimized.remove(idx);
+    state.space.map_element(window.clone(), (x, y), true);
+    state.layout.floating.push(window.clone());
+    state.space.raise_element(&window, true);
+    tracing::info!("raccourci : restauration de la fenêtre minimisée");
+    if let Some(surface) = window.wl_surface() {
+        let serial = smithay::utils::SERIAL_COUNTER.next_serial();
+        let focus = crate::focus::FocusTarget::Wl(surface.into_owned());
+        state
+            .seat
+            .get_keyboard()
+            .unwrap()
+            .set_focus(state, Some(focus), serial);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Re-tile
 // ---------------------------------------------------------------------------
@@ -158,7 +329,29 @@ pub fn mark_floating(state: &mut Yaor, window: &Window) {
 /// mortes, adoption des éléments non recensés (mode permuté au
 /// rechargement), disposition maître+pile **par sortie**.
 pub fn recompute(state: &mut Yaor) {
-    if crate::config::get().layout.mode != LayoutMode::MasterStack {
+    let mode = crate::config::get().layout.mode;
+    if mode == LayoutMode::Cascade {
+        // v0.4 exact : no-op strict (aucune régression permise).
+        return;
+    }
+    if mode == LayoutMode::Floating {
+        // Flottant (v0.6 étape 1b) : aucune disposition automatique —
+        // les positions appartiennent aux grabs et à l'utilisateur.
+        // Purge des morts ; si le mode vient d'être permuté depuis le
+        // tiling (rechargement), les fenêtres tuilées sont libérées
+        // SUR PLACE (géométrie conservée).
+        state.space.refresh();
+        state.layout.tiled.retain(Window::alive);
+        state.layout.floating.retain(Window::alive);
+        state.layout.minimized.retain(|(w, _, _)| w.alive());
+        let freed = state.layout.tiled.drain(..).collect::<Vec<_>>();
+        if !freed.is_empty() {
+            tracing::info!(
+                "layout flottant : {} fenêtre(s) libérée(s) du tiling sur place",
+                freed.len()
+            );
+            state.layout.floating.extend(freed);
+        }
         return;
     }
 
@@ -325,6 +518,8 @@ pub enum Action {
     RatioGrow,
     RatioShrink,
     Quit,
+    /// Minimiser/restaurer la fenêtre focusée (v0.6 étape 1b).
+    Minimize,
 }
 
 /// Identifie l'action déclenchée par la touche pressée (raccourcis
@@ -334,7 +529,7 @@ pub enum Action {
 /// lettre, comme sway), sinon sym modifié (en repli).
 pub fn find_action(mods: &ModifiersState, raw: Keysym, modified: Keysym) -> Option<Action> {
     let cfg = crate::config::get();
-    let candidates: [(&str, Action); 9] = [
+    let candidates: [(&str, Action); 10] = [
         (&cfg.keys.focus_next, Action::FocusNext),
         (&cfg.keys.focus_prev, Action::FocusPrev),
         (&cfg.keys.swap_next, Action::SwapNext),
@@ -344,6 +539,7 @@ pub fn find_action(mods: &ModifiersState, raw: Keysym, modified: Keysym) -> Opti
         (&cfg.keys.ratio_grow, Action::RatioGrow),
         (&cfg.keys.ratio_shrink, Action::RatioShrink),
         (&cfg.keys.quit, Action::Quit),
+        (&cfg.keys.minimize, Action::Minimize),
     ];
     for (spec, action) in candidates {
         let Some((m, k)) = parse_shortcut(spec) else {
@@ -408,12 +604,28 @@ fn mods_match(expected: ModifiersState, actual: &ModifiersState) -> bool {
 
 /// Exécute une action de bureau.
 pub fn run_action(state: &mut Yaor, action: Action) {
-    if crate::config::get().layout.mode != LayoutMode::MasterStack
-        && action != Action::Close
-        && action != Action::Quit
-    {
-        // layout non piloté en cascade (v0.4 inchangé — aucune
-        // régression permise sur les QA de cette zone)
+    let mode = crate::config::get().layout.mode;
+    let tiling_only = matches!(
+        action,
+        Action::FocusNext
+            | Action::FocusPrev
+            | Action::SwapNext
+            | Action::SwapPrev
+            | Action::SwapMaster
+            | Action::RatioGrow
+            | Action::RatioShrink
+    );
+    if mode != LayoutMode::MasterStack && tiling_only {
+        // actions de tiling : sans objet hors maître+pile (v0.4
+        // inchangé — aucune régression permise sur les QA de cette
+        // zone). Close/Quit/Minimize sont des actions de bureau
+        // générales.
+        return;
+    }
+    if mode == LayoutMode::MasterStack && action == Action::Minimize {
+        // minimiser une tuile fausserait le tiling (elle serait
+        // ré-adoptée au prochain re-tile) — sans objet en v0.6 ; le
+        // minimiser appartient au bureau flottant (étape 1b).
         return;
     }
 
@@ -433,6 +645,7 @@ pub fn run_action(state: &mut Yaor, action: Action) {
                 }
             }
         }
+        Action::Minimize => minimize_toggle(state),
         Action::FocusNext => {
             if state.layout.tiled.is_empty() {
                 return;

@@ -45,6 +45,10 @@ pub enum LayoutMode {
     Cascade,
     /// Tiling maître + pile (jalon v0.5).
     MasterStack,
+    /// Fenêtres flottantes (jalon v0.6 étape 1b — profil classique
+    /// Windows-like) : positionnement libre, empilement, resize par
+    /// les bords ; aucune arrangement automatique.
+    Floating,
 }
 
 /// Géométrie du tiling maître + pile.
@@ -82,6 +86,9 @@ pub struct KeysConfig {
     pub ratio_grow: String,
     pub ratio_shrink: String,
     pub quit: String,
+    /// Minimiser/restaurer la fenêtre focusée (jalon v0.6 étape 1b :
+    /// bureau flottant — la taskbar le restaure ; ici, raccourci).
+    pub minimize: String,
 }
 
 impl Default for KeysConfig {
@@ -96,6 +103,7 @@ impl Default for KeysConfig {
             ratio_grow: "Mod+g".to_string(),
             ratio_shrink: "Mod+Shift+g".to_string(),
             quit: "Mod+Shift+E".to_string(),
+            minimize: "Mod+m".to_string(),
         }
     }
 }
