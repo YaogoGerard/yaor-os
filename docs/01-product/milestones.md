@@ -590,11 +590,17 @@ le flottant passe **avant** le dock (étape 2) et le tiling-propre
    `xdg-decoration` côté client).
 3. **Taskbar basse** : `yaor-panel` ancré **Bottom** (zone exclusive
    24 px), bouton YAOR (Démarrer) à gauche + **liste des fenêtres
-   ouvertes** (clic → focus/minimise). Interface compositor → panel à
-   trancher en tête d'étape : candidat `wlr-foreign-toplevel`
-   (à vérifier dans le Smithay vendu 0.7, côté serveur ET client — si
-   absent côté client, protocole minimal maison, convention
-   « un besoin = un fournisseur »).
+   ouvertes** (clic → focus/minimise). Faisabilité tranchée le
+   29 octobre (arbre Smithay 0.7 vendu inspecté) : liste via le
+   protocole standard **`ext-foreign-toplevel-list-v1`** (module
+   serveur `foreign_toplevel_list` du Smithay vendu, client via le
+   wayland-protocols 0.32 vendu — pas de gabarit anvil, branchement
+   maison comme la layer-shell) ; **actions** (activer/minimiser/
+   fermer) via un **protocole privé minimal `yaor_toplevel_control_v1`**
+   (wayland-scanner vendu, 3 requêtes identifiées par l'`identifier()`
+   du handle — `ext-foreign-toplevel-management` absent du vendu).
+   Décorations serveur : gabarit complet `anvil/src/shell/ssd.rs`
+   (HeaderBar pointer/clic, redraw) à adapter à la palette ambre.
 4. **Moteur de thème raster minimal** (réponse directe au rendu
    jugé « extrêmement pauvre », 29 octobre) : rectangles arrondis
    anti-aliasés (SDF par pixel), dégradés verticaux, police bitmap AA
