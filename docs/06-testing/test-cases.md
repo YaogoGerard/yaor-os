@@ -293,8 +293,13 @@ logo 24×24 incorporé rendu dans la barre (100 px ambre mesurés). Détection Q
 par sa bordure ambre (l'intérieur noir du panneau est indiscernable du fond sombre de
 waytest `0xFF100F0C`).
 
-Restant vers la clôture de TEST-UI-001 : changement de profil (étape 3) ; maquettes SVG
-et identité visuelle livrées dans `docs/05-ui-ux/` (`mockups/`, `branding/`).
+Restant vers la clôture de TEST-UI-001 (REQ-SW-008 « de type
+Windows-like ») : **étape 1b** — fenêtres flottantes + décorations
+serveur + taskbar basse (audit d'écart du 29 octobre 2026 : le volet
+flottant n'était planifié nulle part, il est désormais explicitement
+l'étape 1b du jalon) ; puis changement de profil (étape 3).
+Maquettes SVG et identité visuelle livrées dans `docs/05-ui-ux/`
+(`mockups/`, `branding/`).
 
 ## TEST-UI-002 — Profil macOS-like
 **Vérifie :** REQ-SW-009

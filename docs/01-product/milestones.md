@@ -473,10 +473,14 @@ Desktop Core, coordonnant WM et UI Engine, pilote les trois.
    compositor. Faisabilité vérifiée : le Smithay vendu 0.7 expose
    `WlrLayerShellState`/`layer_map_for_output` (gabarit anvil),
    aucune extension du vendoring (ADR-018) ;
-2. **Trois étapes progressives** : étape 1 — socle layer-shell dans le
+2. **Quatre étapes progressives** : étape 1 — socle layer-shell dans le
    compositor (mapping par sortie, zones exclusives soustraites de la
-   zone utile du tiling) + profil classique (barre des tâches, menu
-   d'applications) ; étape 2 — profil macOS-like (barre supérieure +
+   zone utile du tiling) + profil classique (barre, menu d'applications)
+   ; **étape 1b — flottant + décorations serveur + taskbar basse**
+   (REQ-SW-008 complet ; décision produit du 29 octobre 2026 : la
+   taskbar du profil classique est **en bas**, Windows-like strict, et
+   le volet flottant — absent des étapes initiales — est explicitement
+   planifié ici) ; étape 2 — profil macOS-like (barre supérieure +
    dock) ; étape 3 — changement de profil + espaces de travail du
    profil tiling ;
 3. **Menu d'applications / dock peuplés d'apps YAOR** (clients internes
@@ -563,6 +567,45 @@ Emblème, palette documentée et maquettes SVG des trois profils
 sess 6/6). Leçon harnais documentée dans `graphics-tests.md` :
 détection du volet par sa bordure ambre (le fond noir du panneau est
 indiscernable du fond sombre de waytest).
+
+### Étape 1b — flottant + décorations serveur + taskbar basse (ouverte 29 octobre 2026)
+
+Audit d'écart (29 octobre 2026, fait avec le produit) : REQ-SW-008 exige
+une organisation « de type Windows-like » avec **fenêtres flottantes** —
+l'étape 1 n'a livré que le socle UI (barre + menu) sur la politique de
+tiling de v0.5, et le volet flottant n'était planifié dans **aucune**
+étape. Décisions produit : taskbar **en bas** (Windows-like strict) ;
+le flottant passe **avant** le dock (étape 2) et le tiling-propre
+(étape 3). Périmètre de l'étape :
+
+1. **Politique de WM flottante** (profil classique) : positionnement
+   libre, empilement (clic → focus → surélévation), déplacement par
+   grab (mécanisme v0.4 déjà là), resize par les bords ; le tiling
+   maître+pile reste la politique du profil tiling — le profil choisit
+   la politique (configuration du Desktop Core, HLD).
+2. **Décorations serveur** : barre de titre dessinée par le compositor
+   (gabarit `decorations` d'anvil, Smithay vendu), boutons fermer/
+   maximiser, liseré ambre `#E8862E` sur la fenêtre focus, drag par la
+   barre de titre — aucun changement des clients (pas de
+   `xdg-decoration` côté client).
+3. **Taskbar basse** : `yaor-panel` ancré **Bottom** (zone exclusive
+   24 px), bouton YAOR (Démarrer) à gauche + **liste des fenêtres
+   ouvertes** (clic → focus/minimise). Interface compositor → panel à
+   trancher en tête d'étape : candidat `wlr-foreign-toplevel`
+   (à vérifier dans le Smithay vendu 0.7, côté serveur ET client — si
+   absent côté client, protocole minimal maison, convention
+   « un besoin = un fournisseur »).
+4. **Moteur de thème raster minimal** (réponse directe au rendu
+   jugé « extrêmement pauvre », 29 octobre) : rectangles arrondis
+   anti-aliasés (SDF par pixel), dégradés verticaux, police bitmap AA
+   plus grande (glyphes précalculés hors-ligne, littéral), logo 64×64
+   dans le volet ouvert — premiers clients : décorations + taskbar.
+
+Critères de sortie : bureau flottant complet au clic (move/resize/
+close/maximize) sous taskbar basse ; QA étendue de `t-yaor-panel`
+(taskbar basse, liste de fenêtres, décorations) ; régressions vertes
+(tiling 26/26+6/6 inchangé — le profil tiling ne change pas) ;
+maquette `mockup-profil-classique.svg` mise à jour = cible de l'étape.
 
 ### Clôture de v0.4 (28 octobre 2026)
 
