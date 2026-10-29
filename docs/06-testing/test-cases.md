@@ -294,12 +294,13 @@ par sa bordure ambre (l'intérieur noir du panneau est indiscernable du fond som
 waytest `0xFF100F0C`).
 
 Restant vers la clôture de TEST-UI-001 (REQ-SW-008 « de type
-Windows-like ») : **étape 1b** — fenêtres flottantes + décorations
+Windows-like ») : **étape 1b** — fenêtres flottantes
+(`t-yaor-float` 25/25 x2, livré) + décorations
 serveur + taskbar basse (audit d'écart du 29 octobre 2026 : le volet
 flottant n'était planifié nulle part, il est désormais explicitement
 l'étape 1b du jalon) ; puis changement de profil (étape 3).
-Maquettes SVG et identité visuelle livrées dans `docs/05-ui-ux/`
-(`mockups/`, `branding/`).
+Maquettes SVG, rendus cibles des trois profils et identité visuelle
+livrés dans `docs/05-ui-ux/` (`mockups/`, `design/`, `branding/`).
 
 ## TEST-UI-002 — Profil macOS-like
 **Vérifie :** REQ-SW-009
