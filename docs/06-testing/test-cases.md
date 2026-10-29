@@ -307,10 +307,21 @@ livrés dans `docs/05-ui-ux/` (`mockups/`, `design/`, `branding/`).
 
 Activer le profil « barre de menus supérieure + dock » et vérifier la disposition.
 
+Rendu cible : [`../05-ui-ux/design/macOS-like.png`](../05-ui-ux/design/macOS-like.png)
+(barre de menus, dock centré, feux tricolores ambre, dialog « Profils
+de bureau »). Jalon v0.6 étape 2 — cas à détailler à l'ouverture de
+l'étape.
+
 ## TEST-UI-003 — Profil tiling
 **Vérifie :** REQ-SW-010
 
 Activer le profil en mosaïque, ouvrir plusieurs fenêtres et vérifier leur disposition.
+
+Rendu cible : [`../05-ui-ux/design/Tiling.png`](../05-ui-ux/design/Tiling.png)
+(espaces de travail 1-5, maître+pile, barre supérieure avec titre
+focusé et indicateur de layout). Layout maître+pile vérifié depuis
+v0.5 (`t-yaor-tiling` 26/26 + 6/6) ; espaces de travail et
+changement de profil : jalon v0.6 étape 3 — cas à détailler.
 
 ## Harnais d'exécution QA
 

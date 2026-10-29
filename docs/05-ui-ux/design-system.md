@@ -3,8 +3,10 @@
 **Statut :** v0.6 — *mise à jour : 29 octobre 2026*
 
 Le design system définit les éléments visuels communs : couleurs,
-typographie, espacements, icônes, boutons, panneaux, fenêtres, menus
-et notifications. Les profils (bureaux) modifient leur présentation
+typographie, espacements, icônes, boutons, panneaux, fenêtres, menus.
+Les notifications ne sont spécifiées nulle part à ce jour (aucune
+exigence associée) — si elles arrivent, elles devront suivre ces
+primitives. Les profils (bureaux) modifient leur présentation
 tout en partageant ces primitives — un thème ([`themes/`](themes/))
 ne touche jamais à la logique du Desktop Core.
 
