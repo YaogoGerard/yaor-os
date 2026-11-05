@@ -17,6 +17,7 @@ use smithay::{
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
     utils::{Point, Rectangle, SERIAL_COUNTER},
+    wayland::shell::wlr_layer::Layer as WlrLayer,
 };
 
 use crate::state::Yaor;
@@ -173,7 +174,25 @@ pub fn process_input_event<I: InputBackend>(
                             toplevel.send_pending_configure();
                         }
                     });
+                    // publication foreign-toplevel : état activated (1b.c).
+                    crate::toplevels::publish_all(data);
                 } else {
+                    // Diagnostic 1b.c : le clic dans la bande basse
+                    // (taskbar) doit router vers la layer du panel —
+                    // jeton QA pour vérifier le hit-test layer-shell.
+                    let loc = pointer.current_location();
+                    let couche = data
+                        .layer_under(
+                            loc,
+                            &[WlrLayer::Overlay, WlrLayer::Top],
+                        )
+                        .is_some();
+                    tracing::info!(
+                        "clic hors fenetre a ({}, {}) couche_top={}",
+                        loc.x as i32,
+                        loc.y as i32,
+                        if couche { "O" } else { "N" }
+                    );
                     data.space.elements().for_each(|window| {
                         window.set_activated(false);
                         if let Some(toplevel) = window.toplevel() {

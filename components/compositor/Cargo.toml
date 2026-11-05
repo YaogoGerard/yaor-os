@@ -71,6 +71,13 @@ version = "1.0"
 [dependencies.tracing]
 version = "0.1"
 
+# Protocole wlr-foreign-toplevel-management (jalon 1b.c — taskbar) :
+# code généré server (client pour le panel). Version vendue dans
+# l'arbre Smithay (ADR-018) — son Cargo.lock l'épingle à 0.3.12.
+[dependencies.wayland-protocols-wlr]
+version = "0.3.12"
+features = ["server"]
+
 # Configuration déclarative du bureau (v0.5, REQ-SW-015) : crate interne
 # du workspace (dir yaor-config). Ses dépendances externes (toml/serde)
 # résident dans le même arbre vendu Smithay (ADR-018).

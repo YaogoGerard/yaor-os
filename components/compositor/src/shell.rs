@@ -91,6 +91,9 @@ impl smithay::wayland::compositor::CompositorHandler for Yaor {
             {
                 window.on_commit();
             }
+            // publication foreign-toplevel : titre/app_id arrivés avec le
+            // commit (publish_all n'envoie que les changements — 1b.c).
+            crate::toplevels::publish_all(self);
         }
         // layer-shell : le configure initial est envoyé EN RÉPONSE au
         // premier commit du client (la spec interdit de l'envoyer avant

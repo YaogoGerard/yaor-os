@@ -40,7 +40,11 @@ use smithay_client_toolkit::{
 use wayland_client::{
     globals::registry_queue_init,
     protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
-    Connection, QueueHandle,
+    Connection, Dispatch, QueueHandle,
+};
+use wayland_protocols_wlr::foreign_toplevel::v1::client::{
+    zwlr_foreign_toplevel_handle_v1::{Event as ToplevelEvent, ZwlrForeignToplevelHandleV1},
+    zwlr_foreign_toplevel_manager_v1::{Event as ManagerEvent, ZwlrForeignToplevelManagerV1},
 };
 
 mod logo;
@@ -64,6 +68,17 @@ const BTN_W: u32 = 60;
 /// Dimensions du volet menu : une entrée de 24 px par app + bordures.
 const MENU_W: u32 = 140;
 const MENU_ENTRY_H: u32 = 24;
+
+// Taskbar basse (jalon v0.6 étape 1b.c — maquette profil classique) :
+// boutons de fenêtres 120x16, liseré ambre si focusée.
+const TASKBAR_H: u32 = 24;
+const TB_BTN_W: u32 = 120;
+const TB_BTN_H: u32 = 16;
+/// Pas d'un bouton à l'autre (120 + 4 px d'espacement).
+const TB_BTN_STEP: u32 = TB_BTN_W + 4;
+const TB_BTN_BG: u32 = 0xFF_1E_1E_26;
+const TB_BORDER_FOCUS: u32 = 0xFF_E8_86_2E;
+const TB_BORDER_REST: u32 = 0xFF_5A_5A_64;
 
 /// Apps de démo du menu (décision produit v0.6 : apps YAOR internes,
 /// pas de scan .desktop). (libellé affiché, binaire à lancer.)
@@ -286,6 +301,18 @@ struct Panel {
     /// à la fermeture (la destruction des objets wayland démappe la
     /// couche côté compositor, cf. shell.rs layer_destroyed).
     menu: Option<LayerSurface>,
+    /// Taskbar basse (couche Top, ancrée bas, zone exclusive TASKBAR_H
+    /// — jalon 1b.c).
+    taskbar: Option<LayerSurface>,
+    tb_width: u32,
+
+    /// Global zwlr_foreign_toplevel_manager_v1 (liste des fenêtres +
+    /// activation/restauration — jalon 1b.c).
+    foreign_manager: Option<ZwlrForeignToplevelManagerV1>,
+    /// Fenêtres publiées par le compositor (ordre d'affichage).
+    entries: Vec<TaskbarEntry>,
+    /// Seat (l'activation d'une fenêtre exige la ressource wl_seat).
+    seat_object: Option<wl_seat::WlSeat>,
 
     pool: SlotPool,
     pool_capacity: usize,
@@ -296,6 +323,14 @@ struct Panel {
 
     keyboard: Option<wl_keyboard::WlKeyboard>,
     pointer: Option<wl_pointer::WlPointer>,
+}
+
+/// Une fenêtre de la taskbar : handle foreign-toplevel + état rendu.
+struct TaskbarEntry {
+    handle: ZwlrForeignToplevelHandleV1,
+    title: String,
+    activated: bool,
+    minimized: bool,
 }
 
 impl Panel {
@@ -369,6 +404,107 @@ impl Panel {
             .damage_buffer(0, 0, w as i32, h as i32);
         buffer.attach_to(layer.wl_surface()).expect("attach menu");
         layer.commit();
+    }
+
+    /// Rendu de la taskbar basse : un bouton 120x16 par fenêtre
+    /// publiée (liseré ambre si activée, gris sinon — maquette profil
+    /// classique). Journal : jeton « taskbar : rendu » pour le QA.
+    fn draw_taskbar(&mut self) {
+        let Some(taskbar) = self.taskbar.clone() else {
+            return;
+        };
+        let w = self.tb_width;
+        let h = TASKBAR_H;
+        if w == 0 || h == 0 {
+            return;
+        }
+        self.ensure_pool(w as i32, h as i32);
+        let stride = w as i32 * 4;
+        let (buffer, mut canvas) = self
+            .pool
+            .create_buffer(w as i32, h as i32, stride, wl_shm::Format::Argb8888)
+            .expect("création du buffer de taskbar");
+        {
+            let (cw, ch) = (w as i32, h as i32);
+            fill_rect(&mut canvas, cw, ch, 0, 0, cw, ch, BAR_BG);
+            for (idx, entry) in self.entries.iter().enumerate() {
+                let x0 = 4 + idx as i32 * TB_BTN_STEP as i32;
+                let y0 = ((TASKBAR_H - TB_BTN_H) / 2) as i32;
+                let border = if entry.activated {
+                    TB_BORDER_FOCUS
+                } else {
+                    TB_BORDER_REST
+                };
+                // liseré 1 px + fond intérieur (bouton enfoncé = lancée,
+                // cf. design-system : liseré ambre si focusée).
+                fill_rect(&mut canvas, cw, ch, x0, y0, TB_BTN_W as i32, TB_BTN_H as i32, border);
+                fill_rect(
+                    &mut canvas,
+                    cw,
+                    ch,
+                    x0 + 1,
+                    y0 + 1,
+                    TB_BTN_W as i32 - 2,
+                    TB_BTN_H as i32 - 2,
+                    TB_BTN_BG,
+                );
+                // titre (capitales — police bitmap), borné au bouton.
+                let label: String = entry
+                    .title
+                    .chars()
+                    .take(((TB_BTN_W - 12) / 6) as usize)
+                    .map(|c| c.to_ascii_uppercase())
+                    .collect();
+                let ty = y0 + (TB_BTN_H as i32 - 7) / 2;
+                draw_text(&mut canvas, cw, ch, &label, x0 + 6, ty, TEXT_FG);
+            }
+        }
+        taskbar
+            .wl_surface()
+            .damage_buffer(0, 0, w as i32, h as i32);
+        buffer
+            .attach_to(taskbar.wl_surface())
+            .expect("attach taskbar");
+        taskbar.commit();
+        let focus = self
+            .entries
+            .iter()
+            .position(|e| e.activated)
+            .map(|i| i.to_string())
+            .unwrap_or_else(|| "-".into());
+        let minimized = self.entries.iter().filter(|e| e.minimized).count();
+        eprintln!(
+            "{PROG}: [{:.3}] taskbar : rendu {} bouton(s) focus={} min={}",
+            uptime(),
+            self.entries.len(),
+            focus,
+            minimized
+        );
+    }
+
+    /// Clic sur un bouton de la taskbar : restauration (si minimisée)
+    /// puis activation — via le protocole foreign-toplevel (1b.c).
+    fn taskbar_click(&mut self, x: u32) {
+        let idx = x.saturating_sub(4) / TB_BTN_STEP;
+        let within = x.saturating_sub(4) % TB_BTN_STEP < TB_BTN_W;
+        if !within {
+            eprintln!("{PROG}: [{:.3}] taskbar : clic hors bouton x={x}", uptime());
+            return;
+        }
+        let Some(seat) = self.seat_object.clone() else {
+            eprintln!("{PROG}: [{:.3}] taskbar : seat absent", uptime());
+            return;
+        };
+        let Some(entry) = self.entries.get(idx as usize) else {
+            eprintln!("{PROG}: [{:.3}] taskbar : entree absente idx={idx}", uptime());
+            return;
+        };
+        if entry.minimized {
+            entry.handle.unset_minimized();
+            eprintln!("{PROG}: [{:.3}] taskbar : restauration envoyee idx={idx}", uptime());
+        }
+        entry.handle.activate(&seat);
+        eprintln!("{PROG}: [{:.3}] taskbar : activation envoyee idx={idx}", uptime());
     }
 
     fn close_menu(&mut self) {
@@ -526,6 +662,11 @@ impl LayerShellHandler for Panel {
                 self.configured = true;
             }
             self.draw_bar(qh);
+        } else if Some(layer.wl_surface()) == self.taskbar.as_ref().map(|t| t.wl_surface()) {
+            // Taskbar : pleine largeur (ancrée bas gauche+droite).
+            self.tb_width = if configure.new_size.0 == 0 { 1280 } else { configure.new_size.0 };
+            eprintln!("{PROG}: [{:.3}] taskbar configuree {}x{}", uptime(), self.tb_width, configure.new_size.1);
+            self.draw_taskbar();
         } else if self.menu.is_some() {
             // Volet menu : taille demandée honorée → premier rendu.
             let (mw, mh) = (configure.new_size.0, configure.new_size.1);
@@ -542,7 +683,11 @@ impl SeatHandler for Panel {
         &mut self.seat_state
     }
 
-    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
+    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
+        // Ressource conservée : l'activation foreign-toplevel (taskbar)
+        // exige la référence wl_seat (jalon 1b.c).
+        self.seat_object = Some(seat);
+    }
 
     fn new_capability(
         &mut self,
@@ -551,6 +696,12 @@ impl SeatHandler for Panel {
         seat: wl_seat::WlSeat,
         capability: Capability,
     ) {
+        // Ressource conservée : l'activation foreign-toplevel (taskbar)
+        // exige la référence wl_seat (jalon 1b.c). ATTENTION : new_seat
+        // n'est PAS invoqué pour les seats liés par SeatState::new
+        // (burst initial — bind_all sans callback), seule la capability
+        // arrive — toujours avant tout événement pointeur/clavier.
+        self.seat_object = Some(seat.clone());
         if capability == Capability::Keyboard && self.keyboard.is_none() {
             let keyboard = self
                 .seat_state
@@ -668,6 +819,22 @@ impl PointerHandler for Panel {
                         }
                     }
                 }
+            } else if event.surface == *self.taskbar.as_ref().unwrap().wl_surface() {
+                // Bouton de fenêtre : x → indice (bandes de TB_BTN_STEP).
+                if let Enter { .. } = event.kind {
+                    eprintln!("{PROG}: [{:.3}] taskbar : pointeur entre", uptime());
+                }
+                if let Press { button, .. } = event.kind {
+                    eprintln!(
+                        "{PROG}: [{:.3}] taskbar : presse a ({}, {})",
+                        uptime(),
+                        x as i32,
+                        y as i32
+                    );
+                    if button == 0x110 {
+                        self.taskbar_click(x as u32);
+                    }
+                }
             } else if let Some(menu) = self.menu.clone() {
                 if event.surface == *menu.wl_surface() {
                     if let Press { button, .. } = event.kind {
@@ -689,6 +856,112 @@ impl PointerHandler for Panel {
 impl ShmHandler for Panel {
     fn shm_state(&mut self) -> &mut Shm {
         &mut self.shm
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Foreign-toplevel (jalon 1b.c) : liste des fenêtres publiées par le
+// compositor + actions (activate / unset_minimized).
+// ---------------------------------------------------------------------------
+
+impl Dispatch<ZwlrForeignToplevelManagerV1, ()> for Panel {
+    // L'événement toplevel crée un objet (new_id) : la spécialisation
+    // event_created_child est OBLIGATOIRE (sinon panic « Missing
+    // event_created_child specialization » au premier toplevel) —
+    // la macro génère la méthode de trait, DANS le bloc impl.
+    wayland_client::event_created_child!(Panel, ZwlrForeignToplevelManagerV1, [
+        wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_manager_v1::EVT_TOPLEVEL_OPCODE => (
+            ZwlrForeignToplevelHandleV1,
+            ()
+        ),
+    ]);
+
+    fn event(
+        state: &mut Self,
+        _manager: &ZwlrForeignToplevelManagerV1,
+        event: ManagerEvent,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        match event {
+            ManagerEvent::Toplevel { toplevel } => {
+                state.entries.push(TaskbarEntry {
+                    handle: toplevel,
+                    title: String::new(),
+                    activated: false,
+                    minimized: false,
+                });
+                eprintln!(
+                    "{PROG}: [{:.3}] taskbar : fenetre ajoutee (total={})",
+                    uptime(),
+                    state.entries.len()
+                );
+            }
+            ManagerEvent::Finished => {
+                state.entries.clear();
+                state.draw_taskbar();
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for Panel {
+    fn event(
+        state: &mut Self,
+        handle: &ZwlrForeignToplevelHandleV1,
+        event: ToplevelEvent,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        // Tableau d'états : couples (état, valeur) u32 — maximized=0,
+        // minimized=1, activated=2.
+        const MINIMIZED: u32 = 1;
+        const ACTIVATED: u32 = 2;
+        let decode = |bytes: &Vec<u8>| -> (bool, bool) {
+            let mut min = false;
+            let mut act = false;
+            for chunk in bytes.chunks_exact(8) {
+                let s = u32::from_ne_bytes(chunk[0..4].try_into().unwrap());
+                match s {
+                    MINIMIZED => min = true,
+                    ACTIVATED => act = true,
+                    _ => {}
+                }
+            }
+            (min, act)
+        };
+        match event {
+            ToplevelEvent::Title { title } => {
+                if let Some(e) = state.entries.iter_mut().find(|e| e.handle == *handle) {
+                    e.title = title;
+                }
+            }
+            ToplevelEvent::State { state: bytes } => {
+                let (minimized, activated) = decode(&bytes);
+                if let Some(e) = state.entries.iter_mut().find(|e| e.handle == *handle) {
+                    e.minimized = minimized;
+                    e.activated = activated;
+                }
+            }
+            ToplevelEvent::Done => {
+                state.draw_taskbar();
+            }
+            ToplevelEvent::Closed => {
+                if let Some(idx) = state.entries.iter().position(|e| e.handle == *handle) {
+                    state.entries.remove(idx);
+                }
+                eprintln!(
+                    "{PROG}: [{:.3}] taskbar : fenetre fermee (total={})",
+                    uptime(),
+                    state.entries.len()
+                );
+                state.draw_taskbar();
+            }
+            _ => {}
+        }
     }
 }
 
@@ -769,13 +1042,25 @@ fn main() -> std::process::ExitCode {
     // qui pilote le premier rendu (modèle simple_layer).
     bar.commit();
 
+    // Taskbar basse : couche Top ancrée bas, zone exclusive TASKBAR_H
+    // (la zone utile du compositor se retire les DEUX bandes — jalon
+    // 1b.c, maquette profil classique).
+    let tb_surface = compositor.create_surface(&qh);
+    let taskbar =
+        layer_shell.create_layer_surface(&qh, tb_surface, Layer::Top, Some("yaor-panel-taskbar"), None);
+    taskbar.set_anchor(Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
+    taskbar.set_size(0, TASKBAR_H);
+    taskbar.set_exclusive_zone(TASKBAR_H as i32);
+    taskbar.set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
+    taskbar.commit();
+
     // Pool pré-dimensionné pour 2 slots de barre + 1 slot de menu :
     // la croissance d'un SlotPool (set_len + remap mmap + requête
     // wl_shm_pool.resize) a provoqué un décrochage du panel au premier
     // rendu du menu (QA v0.6-étape 1) — on la rend impossible.
     let bar_need = 1280 * BAR_H as usize * 4;
     let menu_need = MENU_W as usize * (MENU_ENTRY_H * APPS.len() as u32 + 8) as usize * 4;
-    let pool_capacity = 2 * bar_need + menu_need;
+    let pool_capacity = 2 * bar_need + menu_need + 2 * bar_need;
     let pool = SlotPool::new(pool_capacity, &shm).expect("création du slot pool");
 
     let mut panel = Panel {
@@ -787,6 +1072,11 @@ fn main() -> std::process::ExitCode {
         layer_shell,
         bar,
         menu: None,
+        taskbar: Some(taskbar),
+        tb_width: 0,
+        foreign_manager: None,
+        entries: Vec::new(),
+        seat_object: None,
         pool,
         pool_capacity,
         width: 0,
@@ -797,6 +1087,15 @@ fn main() -> std::process::ExitCode {
         pointer: None,
     };
     eprintln!("{PROG}: [{:.3}] démarré (version {VERSION})", uptime());
+
+    // Foreign-toplevel : liste des fenêtres + activation/restauration
+    // (jalon 1b.c). Le global est publié par le compositor ; absent
+    // (compositor ancien) : la taskbar reste vide, non bloquant.
+    match panel.registry_state.bind_one::<ZwlrForeignToplevelManagerV1, Panel, ()>(&qh, 1..=1, ())
+    {
+        Ok(manager) => panel.foreign_manager = Some(manager),
+        Err(e) => eprintln!("{PROG}: foreign-toplevel indisponible : {e:?}"),
+    }
 
     while !panel.exit {
         if event_queue.blocking_dispatch(&mut panel).is_err() {

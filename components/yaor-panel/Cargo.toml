@@ -23,3 +23,10 @@ version = "0.19.2"
 # dépendance explicite pour la lisibilité des imports (0.31 vendu).
 [dependencies.wayland-client]
 version = "0.31"
+
+# Protocole wlr-foreign-toplevel-management (jalon 1b.c — taskbar) :
+# code généré client (le compositor publie les fenêtres, le panel
+# active/minimise). Version vendue dans l'arbre Smithay (ADR-018).
+[dependencies.wayland-protocols-wlr]
+version = "0.3.12"
+features = ["client"]

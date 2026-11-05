@@ -109,6 +109,10 @@ pub struct Yaor {
     pub xwayland_shell_state: XWaylandShellState,
     /// Sélection primaire (bouton du milieu — x11 copie dans les deux).
     pub primary_selection_state: PrimarySelectionState,
+    /// Protocole wlr-foreign-toplevel-management : la taskbar (panel)
+    /// liste les fenêtres et leur envoie activate/minimize/close
+    /// (jalon v0.6 étape 1b.c).
+    pub foreign_toplevel: crate::toplevels::ForeignToplevelState,
 
     pub seat: Seat<Self>,
 
@@ -172,6 +176,7 @@ impl Yaor {
         let data_device_state = DataDeviceState::new::<Yaor>(&dh);
         let xwayland_shell_state = XWaylandShellState::new::<Yaor>(&dh);
         let primary_selection_state = PrimarySelectionState::new::<Yaor>(&dh);
+        let foreign_toplevel = crate::toplevels::ForeignToplevelState::new(&dh);
         let popups = PopupManager::default();
 
         let seat_name = backend_data.session.seat().clone();
@@ -202,6 +207,7 @@ impl Yaor {
             data_device_state,
             xwayland_shell_state,
             primary_selection_state,
+            foreign_toplevel,
             seat,
             backend_data: Some(backend_data),
             xwm: None,
@@ -317,7 +323,7 @@ impl Yaor {
     /// Recherche d'une surface layer-shell sous le pointeur, dans les
     /// couches demandées, sortie par sortie (coordonnées locales de
     /// sortie, comme anvil input_handler).
-    fn layer_under(
+    pub(crate) fn layer_under(
         &self,
         pos: Point<f64, Logical>,
         kinds: &[WlrLayer],

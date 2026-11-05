@@ -302,11 +302,15 @@ pub fn minimize_window(state: &mut Yaor, window: &WindowElement) {
             crate::element::update_focused_decoration(state, None);
         }
     }
+    // publication foreign-toplevel : état mappée → minimized (1b.c).
+    crate::toplevels::publish_all(state);
 }
 
 /// Restaure la fenêtre minimisée d'indice `idx` : re-map à la
 /// position mémorisée, à la tête de pile, focus rendu.
-fn restore_minimized(state: &mut Yaor, idx: usize) {
+/// Publique (crate) : aussi appelée par la taskbar via le protocole
+/// foreign-toplevel (jalon 1b.c).
+pub(crate) fn restore_minimized(state: &mut Yaor, idx: usize) {
     let (window, x, y) = state.layout.minimized.remove(idx);
     state.space.map_element(window.clone(), (x, y), true);
     state.layout.floating.push(window.clone());
@@ -322,6 +326,8 @@ fn restore_minimized(state: &mut Yaor, idx: usize) {
             .set_focus(state, Some(focus), serial);
     }
     crate::element::update_focused_decoration(state, Some(&window));
+    // publication foreign-toplevel : état minimized → mappée (1b.c).
+    crate::toplevels::publish_all(state);
 }
 
 // ---------------------------------------------------------------------------
@@ -793,7 +799,7 @@ fn focused_tiled_index(state: &Yaor) -> Option<usize> {
 
 /// Deux mêmes fenêtres (surface X11 pour X ; wl_surface sinon —
 /// comparaison d'identité d'objet wayland).
-fn same_window(a: &WindowElement, b: &WindowElement) -> bool {
+pub(crate) fn same_window(a: &WindowElement, b: &WindowElement) -> bool {
     if let (Some(x1), Some(x2)) = (a.x11_surface(), b.x11_surface()) {
         return x1 == x2;
     }
