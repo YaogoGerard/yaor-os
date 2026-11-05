@@ -24,14 +24,24 @@ Rendu : [`design/Classique.png`](design/Classique.png).
 - **Décorations serveur** : barre de titre + réduire/agrandir/fermer
   (le compositor dessine, conforme au modèle Windows-like).
 
+Implémentation 1b.c : la taskbar basse est une seconde surface
+layer-shell (`Top`, ancrée bas, zone exclusive 24 px) du panel. La
+liste des fenêtres et les actions (activation, restauration) passent
+par le protocole standard **`wlr-foreign-toplevel-management` v1** :
+le compositor publie les toplevels mappées (titre, app_id, état
+activated/minimized — uniquement sur changement), le panel rend un
+bouton 120×16 par fenêtre et envoie `activate` / `unset_minimized`
+au clic. Le menu Démarrer complet (recherche + épinglées) reste hors
+périmètre du jalon v0.6.
+
 État d'implémentation (jalon v0.6) :
 
 | Étape | Contenu | État |
 |---|---|---|
 | 1 | Socle layer-shell (barre haute, volet menu, habillage ambre) | Livrée (TEST-UI-001 vert) |
 | 1b.a | Fenêtres flottantes + minimiser/restaurer (`Mod+m`) | **Livrée** (`t-yaor-float` 25/25 ×2) |
-| 1b.b | Décorations serveur (barre de titre, boutons) | À venir |
-| 1b.c | Taskbar basse (liste de fenêtres, restauration au clic) | À venir |
+| 1b.b | Décorations serveur (barre de titre, boutons) | **Livrée** (`t-yaor-float` 36/36 — SSD focus ambre / repos gris) |
+| 1b.c | Taskbar basse (liste de fenêtres, restauration au clic) | **Livrée** (`t-yaor-taskbar` 17/17 — protocole standard `wlr-foreign-toplevel-management` v1) |
 
 ## macOS-like — REQ-SW-009, TEST-UI-002
 

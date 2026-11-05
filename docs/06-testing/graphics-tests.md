@@ -548,3 +548,52 @@ ambre** unique — région (4,24,144,80), ouvert > 200 px ambre, fermé
 du waytest ((16,15,12)/(28,27,21)) et du bord vert — aucun volet.
 Aucun changement compositor/panel : le panel fermait bien (jeton
 « menu fermé » à 65,280 s d'uptime invité).
+
+## v0.6 étape 1b — flottant + SSD + taskbar (TEST-UI-001)
+
+### Résultats
+
+- **1b.a/1b.b (flottant + SSD)** — `t-yaor-float.py`, vert 36/36 ×2 :
+  fenêtres flottantes centrées, raise au clic, minimiser/restaurer
+  (`Mod+m`), décorations serveur (barre de titre, liseré focus
+  ambre / repos gris, boutons réduire/agrandir/fermer). Rendus
+  `float-ssd-{a..i}.png`.
+- **1b.c (taskbar)** — `t-yaor-taskbar.py`, vert 17/17 + 3/3 :
+  taskbar basse (seconde surface layer-shell du panel, `Top` ancrée
+  bas, zone exclusive 24 px), un bouton 120×16 par fenêtre avec état
+  focusé visible (liseré ambre), clic → activation, `Mod+m` →
+  minimisation, clic → restauration. Canal : protocole standard
+  `wlr-foreign-toplevel-management` v1 (serveur : `toplevels.rs` du
+  compositor, publication sur changement d'état uniquement ; client :
+  panel, requêtes `activate`/`unset_minimized`). Rendus
+  `taskbar-{barre,focus-w1,w2-minimisee,w2-restauree}.png`.
+- Régressions sur le même ISO : panel 23/23+4/4, float 36/36,
+  tiling 26/26+6/6, comp 16/16, comp-wm 23/23 ×2, comp-xwl 11/11,
+  sess 6/6.
+
+### Leçons de diagnostic (v0.6 — 1b.c)
+
+1. **`wayland_client::event_created_child!` est une méthode de
+   trait** : la macro DOIT être invoquée DANS le bloc
+   `impl Dispatch<...>` — placée au niveau module, elle compile sans
+   erreur ni avertissement mais la spécialisation par défaut manque
+   (panic « Missing event_created_child specialization » au premier
+   événement `new_id` — ici `toplevel` du manager foreign-toplevel).
+2. **`SeatState::new` ne déclenche pas `SeatHandler::new_seat`** :
+   les seats du burst initial sont liés par `bind_all` sans callback
+   (réservé aux globals annoncés après l'initialisation). Conserver
+   la ressource dans `new_capability` — la capability arrive toujours
+   avant tout événement pointeur/clavier. Symptôme sinon : les clics
+   taskbar sont bien reçus par le panel mais l'action `activate`
+   silencieusement ignorée (seat absent).
+3. **Géométrie du chevauchement flottant** : avec waytest `--two`,
+   W2 (décalée +24 px) est la fenêtre AVANT — le centre chevauché
+   lui appartient. Le clic « W1 » doit viser la bande gauche exposée
+   (~331,400) et le clic « W2 » la bande droite exposée (~970,500 ;
+   985 = 1 px hors du cadre). Un jeton générique `keyboard enter`
+   masquait l'erreur (l'enter de W2 comptait pour W1) : nommer les
+   jetons par fenêtre.
+4. **Hit-test layer-shell ancré bas** : validé au run 4 — le presse
+   dans la bande basse est bien routé vers la surface taskbar du
+   panel (`taskbar : presse a (188, 12)`), et le clic hors fenêtre
+   retire le focus clavier (comportement bureau standard).

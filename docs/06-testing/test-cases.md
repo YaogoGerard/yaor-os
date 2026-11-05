@@ -293,12 +293,29 @@ logo 24×24 incorporé rendu dans la barre (100 px ambre mesurés). Détection Q
 par sa bordure ambre (l'intérieur noir du panneau est indiscernable du fond sombre de
 waytest `0xFF100F0C`).
 
-Restant vers la clôture de TEST-UI-001 (REQ-SW-008 « de type
-Windows-like ») : **étape 1b** — fenêtres flottantes
-(`t-yaor-float` 25/25 x2, livré) + décorations
-serveur + taskbar basse (audit d'écart du 29 octobre 2026 : le volet
-flottant n'était planifié nulle part, il est désormais explicitement
-l'étape 1b du jalon) ; puis changement de profil (étape 3).
+**v0.6 étape 1b.a (flottant) — harnais `t-yaor-float.py`, vert 36/36 :** fenêtres
+flottantes (placement centré, empilement, raise au clic,
+minimiser/restaurer `Mod+m`) avec décorations serveur (1b.b).
+
+**v0.6 étape 1b.b (SSD) — décorations serveur :** barre de titre
+dessinée par le compositor (liseré focus ambre `#E8862E` / repos gris
+`#5A5A64`), boutons réduire/agrandir/fermer fonctionnels
+(`t-yaor-float` 36/36, rendus `float-ssd-*`).
+
+**v0.6 étape 1b.c (taskbar) — harnais `t-yaor-taskbar.py`, vert
+17/17 + 3/3 :** taskbar basse (seconde surface layer-shell du panel,
+zone exclusive 24 px) avec un bouton par fenêtre : état focusé
+visible (liseré ambre sur le bouton), clic → activation (+ focus +
+raise), `Mod+m` → minimisation, clic → restauration. Canal
+protocole standard `wlr-foreign-toplevel-management` v1
+(compositor : publication des toplevels sur changement d'état ;
+panel : requêtes `activate`/`unset_minimized`). Rendus
+`taskbar-{barre,focus-w1,w2-minimisee,w2-restauree}.png`.
+
+TEST-UI-001 est **refermé** (REQ-SW-008 « de type Windows-like » :
+barre + menu + fenêtres flottantes + décorations serveur + taskbar
+livrés et vérifiés). Restant au jalon v0.6 (hors TEST-UI-001) :
+changement de profil à chaud (étape 3, TEST-UI-004 à détailler).
 Maquettes SVG, rendus cibles des trois profils et identité visuelle
 livrés dans `docs/05-ui-ux/` (`mockups/`, `design/`, `branding/`).
 
