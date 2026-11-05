@@ -69,9 +69,13 @@ const BTN_W: u32 = 60;
 const MENU_W: u32 = 140;
 const MENU_ENTRY_H: u32 = 24;
 
-// Taskbar basse (jalon v0.6 étape 1b.c — maquette profil classique) :
-// boutons de fenêtres 120x16, liseré ambre si focusée.
+// Taskbar basse (jalon v0.6 étape 1d.tb — maquette profil classique) :
+// pilule emblème à gauche, pilules à libellés (coins arrondis AA),
+// horloge à droite ; liseré ambre si focusée.
 const TASKBAR_H: u32 = 24;
+/// X de départ des pilules fenêtres (après la pilule emblème).
+const TB_X0: i32 = 32;
+const TB_EMBLEM_W: i32 = 24;
 const TB_BTN_W: u32 = 120;
 const TB_BTN_H: u32 = 16;
 /// Pas d'un bouton à l'autre (120 + 4 px d'espacement).
@@ -79,6 +83,8 @@ const TB_BTN_STEP: u32 = TB_BTN_W + 4;
 const TB_BTN_BG: u32 = 0xFF_1E_1E_26;
 const TB_BORDER_FOCUS: u32 = 0xFF_E8_86_2E;
 const TB_BORDER_REST: u32 = 0xFF_5A_5A_64;
+/// Séparateur vertical emblème | fenêtres.
+const TB_SEP: u32 = 0xFF_2A_2A_33;
 
 /// Apps de démo du menu (décision produit v0.6 : apps YAOR internes,
 /// pas de scan .desktop). (libellé affiché, binaire à lancer.)
@@ -196,6 +202,38 @@ const GLYPHS: &[(char, [&str; 7])] = &[
         '.',
         [".....", ".....", ".....", ".....", ".....", ".XX..", ".XX.."],
     ),
+    (
+        ':',
+        [".....", ".XX..", ".XX..", ".....", ".....", ".XX..", ".XX.."],
+    ),
+    (
+        'C',
+        [".XXX.", "X...X", "X....", "X....", "X....", "X...X", ".XXX."],
+    ),
+    (
+        'D',
+        ["XXXX.", "X...X", "X...X", "X...X", "X...X", "X...X", "XXXX."],
+    ),
+    (
+        'F',
+        ["XXXXX", "X....", "X....", "XXXX.", "X....", "X....", "X...."],
+    ),
+    (
+        'I',
+        ["XXXXX", "..X..", "..X..", "..X..", "..X..", "..X..", "XXXXX"],
+    ),
+    (
+        'J',
+        ["....X", "....X", "....X", "....X", "X...X", "X...X", ".XXX."],
+    ),
+    (
+        'L',
+        ["X....", "X....", "X....", "X....", "X....", "X....", "XXXXX"],
+    ),
+    (
+        'V',
+        ["X...X", "X...X", "X...X", "X...X", ".X.X.", ".X.X.", "..X.."],
+    ),
 ];
 
 fn glyph(ch: char) -> Option<&'static [&'static str; 7]> {
@@ -281,6 +319,130 @@ fn draw_text(canvas: &mut [u8], w: i32, h: i32, text: &str, x0: i32, y0: i32, co
         }
         x += 6;
     }
+}
+
+// --- 1d.tb : pilules arrondies + emblème + horloge -------------------------
+
+/// Mélange un pixel (couleur `color` Argb8888) sur le canvas avec la
+/// couverture `cov` (0..1) — bords anti-aliasés des pilules.
+fn blend_px(canvas: &mut [u8], w: i32, h: i32, x: i32, y: i32, color: u32, cov: f64) {
+    if cov <= 0.0 || x < 0 || y < 0 || x >= w || y >= h {
+        return;
+    }
+    let i = ((y * w + x) * 4) as usize;
+    if i + 3 >= canvas.len() {
+        return;
+    }
+    let a = cov.clamp(0.0, 1.0);
+    // couleurs de fond et de premier plan (octets B,G,R)
+    for k in 0..3 {
+        let bg = canvas[i + k] as f64;
+        let fg = ((color >> (8 * k)) & 0xFF) as f64;
+        canvas[i + k] = (bg + (fg - bg) * a).round() as u8;
+    }
+    // alpha : rendu opaque dès qu'on touche (surface de la barre)
+    canvas[i + 3] = 0xFF;
+}
+
+/// Couverture d'une « pilule » (rectangle à extrémités semi-circulaires,
+/// rayon = h/2) au point (px, py) — SDF de rectangle arrondi, AA 1 px.
+fn pill_cov(px: f64, py: f64, x0: f64, y0: f64, pw: f64, ph: f64) -> f64 {
+    let r = ph / 2.0;
+    let cx = x0 + pw / 2.0;
+    let cy = y0 + r;
+    let qx = (px - cx).abs() - (pw / 2.0 - r);
+    let qy = (py - cy).abs() - (ph / 2.0 - r);
+    let dx = qx.max(0.0);
+    let dy = qy.max(0.0);
+    let d = (dx * dx + dy * dy).sqrt() + qx.max(qy).min(0.0) - r;
+    (0.5 - d).clamp(0.0, 1.0)
+}
+
+/// Pilule pleine (bords adoucis, fond existant conservé aux coins).
+fn fill_pill(canvas: &mut [u8], w: i32, h: i32, x0: i32, y0: i32, pw: i32, ph: i32, color: u32) {
+    for y in y0..y0 + ph {
+        for x in x0..x0 + pw {
+            let cov = pill_cov(x as f64 + 0.5, y as f64 + 0.5, x0 as f64, y0 as f64, pw as f64, ph as f64);
+            blend_px(canvas, w, h, x, y, color, cov);
+        }
+    }
+}
+
+/// Mini-flamme ambre (silhouette du fond d'écran, réduite) : triangle
+/// pointe en haut, bord adouci — dessinée dans la pilule emblème.
+fn fill_flame(canvas: &mut [u8], w: i32, h: i32, cx: i32, y_tip: i32, base_w: i32, base_h: i32, color: u32) {
+    let tip = (cx as f64, y_tip as f64);
+    let bl = ((cx - base_w / 2) as f64, (y_tip + base_h) as f64);
+    let br = ((cx + base_w / 2) as f64, (y_tip + base_h) as f64);
+    let tri = [tip, bl, br];
+    for y in y_tip..y_tip + base_h {
+        for x in cx - base_w / 2..=cx + base_w / 2 {
+            // dedans si du même côté que le 3e sommet pour chaque arête
+            // (supersampling 2x2 pour le bord).
+            let mut hit = 0;
+            for sy in 0..2 {
+                for sx in 0..2 {
+                    let fx = x as f64 + 0.25 + 0.5 * sx as f64;
+                    let fy = y as f64 + 0.25 + 0.5 * sy as f64;
+                    let mut inside = true;
+                    for k in 0..3 {
+                        let (ax, ay) = tri[k];
+                        let (bx, by) = tri[(k + 1) % 3];
+                        let (cx2, cy2) = tri[(k + 2) % 3];
+                        let sp = (by - ay) * (fx - ax) - (bx - ax) * (fy - ay);
+                        let sc = (by - ay) * (cx2 - ax) - (bx - ax) * (cy2 - ay);
+                        if sp * sc <= 0.0 {
+                            inside = false;
+                            break;
+                        }
+                    }
+                    if inside {
+                        hit += 1;
+                    }
+                }
+            }
+            if hit > 0 {
+                let cov = hit as f64 / 4.0;
+                blend_px(canvas, w, h, x, y, color, cov);
+            }
+        }
+    }
+}
+
+/// Heure locale du panel : (année, mois, jour, h, min) — conversion
+/// civile d'UNIX (algorithme de H. Hinnant). L'invité vise UTC (QEMU) ;
+/// une vraie gestion du fuseau passera par timedatectl (étape ultérieure).
+fn civil_now() -> (i64, u32, u32, u32, u32) {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let days = secs.div_euclid(86_400);
+    let sod = secs.rem_euclid(86_400);
+    let hh = (sod / 3_600) as u32;
+    let mm = ((sod % 3_600) / 60) as u32;
+    // civil_from_days :
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = (mp + if mp < 10 { 3 } else { -9 }) as u32;
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d, hh, mm)
+}
+
+/// Ligne d'état à droite : « HH:MM  JJ MMM. AAAA » (mois abrégés
+/// sans accent — police bitmap capitales).
+fn clock_text() -> String {
+    const MONTHS: [&str; 12] = [
+        "JAN", "FEV", "MAR", "AVR", "MAI", "JUIN", "JUIL", "AOUT", "SEP", "OCT", "NOV", "DEC",
+    ];
+    let (y, m, d, hh, mm) = civil_now();
+    format!("{:02}:{:02}  {:02} {}. {}", hh, mm, d, MONTHS[(m as usize - 1) % 12], y)
 }
 
 // ---------------------------------------------------------------------------
@@ -406,9 +568,10 @@ impl Panel {
         layer.commit();
     }
 
-    /// Rendu de la taskbar basse : un bouton 120x16 par fenêtre
-    /// publiée (liseré ambre si activée, gris sinon — maquette profil
-    /// classique). Journal : jeton « taskbar : rendu » pour le QA.
+    /// Rendu de la taskbar basse (1d.tb — maquette profil classique) :
+    /// pilule emblème + flamme à gauche, pilules à libellés par fenêtre
+    /// (coins arrondis AA, liseré ambre si activée), ligne d'état
+    /// (heure + date) à droite. Journal : jeton « taskbar : rendu ».
     fn draw_taskbar(&mut self) {
         let Some(taskbar) = self.taskbar.clone() else {
             return;
@@ -427,18 +590,34 @@ impl Panel {
         {
             let (cw, ch) = (w as i32, h as i32);
             fill_rect(&mut canvas, cw, ch, 0, 0, cw, ch, BAR_BG);
+
+            // Pilule emblème : fond sombre + mini-flamme ambre + séparateur.
+            let ey0 = ((TASKBAR_H as i32 - TB_BTN_H as i32) / 2) as i32;
+            fill_pill(&mut canvas, cw, ch, 4, ey0, TB_EMBLEM_W, TB_BTN_H as i32, TB_BTN_BG);
+            fill_flame(
+                &mut canvas,
+                cw,
+                ch,
+                4 + TB_EMBLEM_W / 2,
+                ey0 + 3,
+                10,
+                10,
+                TB_BORDER_FOCUS,
+            );
+            fill_rect(&mut canvas, cw, ch, TB_X0 - 6, ey0 + 2, 1, TB_BTN_H as i32 - 4, TB_SEP);
+
             for (idx, entry) in self.entries.iter().enumerate() {
-                let x0 = 4 + idx as i32 * TB_BTN_STEP as i32;
-                let y0 = ((TASKBAR_H - TB_BTN_H) / 2) as i32;
+                let x0 = TB_X0 + idx as i32 * TB_BTN_STEP as i32;
+                let y0 = ((TASKBAR_H as i32 - TB_BTN_H as i32) / 2) as i32;
                 let border = if entry.activated {
                     TB_BORDER_FOCUS
                 } else {
                     TB_BORDER_REST
                 };
-                // liseré 1 px + fond intérieur (bouton enfoncé = lancée,
-                // cf. design-system : liseré ambre si focusée).
-                fill_rect(&mut canvas, cw, ch, x0, y0, TB_BTN_W as i32, TB_BTN_H as i32, border);
-                fill_rect(
+                // Pilule : liseré 1 px (ambre si focusée) + fond intérieur,
+                // coins arrondis AA (1d.tb).
+                fill_pill(&mut canvas, cw, ch, x0, y0, TB_BTN_W as i32, TB_BTN_H as i32, border);
+                fill_pill(
                     &mut canvas,
                     cw,
                     ch,
@@ -455,9 +634,16 @@ impl Panel {
                     .take(((TB_BTN_W - 12) / 6) as usize)
                     .map(|c| c.to_ascii_uppercase())
                     .collect();
+                let tx = x0 + (TB_BTN_W as i32 - text_width(&label)) / 2;
                 let ty = y0 + (TB_BTN_H as i32 - 7) / 2;
-                draw_text(&mut canvas, cw, ch, &label, x0 + 6, ty, TEXT_FG);
+                draw_text(&mut canvas, cw, ch, &label, tx, ty, TEXT_FG);
             }
+
+            // Ligne d'état à droite (1d.tb) : heure + date, blanc bitmap.
+            let clock = clock_text();
+            let tx = cw - text_width(&clock) - 4;
+            let ty = (TASKBAR_H as i32 - 7) / 2;
+            draw_text(&mut canvas, cw, ch, &clock, tx, ty, TEXT_FG);
         }
         taskbar
             .wl_surface()
@@ -484,9 +670,10 @@ impl Panel {
 
     /// Clic sur un bouton de la taskbar : restauration (si minimisée)
     /// puis activation — via le protocole foreign-toplevel (1b.c).
+    /// 1d.tb : les pilules démarrent après la pilule emblème (TB_X0).
     fn taskbar_click(&mut self, x: u32) {
-        let idx = x.saturating_sub(4) / TB_BTN_STEP;
-        let within = x.saturating_sub(4) % TB_BTN_STEP < TB_BTN_W;
+        let idx = x.saturating_sub(TB_X0 as u32) / TB_BTN_STEP;
+        let within = x.saturating_sub(TB_X0 as u32) % TB_BTN_STEP < TB_BTN_W;
         if !within {
             eprintln!("{PROG}: [{:.3}] taskbar : clic hors bouton x={x}", uptime());
             return;
