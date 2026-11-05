@@ -22,7 +22,7 @@ use smithay::{
     },
     desktop::space::{Space, SpaceRenderElements},
     output::Output,
-    utils::{Point, Scale, Transform},
+    utils::{Buffer, Point, Scale, Size, Transform},
 };
 
 // Ré-exportations utilisées par les modules voisins (state, session).
@@ -75,24 +75,91 @@ smithay::backend::renderer::element::render_elements! {
 pub struct CursorImage;
 
 impl CursorImage {
-    /// Curseur « flèche » minimal dessiné en mémoire (pas de xcursor) :
-    /// détectable sur screendump malgré son minimalisme.
+    /// Curseur « flèche » dessiné en mémoire (pas de xcursor) :
+    /// silhouette classique complète (pointe en haut-gauche = hotspot,
+    /// encoche de queue), remplissage blanc, contour noir, bords
+    /// anti-aliasés (supersampling 3x3) — lisible sur fond clair du
+    /// bureau comme sur les fenêtres sombres. 24x24, détectable sur
+    /// screendump (QA).
     pub fn arrow_static() -> MemoryRenderBuffer {
-        const W: i32 = 16;
-        const H: i32 = 16;
-        // Argb8888 : contorno noir opaque sur fond transparent.
+        const W: i32 = 24;
+        const H: i32 = 24;
+        /// Silhouette (sens horaire depuis la pointe) — échelle 24 px.
+        const POLY: [(f64, f64); 7] = [
+            (0.0, 0.0),   // pointe (hotspot)
+            (0.0, 17.0),  // bord gauche descendant
+            (4.5, 13.0),  // encoche : remontée
+            (7.5, 20.5),  // queue : descend
+            (10.5, 19.0), // queue : base
+            (7.5, 12.0),  // queue : remonte
+            (13.0, 12.0), // vers la diagonale
+        ];
+
+        // Point dans le polygone (ray casting) — pointe en (0,0) :
+        // les échantillons exactement sur les arêtes gauche/haut
+        // comptent dedans (le contour noir les couvre).
+        fn inside(px: f64, py: f64) -> bool {
+            let mut hit = false;
+            let mut i = 0;
+            let mut j = POLY.len() - 1;
+            while i < POLY.len() {
+                let (xi, yi) = POLY[i];
+                let (xj, yj) = POLY[j];
+                if ((yi > py) != (yj > py))
+                    && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)
+                {
+                    hit = !hit;
+                }
+                j = i;
+                i += 1;
+            }
+            hit
+        }
+
+        // Argb8888 : remplissage blanc opaque, contour noir opaque,
+        // bords adoucis par moyenne de sous-échantillons.
         let mut px = vec![0u8; (4 * (W * H)) as usize];
+        const SS: i32 = 3;
         for y in 0..H {
             for x in 0..W {
                 let i = (4 * (y * W + x)) as usize;
-                let inside = x < (2 + y / 2) && y < (H - 2);
-                let border = x == 0 || x == (1 + y / 2) || y == 0;
-                if inside && border {
-                    px[i] = 0x00;
-                    px[i + 1] = 0x00;
-                    px[i + 2] = 0x00;
-                    px[i + 3] = 0xFF;
+                let mut inside_n = 0;
+                for sy in 0..SS {
+                    for sx in 0..SS {
+                        let sxp = x as f64 + (sx as f64 + 0.5) / SS as f64;
+                        let syp = y as f64 + (sy as f64 + 0.5) / SS as f64;
+                        if inside(sxp, syp) {
+                            inside_n += 1;
+                        }
+                    }
                 }
+                let total = SS * SS;
+                if inside_n == 0 || total == 0 {
+                    continue; // transparent
+                }
+                // Bord = au moins un sous-échantillon dehors (à
+                // l'intérieur du polygone strict, élargi d'1 px pour
+                // tracer le contour tout autour).
+                let mut edge_n = 0;
+                'outer: for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        let sxp = x as f64 + 0.5 + dx as f64;
+                        let syp = y as f64 + 0.5 + dy as f64;
+                        if !inside(sxp, syp) {
+                            edge_n += 1;
+                            break 'outer;
+                        }
+                    }
+                }
+                let (r, g, b, a) = if edge_n > 0 {
+                    (0x00, 0x00, 0x00, 0xFF) // contour noir
+                } else {
+                    (0xFF, 0xFF, 0xFF, 0xFF) // corps blanc
+                };
+                px[i] = b;
+                px[i + 1] = g;
+                px[i + 2] = r;
+                px[i + 3] = a;
             }
         }
         MemoryRenderBuffer::from_slice(
@@ -186,10 +253,126 @@ where
 }
 
 // Hotspot d'un curseur surface (lecture des attributs, comme anvil).
+/// Fond d'écran (1d.fond) : rendu procédural en mémoire — dégradé
+/// sombre chaud + lueur emblème ambre à droite avec silhouette de
+/// flamme (façon `design/Classique.png`). Aucun asset (ADR-018) :
+/// tout est calculé, buffer réutilisé tant que la taille ne change pas.
+fn wallpaper_buffer(size: Size<i32, Buffer>) -> MemoryRenderBuffer {
+    static CACHE: std::sync::Mutex<Option<(Size<i32, Buffer>, MemoryRenderBuffer)>> =
+        std::sync::Mutex::new(None);
+    if let Some((s, buf)) = CACHE.lock().unwrap().as_ref() {
+        if *s == size {
+            return buf.clone();
+        }
+    }
+
+    let (w, h) = (size.w, size.h);
+    let mut px = vec![0u8; (4 * (w * h)) as usize];
+
+    // Dégradé vertical : gris bleuté sombre -> brun chaud.
+    let top = [0.055, 0.055, 0.075_f64];
+    let bot = [0.098, 0.082, 0.063_f64];
+
+    // Lueur emblème : centre à droite (78 % largeur, 42 % hauteur),
+    // rayon 45 % de la largeur, ambre atténué quadratiquement.
+    let (cx, cy) = (0.78 * w as f64, 0.42 * h as f64);
+    let radius = 0.45 * w as f64;
+    let amber = [0.9098, 0.5255, 0.1804_f64];
+
+    // Silhouette de flamme : triangle doux (pointe haute, base large),
+    //Distance minimale aux segments pour la plume du bord.
+    let tri = [
+        (cx, 0.16 * h as f64),
+        (cx - 0.16 * w as f64, 0.88 * h as f64),
+        (cx + 0.16 * w as f64, 0.88 * h as f64),
+    ];
+    fn seg_dist(px: f64, py: f64, a: (f64, f64), b: (f64, f64)) -> f64 {
+        let (ax, ay) = a;
+        let (bx, by) = b;
+        let (vx, vy) = (bx - ax, by - ay);
+        let t = (((px - ax) * vx + (py - ay) * vy)
+            / (vx * vx + vy * vy))
+            .clamp(0.0, 1.0);
+        let (dx, dy) = (px - (ax + t * vx), py - (ay + t * vy));
+        (dx * dx + dy * dy).sqrt()
+    }
+
+    for y in 0..h {
+        let ty = y as f64 / (h - 1).max(1) as f64;
+        for x in 0..w {
+            let i = (4 * (y * w + x)) as usize;
+            let mut r = top[0] + (bot[0] - top[0]) * ty;
+            let mut g = top[1] + (bot[1] - top[1]) * ty;
+            let mut b = top[2] + (bot[2] - top[2]) * ty;
+
+            // Lueur ambre.
+            let dx = x as f64 - cx;
+            let dy = y as f64 - cy;
+            let d = (dx * dx + dy * dy).sqrt() / radius;
+            if d < 1.0 {
+                let a = 0.26 * (1.0 - d) * (1.0 - d);
+                r += amber[0] * a;
+                g += amber[1] * a;
+                b += amber[2] * a;
+            }
+
+            // Flamme : silhouette SOMBRE sur la lueur (façon mockup),
+            // bord adouci sur 18 px — assombrit jusqu'à 55 %.
+            let fx = x as f64;
+            let fy = y as f64 + 0.5;
+            let d_edge = seg_dist(fx, fy, tri[0], tri[1])
+                .min(seg_dist(fx, fy, tri[1], tri[2]))
+                .min(seg_dist(fx, fy, tri[2], tri[0]));
+            // Dedans si le point est du même côté des trois arêtes.
+            let mut inside = true;
+            for k in 0..3 {
+                let (ax, ay) = tri[k];
+                let (bx, by) = tri[(k + 1) % 3];
+                let (cxx, cyy) = tri[(k + 2) % 3];
+                let side_p = (by - ay) * (fx - ax) - (bx - ax) * (fy - ay);
+                let side_c = (by - ay) * (cxx - ax) - (bx - ax) * (cyy - ay);
+                if side_p * side_c <= 0.0 {
+                    inside = false;
+                    break;
+                }
+            }
+            let s = if !inside {
+                0.0
+            } else if d_edge < 18.0 {
+                d_edge / 18.0
+            } else {
+                1.0
+            };
+            let dark = 0.55 * s;
+            r *= 1.0 - dark;
+            g *= 1.0 - dark;
+            b *= 1.0 - dark;
+
+            px[i] = (b * 255.0).round() as u8;
+            px[i + 1] = (g * 255.0).round() as u8;
+            px[i + 2] = (r * 255.0).round() as u8;
+            px[i + 3] = 0xFF;
+        }
+    }
+
+    let buf = MemoryRenderBuffer::from_slice(
+        &px,
+        Fourcc::Argb8888,
+        size,
+        1,
+        Transform::Normal,
+        None,
+    );
+    *CACHE.lock().unwrap() = Some((size, buf.clone()));
+    buf
+}
+
 /// Assemble les éléments de rendu d'une sortie : éléments personnalisés
 /// (curseur), puis layers Background/Bottom, fenêtres de l'espace, puis
 /// layers Top/Overlay (panneaux au-dessus — modèle anvil output_elements,
 /// sans fullscreen ni preview). v0.6 étape 1 : rendu layer-shell.
+/// 1d.fond : le fond d'écran est poussé EN DERNIER (l'ordre du vec est
+/// « premier = dessus » — anvil rend son curseur en tête).
 pub fn output_elements<R>(
     output: &Output,
     space: &Space<crate::element::WindowElement>,
@@ -200,7 +383,7 @@ pub fn output_elements<R>(
     [f32; 4],
 ) where
     R: Renderer + ImportAll + ImportMem,
-    R::TextureId: Texture + Clone + 'static,
+    R::TextureId: Texture + Clone + Send + 'static,
 {
     let mut out: Vec<OutputRenderElements<R, crate::element::WindowRenderElement<R>>> =
         custom_elements
@@ -264,6 +447,27 @@ pub fn output_elements<R>(
                         .map(|e| OutputRenderElements::Window(Wrap::from(e))),
                 );
             }
+        }
+    }
+
+    // fond d'écran (1d.fond) : DERNIER élément = dessous de tout.
+    {
+        let phys = output
+            .current_mode()
+            .map(|m| smithay::output::Mode { size: m.size, refresh: m.refresh })
+            .unwrap_or_else(|| smithay::output::Mode { size: (1280, 800).into(), refresh: 60_000 });
+        let buf = wallpaper_buffer(Size::<i32, Buffer>::from((phys.size.w, phys.size.h)));
+        if let Ok(elem) = MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            Point::<f64, smithay::utils::Physical>::from((0.0, 0.0)),
+            &buf,
+            None,
+            None,
+            None,
+            smithay::backend::renderer::element::Kind::Unspecified,
+        ) {
+            let elem: crate::element::WindowRenderElement<R> = elem.into();
+            out.push(OutputRenderElements::Window(Wrap::from(elem)));
         }
     }
 

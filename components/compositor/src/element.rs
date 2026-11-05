@@ -326,6 +326,7 @@ render_elements!(
     pub WindowRenderElement<R> where R: ImportAll + ImportMem;
     Window=WaylandSurfaceRenderElement<R>,
     Decoration=SolidColorRenderElement,
+    Memory=smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement<R>,
 );
 
 impl<R: Renderer> std::fmt::Debug for WindowRenderElement<R> {
@@ -333,6 +334,7 @@ impl<R: Renderer> std::fmt::Debug for WindowRenderElement<R> {
         match self {
             Self::Window(arg0) => f.debug_tuple("Window").field(arg0).finish(),
             Self::Decoration(arg0) => f.debug_tuple("Decoration").field(arg0).finish(),
+            Self::Memory(arg0) => f.debug_tuple("Memory").field(arg0).finish(),
             Self::_GenericCatcher(arg0) => f.debug_tuple("_GenericCatcher").field(arg0).finish(),
         }
     }
