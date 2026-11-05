@@ -23,7 +23,7 @@ use smithay::{
         OutputPresentationFeedback,
     },
     desktop::{
-        layer_map_for_output, PopupManager, Space, Window, WindowSurfaceType,
+        layer_map_for_output, PopupManager, Space, WindowSurfaceType,
     },
     input::{Seat, SeatState},
     output::Output,
@@ -52,8 +52,11 @@ use smithay::{
 
 use crate::session::UdevData;
 
-/// Type du contenu de l'espace : fenêtres xdg (v0.4).
-pub type SpaceWindow = Space<Window>;
+/// Type du contenu de l'espace : fenêtres enveloppées avec
+/// décorations serveur (jalon v0.6 étape 1b.b — modèle anvil
+/// WindowElement). Point de changement unique : tout le compositor
+/// passe par cet alias.
+pub type SpaceWindow = Space<crate::element::WindowElement>;
 
 /// Client data : l'état par client du compositor.
 #[derive(Default)]
@@ -278,9 +281,11 @@ impl Yaor {
         self.backend_data.as_ref().unwrap().session.seat().clone()
     }
 
-    /// Surface sous le pointeur : l'élément le plus haut (xdg_popup
-    /// inclus), avec sa position absolue en logique f64 (convention
-    /// smallvil pour le focus pointeur).
+    /// Surface (ou décoration) sous le pointeur : l'élément le plus
+    /// haut (xdg_popup inclus), avec sa position absolue en logique
+    /// f64 (convention smallvil pour le focus pointeur). Jalon 1b.b :
+    /// le survol de la barre de titre renvoie la cible décoration
+    /// [`crate::focus::FocusTarget::Ssd`] (boutons + grab move).
     ///
     /// Ordre de superposition (v0.6 étape 1) : layers Overlay/Top
     /// au-dessus des fenêtres (panneaux, docks), puis fenêtres de
@@ -291,21 +296,22 @@ impl Yaor {
     pub fn surface_under(
         &self,
         pos: Point<f64, Logical>,
-    ) -> Option<(WlSurface, Point<f64, Logical>)> {
+    ) -> Option<(crate::focus::FocusTarget, Point<f64, Logical>)> {
         // 1) couches hautes (panneaux) — au-dessus des fenêtres
         if let Some(found) = self.layer_under(pos, &[WlrLayer::Overlay, WlrLayer::Top]) {
-            return Some(found);
+            return Some((crate::focus::FocusTarget::Wl(found.0), found.1));
         }
-        // 2) fenêtres de l'espace
+        // 2) fenêtres de l'espace (décorations incluses — 1b.b)
         if let Some(found) = self.space.element_under(pos).and_then(|(window, location)| {
             window
                 .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
-                .map(|(s, p)| (s, (p + location).to_f64()))
+                .map(|(t, p)| (t, (p + location).to_f64()))
         }) {
             return Some(found);
         }
         // 3) couches basses (fond, décor éventuel)
         self.layer_under(pos, &[WlrLayer::Bottom, WlrLayer::Background])
+            .map(|(s, p)| (crate::focus::FocusTarget::Wl(s), p))
     }
 
     /// Recherche d'une surface layer-shell sous le pointeur, dans les

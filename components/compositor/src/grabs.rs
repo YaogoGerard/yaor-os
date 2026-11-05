@@ -2,9 +2,8 @@
 //
 // Adapté de smallvil/src/grabs (licence MIT © Smithay contributors).
 
-use crate::state::Yaor;
+use crate::{element::WindowElement, state::Yaor};
 use smithay::{
-    desktop::Window,
     input::pointer::{
         AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
         GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
@@ -24,7 +23,7 @@ use std::cell::RefCell;
 /// position initiale près.
 pub struct MoveSurfaceGrab {
     pub start_data: PointerGrabStartData<Yaor>,
-    pub window: Window,
+    pub window: WindowElement,
     pub initial_window_location: Point<i32, Logical>,
 }
 
@@ -33,7 +32,7 @@ impl PointerGrab<Yaor> for MoveSurfaceGrab {
         &mut self,
         data: &mut Yaor,
         handle: &mut PointerInnerHandle<'_, Yaor>,
-        _focus: Option<(WlSurface, Point<f64, Logical>)>,
+        _focus: Option<(crate::focus::FocusTarget, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         // Pendant un grab, aucun client n'a le focus du pointeur.
@@ -49,7 +48,7 @@ impl PointerGrab<Yaor> for MoveSurfaceGrab {
         &mut self,
         data: &mut Yaor,
         handle: &mut PointerInnerHandle<'_, Yaor>,
-        focus: Option<(WlSurface, Point<f64, Logical>)>,
+        focus: Option<(crate::focus::FocusTarget, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);
@@ -185,7 +184,7 @@ impl From<xdg_toplevel::ResizeEdge> for ResizeEdge {
 /// Grab « redimensionner la fenêtre » depuis un bord (modèle smallvil).
 pub struct ResizeSurfaceGrab {
     start_data: PointerGrabStartData<Yaor>,
-    window: Window,
+    window: WindowElement,
     edges: ResizeEdge,
     initial_rect: Rectangle<i32, Logical>,
     last_window_size: Size<i32, Logical>,
@@ -194,7 +193,7 @@ pub struct ResizeSurfaceGrab {
 impl ResizeSurfaceGrab {
     pub fn start(
         start_data: PointerGrabStartData<Yaor>,
-        window: Window,
+        window: WindowElement,
         edges: ResizeEdge,
         initial_window_rect: Rectangle<i32, Logical>,
     ) -> Self {
@@ -219,7 +218,7 @@ impl PointerGrab<Yaor> for ResizeSurfaceGrab {
         &mut self,
         data: &mut Yaor,
         handle: &mut PointerInnerHandle<'_, Yaor>,
-        _focus: Option<(WlSurface, Point<f64, Logical>)>,
+        _focus: Option<(crate::focus::FocusTarget, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         handle.motion(data, None, event);
@@ -274,7 +273,7 @@ impl PointerGrab<Yaor> for ResizeSurfaceGrab {
         &mut self,
         data: &mut Yaor,
         handle: &mut PointerInnerHandle<'_, Yaor>,
-        focus: Option<(WlSurface, Point<f64, Logical>)>,
+        focus: Option<(crate::focus::FocusTarget, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);
@@ -439,7 +438,7 @@ impl ResizeSurfaceState {
 
 /// À appeler sur commit de surface (modèle smallvil handle_commit).
 pub fn handle_commit(
-    space: &mut smithay::desktop::Space<Window>,
+    space: &mut crate::state::SpaceWindow,
     surface: &WlSurface,
 ) -> Option<()> {
     // fenêtres xdg uniquement — les fenêtres X11 n'ont pas de toplevel
@@ -455,6 +454,11 @@ pub fn handle_commit(
 
     let mut window_loc = space.element_location(&window)?;
     let geometry = window.geometry();
+    // NB (1b.b) : en flottant avec SSD, element_location est l'ORIGINE
+    // de l'élément (barre de titre incluse) — le recalage TOP-LEFT
+    // ci-dessous raisonne en géométrie de surface ; l'écart vaut alors
+    // HEADER_H. Les QA ne redimensionnent que par le coin bas-droit
+    // (branche sans recalage) : cas limite laissé tel quel.
 
     let new_loc: Point<Option<i32>, Logical> = ResizeSurfaceState::with(surface, |state| {
         state

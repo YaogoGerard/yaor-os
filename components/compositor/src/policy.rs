@@ -24,16 +24,14 @@
 // affectations viennent de `desktop.toml` (rebindables — REQ-SW-015).
 
 use smithay::{
-    desktop::Window,
     input::keyboard::{Keysym, ModifiersState},
     output::Output,
     utils::{IsAlive, Logical, Point, Rectangle, Size},
-    wayland::seat::WaylandFocus,
 };
 
 use yaor_config::LayoutMode;
 
-use crate::state::Yaor;
+use crate::{element::WindowElement, state::Yaor};
 
 // ---------------------------------------------------------------------------
 // État du layout (jalon v0.5)
@@ -46,13 +44,13 @@ use crate::state::Yaor;
 pub struct LayoutState {
     /// Fenêtres engagées dans la disposition automatique : l'index 0
     /// est le maître, les suivantes la pile.
-    pub tiled: Vec<Window>,
+    pub tiled: Vec<WindowElement>,
     /// Fenêtres sorties du tiling (grab interactif) : géométrie figée.
-    pub floating: Vec<Window>,
+    pub floating: Vec<WindowElement>,
     /// Fenêtres minimisées : (fenêtre, position de restauration).
     /// Sorties du Space (unmap) — invisibles et intouchables, la
     /// taskbar (étape 1b.c) ou Mod+m les restaurent.
-    pub minimized: Vec<(Window, i32, i32)>,
+    pub minimized: Vec<(WindowElement, i32, i32)>,
 }
 
 /// Décalage en cascade d'une nouvelle fenêtre (v0.4).
@@ -187,7 +185,7 @@ fn output_under(state: &Yaor) -> Option<&Output> {
 /// cascade, la liste n'influence pas le placement (v0.4 inchangé).
 /// En flottant (v0.6 étape 1b), aucune disposition automatique : la
 /// fenêtre rejoint la liste flottante directement.
-pub fn register(state: &mut Yaor, window: &Window) {
+pub fn register(state: &mut Yaor, window: &WindowElement) {
     if crate::config::get().layout.mode == LayoutMode::Floating {
         state.layout.floating.push(window.clone());
         tracing::debug!("layout : fenêtre flottante recensée");
@@ -200,7 +198,7 @@ pub fn register(state: &mut Yaor, window: &Window) {
 /// Sort une fenêtre du tiling : déplacée/redimensionnée interactivement
 /// (grab move/resize), elle devient flottante et conserve sa géométrie
 /// après relâchement (le scénario QA `t-yaor-comp-wm`).
-pub fn mark_floating(state: &mut Yaor, window: &Window) {
+pub fn mark_floating(state: &mut Yaor, window: &WindowElement) {
     state.layout.tiled.retain(|w| !same_window(w, window));
     state.layout.floating.retain(|w| !same_window(w, window));
     state.layout.floating.push(window.clone());
@@ -258,7 +256,9 @@ fn minimize_toggle(state: &mut Yaor) {
 
 /// Minimise une fenêtre : sortie du Space, position mémorisée,
 /// focus au sommet de pile flottante restant (ou libéré).
-fn minimize_window(state: &mut Yaor, window: &Window) {
+/// Public : aussi appelée par le bouton minimiser des décorations
+/// serveur (jalon 1b.b).
+pub fn minimize_window(state: &mut Yaor, window: &WindowElement) {
     let loc = state
         .space
         .element_geometry(window)
@@ -295,8 +295,12 @@ fn minimize_window(state: &mut Yaor, window: &Window) {
                     .expect("fenêtre flottante wayland sans surface"),
             );
             keyboard.set_focus(state, Some(focus), serial);
+            crate::element::update_focused_decoration(state, Some(&w));
         }
-        None => keyboard.set_focus(state, None::<crate::focus::FocusTarget>, serial),
+        None => {
+            keyboard.set_focus(state, None::<crate::focus::FocusTarget>, serial);
+            crate::element::update_focused_decoration(state, None);
+        }
     }
 }
 
@@ -317,6 +321,7 @@ fn restore_minimized(state: &mut Yaor, idx: usize) {
             .unwrap()
             .set_focus(state, Some(focus), serial);
     }
+    crate::element::update_focused_decoration(state, Some(&window));
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +337,9 @@ pub fn recompute(state: &mut Yaor) {
     let mode = crate::config::get().layout.mode;
     if mode == LayoutMode::Cascade {
         // v0.4 exact : no-op strict (aucune régression permise).
+        // Purge des décorations si le mode vient du flottant
+        // (rechargement) : set_ssd(false) est un no-op sinon.
+        state.space.elements().for_each(|w| w.set_ssd(false));
         return;
     }
     if mode == LayoutMode::Floating {
@@ -339,10 +347,11 @@ pub fn recompute(state: &mut Yaor) {
         // les positions appartiennent aux grabs et à l'utilisateur.
         // Purge des morts ; si le mode vient d'être permuté depuis le
         // tiling (rechargement), les fenêtres tuilées sont libérées
-        // SUR PLACE (géométrie conservée).
+        // SUR PLACE (géométrie conservée). Jalon 1b.b : tout élément
+        // flottant porte ses décorations serveur.
         state.space.refresh();
-        state.layout.tiled.retain(Window::alive);
-        state.layout.floating.retain(Window::alive);
+        state.layout.tiled.retain(IsAlive::alive);
+        state.layout.floating.retain(IsAlive::alive);
         state.layout.minimized.retain(|(w, _, _)| w.alive());
         let freed = state.layout.tiled.drain(..).collect::<Vec<_>>();
         if !freed.is_empty() {
@@ -352,13 +361,15 @@ pub fn recompute(state: &mut Yaor) {
             );
             state.layout.floating.extend(freed);
         }
+        state.space.elements().for_each(|w| w.set_ssd(true));
         return;
     }
 
     // purge des fenêtres mortes (aligné sur Space::refresh)
     state.space.refresh();
-    state.layout.tiled.retain(Window::alive);
-    state.layout.floating.retain(Window::alive);
+    state.layout.tiled.retain(IsAlive::alive);
+    state.layout.floating.retain(IsAlive::alive);
+    state.space.elements().for_each(|w| w.set_ssd(false));
 
     // adoption : toute fenêtre non recensée rejoint le tiling (mode
     // permuté après coup au rechargement de configuration)
@@ -374,7 +385,7 @@ pub fn recompute(state: &mut Yaor) {
     let outputs = outputs_of(state);
 
     for (output, geo) in &outputs {
-        let group: Vec<Window> = tiled
+        let group: Vec<WindowElement> = tiled
             .iter()
             .filter(|w| window_output_of(state, w, &outputs).as_ref() == Some(output))
             .cloned()
@@ -406,7 +417,7 @@ fn outputs_of(state: &mut Yaor) -> Vec<(Output, Rectangle<i32, Logical>)> {
 /// sa géométrie ; sinon (client pas encore commité) la première sortie.
 fn window_output_of(
     state: &Yaor,
-    window: &Window,
+    window: &WindowElement,
     outputs: &[(Output, Rectangle<i32, Logical>)],
 ) -> Option<Output> {
     let geo = state.space.element_geometry(window)?;
@@ -426,7 +437,7 @@ pub fn fixup_positions(state: &mut Yaor) {
 
 /// Dispose un groupe de fenêtres d'une sortie : maître à gauche, pile
 /// divisée verticalement à droite, gaps issus de la configuration.
-fn tile_group(state: &mut Yaor, geo: Rectangle<i32, Logical>, windows: &[Window]) {
+fn tile_group(state: &mut Yaor, geo: Rectangle<i32, Logical>, windows: &[WindowElement]) {
     let cfg = crate::config::get();
     let gaps = cfg.layout.gaps as i32;
     let n = windows.len();
@@ -753,10 +764,11 @@ fn focus_tiled(state: &mut Yaor, idx: usize) {
             .expect("fenêtre tiling wayland sans surface"),
     );
     state.seat.get_keyboard().unwrap().set_focus(state, Some(focus), serial);
+    crate::element::update_focused_decoration(state, Some(&window));
 }
 
-/// Fenêtre focusée (n'importe laquelle), conversion FocusTarget → Window.
-fn focused_window(state: &Yaor) -> Option<Window> {
+/// Fenêtre focusée (n'importe laquelle), conversion FocusTarget → élément.
+fn focused_window(state: &Yaor) -> Option<WindowElement> {
     let focus = state.seat.get_keyboard()?.current_focus()?;
     for w in state.space.elements().cloned().collect::<Vec<_>>() {
         let matched = if let crate::focus::FocusTarget::Wl(ws) = &focus {
@@ -781,7 +793,7 @@ fn focused_tiled_index(state: &Yaor) -> Option<usize> {
 
 /// Deux mêmes fenêtres (surface X11 pour X ; wl_surface sinon —
 /// comparaison d'identité d'objet wayland).
-fn same_window(a: &Window, b: &Window) -> bool {
+fn same_window(a: &WindowElement, b: &WindowElement) -> bool {
     if let (Some(x1), Some(x2)) = (a.x11_surface(), b.x11_surface()) {
         return x1 == x2;
     }

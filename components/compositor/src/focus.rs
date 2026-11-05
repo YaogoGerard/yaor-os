@@ -30,9 +30,13 @@ use smithay::{
     xwayland::X11Surface,
 };
 
-use crate::state::Yaor;
+use crate::{
+    element::SSD,
+    state::Yaor,
+};
 
-/// Cible de focus clavier : fenêtre Wayland ou fenêtre X11.
+/// Cible de focus : fenêtre Wayland, fenêtre X11 ou décoration
+/// serveur (barre de titre — pointeur uniquement, jalon 1b.b).
 #[derive(Debug, Clone, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum FocusTarget {
@@ -41,6 +45,9 @@ pub enum FocusTarget {
     Wl(WlSurface),
     /// Fenêtre X11 : focus délégué à Xwayland (traduit en focus X).
     X11(X11Surface),
+    /// Décorations serveur : barre de titre d'une fenêtre (survol et
+    /// clic — boutons, grab de déplacement). Jamais focusée clavier.
+    Ssd(SSD),
 }
 
 impl IsAlive for FocusTarget {
@@ -48,6 +55,7 @@ impl IsAlive for FocusTarget {
         match self {
             FocusTarget::Wl(w) => w.alive(),
             FocusTarget::X11(w) => w.alive(),
+            FocusTarget::Ssd(w) => w.alive(),
         }
     }
 }
@@ -57,6 +65,9 @@ impl WaylandFocus for FocusTarget {
         match self {
             FocusTarget::Wl(w) => w.wl_surface(),
             FocusTarget::X11(w) => w.wl_surface().map(Cow::Owned),
+            // la décoration n'est jamais focusée clavier : pas de
+            // surface propre (même modèle anvil PointerFocusTarget).
+            FocusTarget::Ssd(_) => None,
         }
     }
 
@@ -64,6 +75,7 @@ impl WaylandFocus for FocusTarget {
         match self {
             FocusTarget::Wl(w) => w.same_client_as(object_id),
             FocusTarget::X11(w) => w.same_client_as(object_id),
+            FocusTarget::Ssd(w) => w.same_client_as(object_id),
         }
     }
 }
@@ -79,6 +91,8 @@ impl KeyboardTarget<Yaor> for FocusTarget {
         match self {
             FocusTarget::Wl(w) => KeyboardTarget::enter(w, seat, data, keys, serial),
             FocusTarget::X11(w) => KeyboardTarget::enter(w, seat, data, keys, serial),
+            // la décoration n'est jamais focusée clavier (no-op)
+            FocusTarget::Ssd(_) => {}
         }
     }
 
@@ -86,6 +100,7 @@ impl KeyboardTarget<Yaor> for FocusTarget {
         match self {
             FocusTarget::Wl(w) => KeyboardTarget::leave(w, seat, data, serial),
             FocusTarget::X11(w) => KeyboardTarget::leave(w, seat, data, serial),
+            FocusTarget::Ssd(_) => {}
         }
     }
 
@@ -101,6 +116,7 @@ impl KeyboardTarget<Yaor> for FocusTarget {
         match self {
             FocusTarget::Wl(w) => KeyboardTarget::key(w, seat, data, key, state, serial, time),
             FocusTarget::X11(w) => KeyboardTarget::key(w, seat, data, key, state, serial, time),
+            FocusTarget::Ssd(_) => {}
         }
     }
 
@@ -114,6 +130,7 @@ impl KeyboardTarget<Yaor> for FocusTarget {
         match self {
             FocusTarget::Wl(w) => KeyboardTarget::modifiers(w, seat, data, modifiers, serial),
             FocusTarget::X11(w) => KeyboardTarget::modifiers(w, seat, data, modifiers, serial),
+            FocusTarget::Ssd(_) => {}
         }
     }
 }
@@ -123,6 +140,7 @@ impl PointerTarget<Yaor> for FocusTarget {
         match self {
             FocusTarget::Wl(w) => PointerTarget::enter(w, seat, data, event),
             FocusTarget::X11(w) => PointerTarget::enter(w, seat, data, event),
+            FocusTarget::Ssd(w) => PointerTarget::enter(w, seat, data, event),
         }
     }
 
@@ -130,6 +148,7 @@ impl PointerTarget<Yaor> for FocusTarget {
         match self {
             FocusTarget::Wl(w) => PointerTarget::motion(w, seat, data, event),
             FocusTarget::X11(w) => PointerTarget::motion(w, seat, data, event),
+            FocusTarget::Ssd(w) => PointerTarget::motion(w, seat, data, event),
         }
     }
 
@@ -142,6 +161,7 @@ impl PointerTarget<Yaor> for FocusTarget {
         match self {
             FocusTarget::Wl(w) => PointerTarget::relative_motion(w, seat, data, event),
             FocusTarget::X11(w) => PointerTarget::relative_motion(w, seat, data, event),
+            FocusTarget::Ssd(w) => PointerTarget::relative_motion(w, seat, data, event),
         }
     }
 
@@ -149,6 +169,7 @@ impl PointerTarget<Yaor> for FocusTarget {
         match self {
             FocusTarget::Wl(w) => PointerTarget::button(w, seat, data, event),
             FocusTarget::X11(w) => PointerTarget::button(w, seat, data, event),
+            FocusTarget::Ssd(w) => PointerTarget::button(w, seat, data, event),
         }
     }
 
@@ -156,6 +177,7 @@ impl PointerTarget<Yaor> for FocusTarget {
         match self {
             FocusTarget::Wl(w) => PointerTarget::axis(w, seat, data, frame),
             FocusTarget::X11(w) => PointerTarget::axis(w, seat, data, frame),
+            FocusTarget::Ssd(w) => PointerTarget::axis(w, seat, data, frame),
         }
     }
 
@@ -163,6 +185,7 @@ impl PointerTarget<Yaor> for FocusTarget {
         match self {
             FocusTarget::Wl(w) => PointerTarget::frame(w, seat, data),
             FocusTarget::X11(w) => PointerTarget::frame(w, seat, data),
+            FocusTarget::Ssd(w) => PointerTarget::frame(w, seat, data),
         }
     }
 
@@ -170,6 +193,7 @@ impl PointerTarget<Yaor> for FocusTarget {
         match self {
             FocusTarget::Wl(w) => PointerTarget::leave(w, seat, data, serial, time),
             FocusTarget::X11(w) => PointerTarget::leave(w, seat, data, serial, time),
+            FocusTarget::Ssd(w) => PointerTarget::leave(w, seat, data, serial, time),
         }
     }
 

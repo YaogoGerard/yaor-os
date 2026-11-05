@@ -195,6 +195,10 @@ impl XdgShellHandler for Yaor {
         // Démontre aussi la gestion de la taille à chaque nouvelle fenêtre
         // (QA : deux fenêtres 640x480 simultanées).
         surface.with_pending_state(|state| state.size = Some((640, 480).into()));
+        // Enveloppe + décorations serveur en flottant (jalon 1b.b) :
+        // l'élément porte sa barre de titre dans l'espace.
+        let window = crate::element::WindowElement(window);
+        window.set_ssd(crate::config::get().layout.mode == yaor_config::LayoutMode::Floating);
         let position = crate::policy::next_window_location(self);
         // Recensement tiling (v0.5) avant la pose dans l'espace : la
         // boucle re-tile à la frame suivante selon la configuration.
@@ -321,7 +325,7 @@ fn check_grab(
     let start_data = pointer.grab_start_data()?;
 
     let (focus, _) = start_data.focus.as_ref()?;
-    if !focus.id().same_client_as(&surface.id()) {
+    if !focus.same_client_as(&surface.id()) {
         return None;
     }
 
@@ -331,7 +335,7 @@ fn check_grab(
 /// Commit d'une surface shell : configure initiale, popups, resize.
 pub fn shell_commit(
     popups: &mut PopupManager,
-    space: &mut smithay::desktop::Space<Window>,
+    space: &mut crate::state::SpaceWindow,
     surface: &WlSurface,
 ) {
     // commits de toplevel — les fenêtres X11 n'ont pas de toplevel xdg
@@ -408,7 +412,7 @@ impl Yaor {
 
 impl SeatHandler for Yaor {
     type KeyboardFocus = crate::focus::FocusTarget;
-    type PointerFocus = WlSurface;
+    type PointerFocus = crate::focus::FocusTarget;
     type TouchFocus = WlSurface;
 
     fn seat_state(&mut self) -> &mut SeatState<Yaor> {

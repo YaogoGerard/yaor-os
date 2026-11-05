@@ -6,6 +6,7 @@
 // (docs/04-design-lld/compositor/compositor.md).
 
 mod config;
+mod element;
 mod focus;
 mod grabs;
 mod input;
@@ -14,6 +15,7 @@ mod policy;
 mod render;
 mod session;
 mod shell;
+mod ssd;
 mod state;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

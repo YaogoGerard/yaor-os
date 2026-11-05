@@ -17,7 +17,6 @@ use smithay::{
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
     utils::{Point, Rectangle, SERIAL_COUNTER},
-    wayland::seat::WaylandFocus,
 };
 
 use crate::state::Yaor;
@@ -151,6 +150,9 @@ pub fn process_input_event<I: InputBackend>(
                     .map(|(w, l)| (w.clone(), l))
                 {
                     data.space.raise_element(&window, true);
+                    // Décorations (1b.b) : la fenêtre cliquée porte la
+                    // bordure de focus accent ; les autres au repos.
+                    crate::element::update_focused_decoration(data, Some(&window));
                     // Fenêtre X11 : on demande à Xwayland de la remonter
                     // côté X aussi (sinon stacking du serveur diverge).
                     let focus = if let Some(surface) = window.x11_surface().cloned() {
@@ -183,6 +185,8 @@ pub fn process_input_event<I: InputBackend>(
                         Option::<crate::focus::FocusTarget>::None,
                         serial,
                     );
+                    // clic sur le bureau : aucune fenêtre décorée focusée
+                    crate::element::update_focused_decoration(data, None);
                 }
             }
 

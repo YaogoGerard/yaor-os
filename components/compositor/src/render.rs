@@ -41,10 +41,12 @@ pub type UdevRenderer<'a> = MultiRenderer<
 >;
 
 /// Type concret d'élément rendu d'une sortie udev (assemblage du
-/// generic OutputRenderElements avec le rendu udev et la surface
-/// fenêtre nue).
-pub type UdevOutputElements<'a> =
-    OutputRenderElements<UdevRenderer<'a>, WaylandSurfaceRenderElement<UdevRenderer<'a>>>;
+/// generic OutputRenderElements avec le rendu udev et l'élément
+/// fenêtre ENVELOPPÉ — surface + décorations serveur, jalon 1b.b).
+pub type UdevOutputElements<'a> = OutputRenderElements<
+    UdevRenderer<'a>,
+    crate::element::WindowRenderElement<UdevRenderer<'a>>,
+>;
 
 // Élément de rendu du pointeur (mémoire ou surface cliente — modélisé
 // comme anvil PointerRenderElement).
@@ -190,17 +192,17 @@ where
 /// sans fullscreen ni preview). v0.6 étape 1 : rendu layer-shell.
 pub fn output_elements<R>(
     output: &Output,
-    space: &Space<smithay::desktop::Window>,
+    space: &Space<crate::element::WindowElement>,
     custom_elements: Vec<CustomRenderElements<R>>,
     renderer: &mut R,
 ) -> (
-    Vec<OutputRenderElements<R, WaylandSurfaceRenderElement<R>>>,
+    Vec<OutputRenderElements<R, crate::element::WindowRenderElement<R>>>,
     [f32; 4],
 ) where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Texture + Clone + 'static,
 {
-    let mut out: Vec<OutputRenderElements<R, WaylandSurfaceRenderElement<R>>> =
+    let mut out: Vec<OutputRenderElements<R, crate::element::WindowRenderElement<R>>> =
         custom_elements
             .into_iter()
             .map(OutputRenderElements::Custom)
@@ -224,9 +226,11 @@ pub fn output_elements<R>(
                     .to_physical(scale_i);
                 out.extend(
                     layer
-                        .render_elements(renderer, loc, scale, 1.0)
+                        .render_elements::<crate::element::WindowRenderElement<R>>(
+                            renderer, loc, scale, 1.0,
+                        )
                         .into_iter()
-                        .map(OutputRenderElements::Window),
+                        .map(|e| OutputRenderElements::Window(Wrap::from(e))),
                 );
             }
         }
@@ -253,9 +257,11 @@ pub fn output_elements<R>(
                     .to_physical(scale_i);
                 out.extend(
                     layer
-                        .render_elements(renderer, loc, scale, 1.0)
+                        .render_elements::<crate::element::WindowRenderElement<R>>(
+                            renderer, loc, scale, 1.0,
+                        )
                         .into_iter()
-                        .map(OutputRenderElements::Window),
+                        .map(|e| OutputRenderElements::Window(Wrap::from(e))),
                 );
             }
         }
