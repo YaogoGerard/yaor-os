@@ -1,0 +1,16 @@
+# sudoers.yaor-build — accès root NON INTERACTIF limité au pipeline YAOR OS.
+#
+# À installer UNE FOIS :
+#   sudo install -m 0440 scripts/sudoers.yaor-build /etc/sudoers.d/yaor-build
+#
+# Effet : build.sh (lancé en utilisateur normal) peut appeler `sudo -n` sur
+# les deux seules étapes qui l'exigent (04 chroot, 06 ISO) sans demande de
+# mot de passe — l'agent peut donc relancer le build ISO après chaque étape.
+#
+# Limite assumée : ces scripts vivent dans un dépôt accessible en écriture
+# par l'utilisateur, donc toute personne éditant le dépôt obtient un chemin
+# root. Acceptable sur une machine de développement mono-utilisateur ; ne PAS
+# réutiliser tel quel sur une machine multi-utilisateurs.
+
+gerard ALL=(root) NOPASSWD: /home/gerard/Documents/projects/system/yaor-os/scripts/04_chroot_build.sh
+gerard ALL=(root) NOPASSWD: /home/gerard/Documents/projects/system/yaor-os/scripts/06_make_iso.sh

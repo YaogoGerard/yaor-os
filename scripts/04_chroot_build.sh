@@ -1956,6 +1956,27 @@ phase_yaor_components() {
 }
 
 # --- Exécution --------------------------------------------------------------
+# Invalidation auto (v0.6, étape 1d) : si des sources des composants internes
+# (components/) sont plus récentes que le marqueur ch7.yaor-components,
+# retirer ce marqueur ainsi que la cascade aval (ch8.initramfs, ch9.iso) pour
+# que « build.sh --from 04 » reprenne au bon endroit — sans « sudo rm
+# build/stamps/... » à faire à la main avant chaque itération.
+invalidate_stale_components() {
+    local stamp="$STAMP_DIR/ch7.yaor-components"
+    [[ -f "$stamp" ]] || return 0
+    # On ne regarde que les sources (rust/toml/lock/config) ; les cibles de
+    # compilation (components/target, */target) sont exclues : elles changent
+    # à chaque build dev et ne disent rien des sources.
+    local newer
+    newer="$(find "$COMPONENTS_DIR" -type d -name target -prune -o \
+        -type f \( -name '*.rs' -o -name '*.toml' -o -name '*.lock' \) \
+        -newer "$stamp" -print -quit 2>/dev/null || true)"
+    [[ -n "$newer" ]] || return 0
+    log "sources des composants modifiées depuis le dernier build ($newer)"
+    rm -f "$stamp" "$STAMP_DIR/ch8.initramfs" "$STAMP_DIR/ch9.iso"
+    log "marqueurs invalidés : ch7.yaor-components, ch8.initramfs, ch9.iso (cascade)"
+}
+
 run_phase() {
     local p="$1"
     if [[ "$p" == "teardown" ]]; then
@@ -1964,6 +1985,7 @@ run_phase() {
     fi
     local fn="phase_${p//-/_}"
     declare -F "$fn" >/dev/null || die "phase inconnue : $p"
+    [[ "$p" == "yaor-components" ]] && invalidate_stale_components
     if stamp_exists "ch7.$p"; then
         log "phase déjà faite : $p (marqueur ch7.$p)"
         return
