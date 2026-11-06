@@ -43,8 +43,10 @@ fit = "cover"
 path = "/usr/share/yaor/logo.png"
 
 # Thème « ambre sur noir » (1e.theme) — palette canonique du branding.
-# Sections lues dès maintenant ; leur routage à l'exécution (palette SSD
-# et panel, rayon, ombre) relève de l'étape 1e.theme.
+# Couleurs « #RRGGBB » (ou « #RRGGBBAA ») routées par le compositor
+# (décorations, à chaud au SIGHUP) et par le panel (à son démarrage).
+# Une valeur invalide retombe sur la couleur canonique, pas sur du noir.
+# corner_radius : borné 2..24 ; shadow : 0.0 (aucune) à 1.0 (max).
 [theme]
 accent = "#E8862E"
 accent_dark = "#B96A1F"

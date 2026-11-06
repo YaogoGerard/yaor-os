@@ -110,29 +110,82 @@ const TB_BTN_W: u32 = 120;
 const TB_BTN_H: u32 = 16;
 /// Pas d'un bouton à l'autre (120 + 4 px d'espacement).
 const TB_BTN_STEP: u32 = TB_BTN_W + 4;
-const TB_BTN_BG: u32 = 0xFF_1E_1E_26;
-const TB_BORDER_FOCUS: u32 = 0xFF_E8_86_2E;
-const TB_BORDER_REST: u32 = 0xFF_5A_5A_64;
-/// Séparateur vertical emblème | fenêtres.
-const TB_SEP: u32 = 0xFF_2A_2A_33;
 
 /// Apps de démo du menu : supprimées en 1d.menu — les 8 tuiles du
 /// design sont visuelles (décision produit), le lancement sera câblé
 /// pour les apps YAOR internes dans une étape ultérieure.
 
-// Couleurs Argb8888 (0xAARRGGBB — converties en octets BGR/A au
-// rendu). Identité « ambre sur noir » d'après l'emblème du produit
-// (docs/05-ui-ux/branding/yaor-os-amber-emblem.png).
-const BAR_BG: u32 = 0xFF_10_10_14; // noir du panneau
-const BTN_BG: u32 = 0xFF_E8_86_2E; // bouton menu (ambre)
-const BTN_FG: u32 = 0xFF_10_10_14; // texte du bouton (noir)
-const MENU_BG: u32 = 0xFF_10_10_14;
-const BORDER: u32 = 0xFF_B9_6A_1F; // bordure du volet (ambre sombre)
-const TEXT_FG: u32 = 0xFF_F2_E8_DC; // texte clair chaud
-// 1d.menu : teintes du volet (maquette validée).
-const MENU_TILE_BG: u32 = 0xFF_26_26_2E; // tuile sombre / pilule recherche
-const MENU_GRAY: u32 = 0xFF_8A_8A_92; // textes secondaires
-const MENU_SEP: u32 = 0xFF_2A_2A_33; // séparateur
+// ---------------------------------------------------------------------------
+// Thème « ambre sur noir » (1e.theme) : couleurs Argb8888 (0xAARRGGBB,
+// converties en octets BGR/A au rendu) lues une fois au démarrage dans
+// `desktop.toml` ([theme]) — même contrat que le compositor, donc même
+// crate `yaor-config`, aucun thème dupliqué. Une chaîne invalide
+// retombe sur la palette canonique du branding, couleur par couleur.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Theme {
+    panel_bg: u32,
+    accent: u32,
+    accent_dark: u32,
+    button_bg: u32,
+    text_fg: u32,
+    text_gray: u32,
+    separator: u32,
+}
+
+impl Theme {
+    /// Palette canonique (docs/05-ui-ux/branding/) : repli de chaque
+    /// couleur et valeurs d'usine de `default.toml`.
+    const CANONIQUE: Theme = Theme {
+        panel_bg: 0xFF_10_10_14,
+        accent: 0xFF_E8_86_2E,
+        accent_dark: 0xFF_B9_6A_1F,
+        button_bg: 0xFF_26_26_2E,
+        text_fg: 0xFF_F2_E8_DC,
+        text_gray: 0xFF_8A_8A_92,
+        separator: 0xFF_2A_2A_33,
+    };
+
+    fn from_config(t: &yaor_config::ThemeConfig) -> Theme {
+        let d = Theme::CANONIQUE;
+        let c = |s: &str, repli: u32| yaor_config::parse_color(s).unwrap_or(repli);
+        Theme {
+            panel_bg: c(&t.panel_bg, d.panel_bg),
+            accent: c(&t.accent, d.accent),
+            accent_dark: c(&t.accent_dark, d.accent_dark),
+            button_bg: c(&t.button_bg, d.button_bg),
+            text_fg: c(&t.text_fg, d.text_fg),
+            text_gray: c(&t.text_gray, d.text_gray),
+            separator: c(&t.separator, d.separator),
+        }
+    }
+
+    /// Liseré des pilules taskbar au repos : gris secondaire atténué
+    /// (le thème ne porte pas de couleur dédiée).
+    fn rest_border(&self) -> u32 {
+        dim(self.text_gray, 0.62)
+    }
+}
+
+static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+
+/// Thème courant (copie : `Theme` est `Copy`) — palette canonique tant
+/// que [`init_assets`] n'a pas tourné.
+fn th() -> Theme {
+    *THEME.get().unwrap_or(&Theme::CANONIQUE)
+}
+
+/// Atténue les composantes RVB d'une couleur 0xAARRGGBB (alpha
+/// conservé) — dérivation du liseré au repos.
+fn dim(color: u32, factor: f64) -> u32 {
+    let f = factor.clamp(0.0, 1.0);
+    let ch = |shift: u32| {
+        let v = ((color >> shift) & 0xFF) as f64 * f;
+        ((v.round() as u32) & 0xFF) << shift
+    };
+    (color & 0xFF00_0000) | ch(16) | ch(8) | ch(0)
+}
 
 /// Position du bouton menu : le logo 24x24 occupe x=2..26, le bouton
 /// le suit (QA : clic au centre (60,12)).
@@ -343,11 +396,36 @@ fn fill_rect(
 /// le bitmap incorporé de `logo.rs` prend alors le relais.
 static LOGO: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
 
-/// Charge l'emblème de la barre : `logo.path` de `desktop.toml`
-/// (yaor-assets, ré-échantillonné à 24x24), sinon bitmap incorporé.
+/// Charge la configuration du bureau une fois au démarrage : thème
+/// (`[theme]`, 1e.theme) puis emblème (`logo.path`, 1e.logo). Aucun
+/// échec bloquant : chaque élément retombe sur sa valeur canonique.
 /// Journalisé en jetons courts — preuve QA de la source utilisée.
-fn init_logo() {
-    let (cfg, _src) = yaor_config::DesktopConfig::load();
+fn init_assets() {
+    let (cfg, src) = yaor_config::DesktopConfig::load();
+    init_theme(&cfg, src.as_deref());
+    init_logo(&cfg);
+}
+
+/// Thème de l'interface : couleurs résolues une fois (`desktop.toml`
+/// [theme], repli canonique couleur par couleur).
+fn init_theme(cfg: &yaor_config::DesktopConfig, src: Option<&std::path::Path>) {
+    let theme = Theme::from_config(&cfg.theme);
+    let _ = THEME.set(theme);
+    eprintln!(
+        "{PROG}: [{:.3}] thème : accent #{:06X} panel #{:06X} source {}",
+        uptime(),
+        theme.accent & 0x00FF_FFFF,
+        theme.panel_bg & 0x00FF_FFFF,
+        match src {
+            Some(p) => p.display().to_string(),
+            None => "défauts".to_string(),
+        }
+    );
+}
+
+/// Emblème de la barre : `logo.path` de `desktop.toml` (yaor-assets,
+/// ré-échantillonné à 24x24), sinon bitmap incorporé.
+fn init_logo(cfg: &yaor_config::DesktopConfig) {
     if !cfg.logo.path.is_empty() {
         if let Some(img) = yaor_assets::load_image(std::path::Path::new(&cfg.logo.path)) {
             let px = yaor_assets::resize(&img, 24, 24).to_argb8888();
@@ -720,16 +798,16 @@ impl Panel {
             .expect("création du buffer de barre");
         {
             let (cw, ch) = (w as i32, h as i32);
-            fill_rect(&mut canvas, cw, ch, 0, 0, cw, ch, BAR_BG);
+            fill_rect(&mut canvas, cw, ch, 0, 0, cw, ch, th().panel_bg);
             // Logo du produit (emblème ambre 24x24, fond transparent).
             draw_logo(&mut canvas, cw, ch, 2, 0);
-            fill_rect(&mut canvas, cw, ch, BTN_X as i32, 4, BTN_W as i32, 16, BTN_BG);
+            fill_rect(&mut canvas, cw, ch, BTN_X as i32, 4, BTN_W as i32, 16, th().accent);
             let label = "YAOR";
             let tx = BTN_X as i32 + (BTN_W as i32 - text_width(label)) / 2;
-            draw_text(&mut canvas, cw, ch, label, tx, 8, BTN_FG);
+            draw_text(&mut canvas, cw, ch, label, tx, 8, th().panel_bg);
             // Version du produit à droite (ADR-022).
             let vers = format!("YAOR {VERSION}");
-            draw_text(&mut canvas, cw, ch, &vers, cw - text_width(&vers) - 6, 8, TEXT_FG);
+            draw_text(&mut canvas, cw, ch, &vers, cw - text_width(&vers) - 6, 8, th().text_fg);
         }
         self.bar
             .wl_surface()
@@ -753,17 +831,17 @@ impl Panel {
             .expect("création du buffer de menu");
         {
             let (cw, ch) = (w as i32, h as i32);
-            fill_rect(&mut canvas, cw, ch, 0, 0, cw, ch, MENU_BG);
+            fill_rect(&mut canvas, cw, ch, 0, 0, cw, ch, th().panel_bg);
 
             // En-tête : emblème ambre (disque + flamme découpée) +
             // « YAOR » agrandi + « OS » ambre dessous.
-            fill_circle(&mut canvas, cw, ch, 30, 34, 14, BTN_BG);
-            fill_flame(&mut canvas, cw, ch, 30, 24, 16, 20, MENU_BG);
-            draw_text_scaled(&mut canvas, cw, ch, "YAOR", 56, 22, TEXT_FG, 2);
-            draw_text(&mut canvas, cw, ch, "OS", 58, 42, BTN_BG);
+            fill_circle(&mut canvas, cw, ch, 30, 34, 14, th().accent);
+            fill_flame(&mut canvas, cw, ch, 30, 24, 16, 20, th().panel_bg);
+            draw_text_scaled(&mut canvas, cw, ch, "YAOR", 56, 22, th().text_fg, 2);
+            draw_text(&mut canvas, cw, ch, "OS", 58, 42, th().accent);
 
             // Champ de recherche : pilule sombre, texte grisé.
-            fill_rrect(&mut canvas, cw, ch, 16, 62, MENU_W as i32 - 32, 28, 14, MENU_TILE_BG);
+            fill_rrect(&mut canvas, cw, ch, 16, 62, MENU_W as i32 - 32, 28, 14, th().button_bg);
             draw_text(
                 &mut canvas,
                 cw,
@@ -771,20 +849,20 @@ impl Panel {
                 "RECHERCHER UNE APPLICATION...",
                 28,
                 72,
-                MENU_GRAY,
+                th().text_gray,
             );
 
             // Section ÉPINGLÉES + grille 4x2 (tuiles 48 px, 3 styles).
-            draw_text(&mut canvas, cw, ch, "EPINGLES", 16, 104, MENU_GRAY);
+            draw_text(&mut canvas, cw, ch, "EPINGLES", 16, 104, th().text_gray);
             for (idx, (label, sym, style)) in MENU_PINS.iter().enumerate() {
                 let col = (idx % 4) as i32;
                 let row = (idx / 4) as i32;
                 let tx = MENU_GRID_X + col * MENU_TILE_STEP as i32;
                 let ty = MENU_GRID_Y + row * MENU_TILE_PITCH as i32;
                 let (fg, tile_r) = match style {
-                    1 => (MENU_BG, BTN_BG),
-                    2 => (BTN_BG, BORDER),
-                    _ => (TEXT_FG, MENU_TILE_BG),
+                    1 => (th().panel_bg, th().accent),
+                    2 => (th().accent, th().accent_dark),
+                    _ => (th().text_fg, th().button_bg),
                 };
                 fill_rrect(
                     &mut canvas,
@@ -808,7 +886,7 @@ impl Panel {
                         MENU_TILE as i32 - 4,
                         MENU_TILE as i32 - 4,
                         8,
-                        MENU_BG,
+                        th().panel_bg,
                     );
                 }
                 // Glyphe centré (agrandi x2 : lisibilité dans la tuile).
@@ -823,16 +901,16 @@ impl Panel {
                     label,
                     tx + (MENU_TILE as i32 - lw) / 2,
                     ty + MENU_TILE as i32 + 6,
-                    MENU_GRAY,
+                    th().text_gray,
                 );
             }
 
             // Séparateur + rangée utilisateur : avatar + nom, bouton
             // power (anneau + barre verticale).
             let uy = MENU_H as i32 - 52;
-            fill_rect(&mut canvas, cw, ch, 16, uy, MENU_W as i32 - 32, 1, MENU_SEP);
-            fill_circle(&mut canvas, cw, ch, 32, uy + 22, 12, BTN_BG);
-            draw_text(&mut canvas, cw, ch, "UTILISATEUR", 54, uy + 18, TEXT_FG);
+            fill_rect(&mut canvas, cw, ch, 16, uy, MENU_W as i32 - 32, 1, th().separator);
+            fill_circle(&mut canvas, cw, ch, 32, uy + 22, 12, th().accent);
+            draw_text(&mut canvas, cw, ch, "UTILISATEUR", 54, uy + 18, th().text_fg);
             fill_rrect(
                 &mut canvas,
                 cw,
@@ -842,12 +920,12 @@ impl Panel {
                 36,
                 36,
                 10,
-                MENU_TILE_BG,
+                th().button_bg,
             );
             let pcx = MENU_W as i32 - 34;
             let pcy = uy + 24;
-            fill_ring(&mut canvas, cw, ch, pcx, pcy, 7, 2, BTN_BG);
-            fill_rect(&mut canvas, cw, ch, pcx, pcy - 11, 1, 9, BTN_BG);
+            fill_ring(&mut canvas, cw, ch, pcx, pcy, 7, 2, th().accent);
+            fill_rect(&mut canvas, cw, ch, pcx, pcy - 11, 1, 9, th().accent);
         }
         layer
             .wl_surface()
@@ -878,11 +956,11 @@ impl Panel {
             .expect("création du buffer de taskbar");
         {
             let (cw, ch) = (w as i32, h as i32);
-            fill_rect(&mut canvas, cw, ch, 0, 0, cw, ch, BAR_BG);
+            fill_rect(&mut canvas, cw, ch, 0, 0, cw, ch, th().panel_bg);
 
             // Pilule emblème : fond sombre + mini-flamme ambre + séparateur.
             let ey0 = ((TASKBAR_H as i32 - TB_BTN_H as i32) / 2) as i32;
-            fill_pill(&mut canvas, cw, ch, 4, ey0, TB_EMBLEM_W, TB_BTN_H as i32, TB_BTN_BG);
+            fill_pill(&mut canvas, cw, ch, 4, ey0, TB_EMBLEM_W, TB_BTN_H as i32, th().button_bg);
             fill_flame(
                 &mut canvas,
                 cw,
@@ -891,17 +969,17 @@ impl Panel {
                 ey0 + 3,
                 10,
                 10,
-                TB_BORDER_FOCUS,
+                th().accent,
             );
-            fill_rect(&mut canvas, cw, ch, TB_X0 - 6, ey0 + 2, 1, TB_BTN_H as i32 - 4, TB_SEP);
+            fill_rect(&mut canvas, cw, ch, TB_X0 - 6, ey0 + 2, 1, TB_BTN_H as i32 - 4, th().separator);
 
             for (idx, entry) in self.entries.iter().enumerate() {
                 let x0 = TB_X0 + idx as i32 * TB_BTN_STEP as i32;
                 let y0 = ((TASKBAR_H as i32 - TB_BTN_H as i32) / 2) as i32;
                 let border = if entry.activated {
-                    TB_BORDER_FOCUS
+                    th().accent
                 } else {
-                    TB_BORDER_REST
+                    th().rest_border()
                 };
                 // Pilule : liseré 1 px (ambre si focusée) + fond intérieur,
                 // coins arrondis AA (1d.tb).
@@ -914,7 +992,7 @@ impl Panel {
                     y0 + 1,
                     TB_BTN_W as i32 - 2,
                     TB_BTN_H as i32 - 2,
-                    TB_BTN_BG,
+                    th().button_bg,
                 );
                 // titre (capitales — police bitmap), borné au bouton.
                 let label: String = entry
@@ -925,14 +1003,14 @@ impl Panel {
                     .collect();
                 let tx = x0 + (TB_BTN_W as i32 - text_width(&label)) / 2;
                 let ty = y0 + (TB_BTN_H as i32 - 7) / 2;
-                draw_text(&mut canvas, cw, ch, &label, tx, ty, TEXT_FG);
+                draw_text(&mut canvas, cw, ch, &label, tx, ty, th().text_fg);
             }
 
             // Ligne d'état à droite (1d.tb) : heure + date, blanc bitmap.
             let clock = clock_text();
             let tx = cw - text_width(&clock) - 4;
             let ty = (TASKBAR_H as i32 - 7) / 2;
-            draw_text(&mut canvas, cw, ch, &clock, tx, ty, TEXT_FG);
+            draw_text(&mut canvas, cw, ch, &clock, tx, ty, th().text_fg);
         }
         taskbar
             .wl_surface()
@@ -1526,9 +1604,10 @@ fn main() -> std::process::ExitCode {
         }
     }
 
-    // Emblème de la barre (1e.logo) : chargé avant la session — un
-    // décodage PNG unique, la suite du rendu lit le bitmap en mémoire.
-    init_logo();
+    // Thème (1e.theme) et emblème (1e.logo) : chargés avant la session
+    // — une lecture de configuration et un décodage PNG uniques, la
+    // suite du rendu lit la palette et le bitmap en mémoire.
+    init_assets();
 
     let conn = match Connection::connect_to_env() {
         Ok(conn) => conn,
@@ -1659,5 +1738,24 @@ mod tests {
         // Ancrage négatif et à cheval sur le bord droit.
         blit_logo(&mut canvas, 24, 24, -10, 20, &logo);
         assert_eq!(canvas.len(), 24 * 24 * 4);
+    }
+
+    #[test]
+    fn dim_attenue_les_composantes_sans_toucher_l_alpha() {
+        assert_eq!(dim(0xFF8A8A92, 1.0), 0xFF8A8A92);
+        assert_eq!(dim(0xFF8A8A92, 0.5), 0xFF454549);
+        assert_eq!(dim(0xFFFF_FFFF, 0.0), 0xFF000000);
+    }
+
+    #[test]
+    fn theme_replie_couleur_par_couleur() {
+        let cfg = yaor_config::ThemeConfig {
+            accent: "#00AAFF".to_string(),
+            panel_bg: "invalide".to_string(),
+            ..Default::default()
+        };
+        let t = Theme::from_config(&cfg);
+        assert_eq!(t.accent, 0xFF00AAFF, "couleur valide reprise");
+        assert_eq!(t.panel_bg, Theme::CANONIQUE.panel_bg, "repli canonique");
     }
 }

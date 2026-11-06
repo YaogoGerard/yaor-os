@@ -423,7 +423,7 @@ fn wallpaper_buffer(size: Size<i32, Buffer>) -> MemoryRenderBuffer {
     }
     static CACHE: std::sync::Mutex<Vec<Entry>> = std::sync::Mutex::new(Vec::new());
 
-    let wall = crate::config::get().wallpaper;
+    let wall = crate::config::wallpaper();
     let key = (size, wall.path.clone(), wall.fit);
     {
         let cache = CACHE.lock().unwrap();

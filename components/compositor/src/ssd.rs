@@ -33,22 +33,24 @@ use std::cell::{RefCell, RefMut};
 use crate::{element::WindowElement, state::Yaor};
 
 // ---------------------------------------------------------------------------
-// Palette « ambre sur noir » (docs/05-ui-ux/design-system.md)
+// Palette « ambre sur noir » (1e.theme) : les couleurs viennent du
+// thème de `desktop.toml` (crate `yaor-config`, repli canonique couleur
+// par couleur). La palette est relue à chaque RECONSTRUCTION de buffer,
+// et les caches de décoration portent `theme_epoch()` dans leur clé :
+// un SIGHUP change donc couleurs, rayon et ombre sans quitter la
+// session (TEST-CONFIG-001).
 // ---------------------------------------------------------------------------
 
-/// Bordure fenêtre focusée — accent (`#E8862E`).
-const BORDER_FOCUSED_COLOR: [f32; 4] = [0.9098, 0.5255, 0.1804, 1.0];
-/// Bordure fenêtre au repos — accent sombre (`#B96A1F`).
-const BORDER_UNFOCUSED_COLOR: [f32; 4] = [0.7255, 0.4157, 0.1216, 1.0];
-
-// Couleurs u32 (0xAARRGGBB) pour le rendu par pixel (buffers mémoire).
-const BG_U: u32 = 0xFF_10_10_14;
-const BUTTON_U: u32 = 0xFF_26_26_2E;
-const BUTTON_HOVER_U: u32 = 0xFF_3A_3A_44;
-const FOCUS_U: u32 = 0xFF_E8_86_2E;
-const UNFOCUSED_U: u32 = 0xFF_B9_6A_1F;
-/// Glyphes des pastilles (gris clair).
-const GLYPH_U: u32 = 0xFF_C8_C8_CD;
+/// Éclaircit les composantes RVB (alpha conservé) — dérivation du
+/// survol des pastilles, que le thème ne porte pas explicitement.
+fn lighten(color: u32, amount: f64) -> u32 {
+    let a = amount.clamp(0.0, 1.0);
+    let ch = |shift: u32| {
+        let v = ((color >> shift) & 0xFF) as f64;
+        (((v + (255.0 - v) * a).round() as u32) & 0xFF) << shift
+    };
+    (color & 0xFF00_0000) | ch(16) | ch(8) | ch(0)
+}
 
 /// Hauteur de la barre de titre (px logiques).
 pub const HEADER_H: i32 = 28;
@@ -59,8 +61,12 @@ pub const BORDER_W: i32 = 2;
 
 // --- 1d.ssd : coins arrondis, pastilles, ombre ------------------------------
 
-/// Rayon des coins arrondis (px logiques).
-pub(crate) const CORNER_R: i32 = 10;
+/// Rayon des coins arrondis (px logiques), du thème (1e.theme) — borné
+/// dans `config::palette()`. Lu au moment du rendu : géométrie des
+/// anneaux de coins et dessin du header restent cohérents.
+pub(crate) fn corner_r() -> i32 {
+    crate::config::palette().corner_radius
+}
 /// Marge de l'ombre douce autour de la fenêtre.
 pub(crate) const SHADOW_M: i32 = 16;
 /// Diamètre des pastilles de bouton.
@@ -122,7 +128,7 @@ pub struct DecorationState {
     pub header_bar: HeaderBar,
     pub border: Border,
     /// Ombre douce (1d.ssd) : cache (largeur, hauteur totale, focus).
-    pub shadow: Option<((i32, i32, bool), MemoryRenderBuffer)>,
+    pub shadow: Option<((u64, i32, i32, bool), MemoryRenderBuffer)>,
 }
 
 /// Ombre douce (1d.ssd) : halo noir semi-transparent autour de la
@@ -132,7 +138,10 @@ pub(crate) fn shadow_buffer(w: i32, h: i32, focused: bool) -> MemoryRenderBuffer
     let bw = w + 2 * SHADOW_M;
     let bh = h + 2 * SHADOW_M;
     let mut px = vec![0u8; (4 * (bw * bh)) as usize];
-    let amp = if focused { 0.55 } else { 0.40 };
+    // Intensité du thème (1e.theme) : 0.0 = pas d'ombre (dessinée
+    // transparente plutôt que retirée — la géométrie de l'élément
+    // garde sa marge constante).
+    let amp = if focused { 0.55 } else { 0.40 } * crate::config::palette().shadow;
     let sigma2 = 2.0 * 9.0 * 9.0;
     for y in 0..bh {
         for x in 0..bw {
@@ -179,8 +188,9 @@ pub struct HeaderBar {
     pub close_hover: bool,
     /// Buffer mémoire unique (fond arrondi + pastilles + glyphes).
     pub buffer: MemoryRenderBuffer,
-    /// Clé du dernier rendu : (largeur, focus, 3 survols).
-    cache: Option<(u32, bool, bool, bool, bool)>,
+    /// Clé du dernier rendu : (version du thème, largeur, focus,
+    /// 3 survols).
+    cache: Option<(u64, u32, bool, bool, bool, bool)>,
 }
 
 /// Barre de titre : construction du buffer (silhouette arrondie en
@@ -190,11 +200,14 @@ fn header_buffer(width: u32, focused: bool, min_hover: bool, max_hover: bool, cl
     let h = HEADER_H;
     let mut px = vec![0u8; (4 * (w * h)) as usize];
 
+    let p = crate::config::palette();
+    let rayon = p.corner_radius;
+
     // 1) anneau extérieur : silhouette arrondie en haut, couleur bordure.
-    let border = if focused { FOCUS_U } else { UNFOCUSED_U };
+    let border = if focused { p.accent } else { p.accent_dark };
     for y in 0..h {
         for x in 0..w {
-            let a = rounded_top_alpha(x, y, w, h, CORNER_R);
+            let a = rounded_top_alpha(x, y, w, h, rayon);
             over_px(&mut px, w, h, x, y, border, a);
         }
     }
@@ -208,9 +221,9 @@ fn header_buffer(width: u32, focused: bool, min_hover: bool, max_hover: bool, cl
                 y - BORDER_W,
                 w - 2 * BORDER_W,
                 h - 2 * BORDER_W,
-                CORNER_R - BORDER_W,
+                (rayon - BORDER_W).max(0),
             );
-            over_px(&mut px, w, h, x, y, BG_U, a);
+            over_px(&mut px, w, h, x, y, p.panel_bg, a);
         }
     }
 
@@ -223,7 +236,11 @@ fn header_buffer(width: u32, focused: bool, min_hover: bool, max_hover: bool, cl
         (w - BUTTON_W as i32 / 2, cy, close_hover),
     ];
     for (cx, cy, hover) in centers {
-        let color = if hover { BUTTON_HOVER_U } else { BUTTON_U };
+        let color = if hover {
+            lighten(p.button_bg, 0.28)
+        } else {
+            p.button_bg
+        };
         let r = PASTILLE_D as f64 / 2.0;
         for dy in -r as i32..=r as i32 {
             for dx in -r as i32..=r as i32 {
@@ -232,28 +249,29 @@ fn header_buffer(width: u32, focused: bool, min_hover: bool, max_hover: bool, cl
                 over_px(&mut px, w, h, cx + dx, cy + dy, color, cov);
             }
         }
-        // 4) glyphe (7x7) : – ▢ ×
+        // 4) glyphe (7x7) : – ▢ × — couleur du texte du thème.
+        let glyph = p.text_fg;
         match (cx, hover) {
             (cx, _) if cx == centers[0].0 => {
                 // minimiser : barre horizontale
                 for gx in -3..=3 {
-                    over_px(&mut px, w, h, cx + gx, cy, GLYPH_U, 1.0);
+                    over_px(&mut px, w, h, cx + gx, cy, glyph, 1.0);
                 }
             }
             (cx, _) if cx == centers[1].0 => {
                 // agrandir : carré 7x7 en trait 1 px
                 for g in -3..=3 {
-                    over_px(&mut px, w, h, cx + g, cy - 3, GLYPH_U, 1.0);
-                    over_px(&mut px, w, h, cx + g, cy + 3, GLYPH_U, 1.0);
-                    over_px(&mut px, w, h, cx - 3, cy + g, GLYPH_U, 1.0);
-                    over_px(&mut px, w, h, cx + 3, cy + g, GLYPH_U, 1.0);
+                    over_px(&mut px, w, h, cx + g, cy - 3, glyph, 1.0);
+                    over_px(&mut px, w, h, cx + g, cy + 3, glyph, 1.0);
+                    over_px(&mut px, w, h, cx - 3, cy + g, glyph, 1.0);
+                    over_px(&mut px, w, h, cx + 3, cy + g, glyph, 1.0);
                 }
             }
             (cx, _) if cx == centers[2].0 => {
                 // fermer : croix en diagonales
                 for g in -3..=3 {
-                    over_px(&mut px, w, h, cx + g, cy + g, GLYPH_U, 1.0);
-                    over_px(&mut px, w, h, cx + g, cy - g, GLYPH_U, 1.0);
+                    over_px(&mut px, w, h, cx + g, cy + g, glyph, 1.0);
+                    over_px(&mut px, w, h, cx + g, cy - g, glyph, 1.0);
                 }
             }
             _ => {}
@@ -275,22 +293,24 @@ pub struct Border {
     pub left: SolidColorBuffer,
     pub right: SolidColorBuffer,
     pub bottom: SolidColorBuffer,
-    /// Quart d'anneau bas-gauche (CORNER_R x CORNER_R).
+    /// Quart d'anneau bas-gauche (R x R, rayon du thème).
     pub corner_bl: MemoryRenderBuffer,
-    /// Quart d'anneau bas-droit (CORNER_R x CORNER_R).
+    /// Quart d'anneau bas-droit (R x R, rayon du thème).
     pub corner_br: MemoryRenderBuffer,
-    /// Clé du dernier rendu des anneaux : (surface_h, focus).
-    pub corners_cache: Option<(i32, bool)>,
+    /// Clé du dernier rendu des anneaux : (version du thème,
+    /// surface_h, focus, rayon).
+    pub corners_cache: Option<(u64, i32, bool, i32)>,
 }
 
-/// Quart d'anneau de coin bas (buffer CORNER_R x CORNER_R) :
+/// Quart d'anneau de coin bas (buffer R x R, rayon du thème) :
 /// arc bordure + remplissage « ombre » au-delà de l'arc (la zone du
 /// coin carré du client est assombrie au lieu d'être découpée).
 /// `bottom_right` : centre du cercle en (0,0) local sinon (R,0).
 fn corner_buffer(focused: bool, bottom_right: bool) -> MemoryRenderBuffer {
-    let r = CORNER_R;
+    let p = crate::config::palette();
+    let r = p.corner_radius;
     let mut px = vec![0u8; (4 * (r * r)) as usize];
-    let border = if focused { FOCUS_U } else { UNFOCUSED_U };
+    let border = if focused { p.accent } else { p.accent_dark };
     let (ccx, ccy) = if bottom_right { (0.0, 0.0) } else { (r as f64, 0.0) };
     for ly in 0..r {
         for lx in 0..r {
@@ -375,7 +395,16 @@ impl HeaderBar {
 
         // recalcul des survols AVANT la comparaison de cache : le
         // pointeur a pu bouger depuis le dernier rendu.
-        let key = (width, focused, min_hover, max_hover, close_hover);
+        // La version du thème fait partie de la clé : un SIGHUP qui
+        // change `[theme]` force la reconstruction du buffer.
+        let key = (
+            crate::config::theme_epoch(),
+            width,
+            focused,
+            min_hover,
+            max_hover,
+            close_hover,
+        );
         if self.cache == Some(key) {
             return;
         }
@@ -426,11 +455,12 @@ impl Border {
     /// rendu de l'élément (SSD actif). Les anneaux de coins ne sont
     /// reconstruits qu'au changement de focus.
     pub fn redraw(&mut self, width: i32, surface_h: i32, focused: bool) {
-        let color = if focused {
-            BORDER_FOCUSED_COLOR
+        let p = crate::config::palette();
+        let color = crate::config::Palette::rgba(if focused {
+            p.accent
         } else {
-            BORDER_UNFOCUSED_COLOR
-        };
+            p.accent_dark
+        });
         // soulignement de la barre de titre (2 px sous le fond)
         self.top.update((width, BORDER_W), color);
         // gauche/droite descendent jusqu'au bas de la bordure basse
@@ -440,10 +470,11 @@ impl Border {
         self.right.update((BORDER_W, surface_h + BORDER_W), color);
         self.bottom.update((width + 2 * BORDER_W, BORDER_W), color);
 
-        if self.corners_cache != Some((surface_h, focused)) {
+        let corners_key = (crate::config::theme_epoch(), surface_h, focused, p.corner_radius);
+        if self.corners_cache != Some(corners_key) {
             self.corner_bl = corner_buffer(focused, false);
             self.corner_br = corner_buffer(focused, true);
-            self.corners_cache = Some((surface_h, focused));
+            self.corners_cache = Some(corners_key);
         }
     }
 }
@@ -640,5 +671,20 @@ impl WindowElement {
 
     pub fn set_ssd(&self, ssd: bool) {
         self.decoration_state().is_ssd = ssd;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lighten_eclaircit_sans_toucher_l_alpha() {
+        assert_eq!(lighten(0xFF00_0000, 1.0), 0xFFFF_FFFF);
+        assert_eq!(lighten(0xFF00_0000, 0.0), 0xFF00_0000);
+        // #26262E éclairci de 28 % : composantes relevées, alpha intact.
+        let c = lighten(0xFF26_262E, 0.28);
+        assert_eq!(c & 0xFF00_0000, 0xFF00_0000);
+        assert!(c & 0xFF > 0x2E, "composante bleue relevée");
     }
 }

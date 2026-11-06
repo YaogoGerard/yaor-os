@@ -378,8 +378,13 @@ where
             state.border.redraw(width, surface_h, focused);
 
             let h_total = HEADER_H + surface_h;
-            let ring_y = h_total - crate::ssd::CORNER_R;
-            let shadow_key = (width, h_total, focused);
+            // Rayon du thème (1e.theme) : la géométrie des anneaux de
+            // coins suit le dessin du header (même source).
+            let corner_r = crate::ssd::corner_r();
+            let ring_y = h_total - corner_r;
+            // Version du thème dans la clé : intensité d'ombre et rayon
+            // changent à chaud au SIGHUP.
+            let shadow_key = (crate::config::theme_epoch(), width, h_total, focused);
             let shadow_buf = match &state.shadow {
                 Some((k, buf)) if *k == shadow_key => buf.clone(),
                 _ => {
@@ -401,7 +406,7 @@ where
             };
             for (buf, x) in [
                 (&state.border.corner_bl, 0),
-                (&state.border.corner_br, width - crate::ssd::CORNER_R),
+                (&state.border.corner_br, width - corner_r),
             ] {
                 let elem = MemoryRenderBufferRenderElement::from_buffer(
                     renderer,

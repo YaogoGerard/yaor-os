@@ -9,12 +9,95 @@
 //! Journal : la source du fichier et les options routées sortent
 //! explicitement (preuve QA « configuration chargée : … »).
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 pub use yaor_config::{DesktopConfig, ImageFit, LayoutMode, WallpaperConfig};
 
 /// Demande de rechargement (SIGHUP → gestionnaire asynchrone-sûr).
 pub static RELOAD_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// Version du thème (1e.theme) : incrémentée à chaque rechargement. Les
+/// buffers de décoration (mémoire, SolidColorBuffer) portent leur clé
+/// de cache sur cette valeur — un SIGHUP qui change `[theme]` les
+/// reconstruit à l'image suivante, sans quitter la session.
+static THEME_EPOCH: AtomicU64 = AtomicU64::new(1);
+
+/// Version courante du thème (voir [`THEME_EPOCH`]).
+pub fn theme_epoch() -> u64 {
+    THEME_EPOCH.load(Ordering::Relaxed)
+}
+
+/// Palette et métriques résolues du thème « ambre sur noir » : couleurs
+/// 0xAARRGGBB, rayon des coins, intensité d'ombre. Chaque couleur est
+/// validée séparément — une chaîne invalide retombe sur la palette
+/// canonique du branding (docs/05-ui-ux/branding/), pas sur du noir.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Palette {
+    pub accent: u32,
+    pub accent_dark: u32,
+    pub panel_bg: u32,
+    pub button_bg: u32,
+    pub text_fg: u32,
+    pub text_gray: u32,
+    pub separator: u32,
+    /// Rayon des coins de fenêtre, borné à [`Palette::RAYON_MIN`]..=
+    /// [`Palette::RAYON_MAX`] (les coins sont des buffers carrés R x R).
+    pub corner_radius: i32,
+    /// Intensité de l'ombre des fenêtres (0.0 = aucune, 1.0 = max).
+    pub shadow: f64,
+}
+
+impl Palette {
+    pub const RAYON_MIN: i32 = 2;
+    pub const RAYON_MAX: i32 = 24;
+
+    fn color(s: &str, repli: u32) -> u32 {
+        yaor_config::parse_color(s).unwrap_or(repli)
+    }
+
+    /// Composantes normalisées `[r, g, b, a]` (0..1) d'une couleur
+    /// 0xAARRGGBB — format attendu par `SolidColorBuffer` de Smithay.
+    pub fn rgba(c: u32) -> [f32; 4] {
+        let ch = |shift: u32| ((c >> shift) & 0xFF) as f32 / 255.0;
+        [ch(16), ch(8), ch(0), ch(24)]
+    }
+
+    /// Résout la section `[theme]` : bornes du rayon et de l'ombre,
+    /// repli par couleur.
+    pub fn from_config(t: &yaor_config::ThemeConfig) -> Palette {
+        Palette {
+            accent: Palette::color(&t.accent, 0xFFE8_862E),
+            accent_dark: Palette::color(&t.accent_dark, 0xFFB9_6A1F),
+            panel_bg: Palette::color(&t.panel_bg, 0xFF10_1014),
+            button_bg: Palette::color(&t.button_bg, 0xFF26_262E),
+            text_fg: Palette::color(&t.text_fg, 0xFFF2_E8DC),
+            text_gray: Palette::color(&t.text_gray, 0xFF8A_8A92),
+            separator: Palette::color(&t.separator, 0xFF2A_2A33),
+            corner_radius: (t.corner_radius as i32).clamp(Palette::RAYON_MIN, Palette::RAYON_MAX),
+            shadow: if t.shadow.is_finite() {
+                t.shadow.clamp(0.0, 1.0)
+            } else {
+                0.55
+            },
+        }
+    }
+}
+
+/// Palette courante (relue à chaque appel : le thème est petit et les
+/// buffers la lisent à leur reconstruction, pas par image). Lecture
+/// sous verrou **sans copie** de la configuration : appelée aussi par
+/// les éléments à chaque image (rayon des coins).
+pub fn palette() -> Palette {
+    let guard = config_state().read().unwrap();
+    Palette::from_config(&guard.theme)
+}
+
+/// Section `[wallpaper]` courante — seule copie nécessaire à chaque
+/// image (clé de cache du fond d'écran).
+pub fn wallpaper() -> WallpaperConfig {
+    let guard = config_state().read().unwrap();
+    guard.wallpaper.clone()
+}
 
 extern "C" fn request_reload(_signal: libc::c_int) {
     RELOAD_REQUESTED.store(true, Ordering::SeqCst);
@@ -47,6 +130,9 @@ pub fn reload() -> DesktopConfig {
     let (cfg, path) = DesktopConfig::load();
     journal(&cfg, path.as_deref(), "configuration rechargée (SIGHUP)");
     *config_state().write().unwrap() = cfg.clone();
+    // Thème éventuellement nouveau : les buffers de décoration doivent
+    // se reconstruire (clé de cache = theme_epoch()).
+    THEME_EPOCH.fetch_add(1, Ordering::Relaxed);
     cfg
 }
 
@@ -82,4 +168,56 @@ fn journal(cfg: &DesktopConfig, path: Option<&std::path::Path>, motif: &str) {
         cfg.keys.focus_prev,
         cfg.keys.minimize,
     );
+    // Thème résolu (1e.theme) : valeurs effectivement utilisées par le
+    // rendu, après repli et bornes — preuve QA du rechargement.
+    let p = Palette::from_config(&cfg.theme);
+    tracing::info!(
+        "thème : accent #{:06X} sombre #{:06X} panel #{:06X} bouton #{:06X} texte #{:06X} gris #{:06X} sep #{:06X} rayon {} ombre {:.2}",
+        p.accent & 0x00FF_FFFF,
+        p.accent_dark & 0x00FF_FFFF,
+        p.panel_bg & 0x00FF_FFFF,
+        p.button_bg & 0x00FF_FFFF,
+        p.text_fg & 0x00FF_FFFF,
+        p.text_gray & 0x00FF_FFFF,
+        p.separator & 0x00FF_FFFF,
+        p.corner_radius,
+        p.shadow,
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rgba_normalise_les_composantes() {
+        assert_eq!(Palette::rgba(0xFFFF_FFFF), [1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(Palette::rgba(0x0000_0000), [0.0, 0.0, 0.0, 0.0]);
+        let ambre = Palette::rgba(0xFFE8_862E);
+        assert!((ambre[0] - 0.9098).abs() < 0.001);
+        assert!((ambre[1] - 0.5255).abs() < 0.001);
+        assert_eq!(ambre[3], 1.0, "alpha opaque");
+    }
+
+    #[test]
+    fn palette_borne_rayon_et_ombre_et_replie_les_couleurs() {
+        update(|c| {
+            c.theme.corner_radius = 99;
+            c.theme.shadow = 3.0;
+            c.theme.accent = "pas-une-couleur".to_string();
+        });
+        let p = palette();
+        assert_eq!(p.corner_radius, Palette::RAYON_MAX);
+        assert_eq!(p.shadow, 1.0);
+        // Chaîne invalide : repli canonique, jamais du noir.
+        assert_eq!(p.accent, 0xFFE8_862E);
+
+        update(|c| {
+            c.theme.corner_radius = 0;
+            c.theme.shadow = -1.0;
+        });
+        let p = palette();
+        assert_eq!(p.corner_radius, Palette::RAYON_MIN);
+        assert_eq!(p.shadow, 0.0);
+    }
 }
