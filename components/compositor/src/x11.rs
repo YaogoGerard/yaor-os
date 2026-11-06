@@ -92,7 +92,7 @@ impl XwmHandler for Yaor {
         window.set_mapped(true).unwrap();
         let window = crate::element::WindowElement(Window::new_x11_window(window));
         // Décorations serveur en flottant (jalon 1b.b).
-        window.set_ssd(crate::config::get().layout.mode == yaor_config::LayoutMode::Floating);
+        window.set_ssd(crate::config::layout_mode() == yaor_config::LayoutMode::Floating);
         let position = crate::policy::next_window_location(self);
         self.space.map_element(window.clone(), position, false);
         // X11 hors tiling en v0.5 étape 1 (décision d'ouverture) : les

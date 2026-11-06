@@ -73,7 +73,7 @@ const COLLAPSE_MARGIN: i32 = 20;
 /// la pile (comportement v0.4 exact) ; en maître+pile à l'origine de la
 /// sortie sous le pointeur (le re-tile de la boucle affine en ≤ 16 ms).
 pub fn next_window_location(state: &mut Yaor) -> (i32, i32) {
-    match crate::config::get().layout.mode {
+    match crate::config::layout_mode() {
         LayoutMode::MasterStack => master_slot_location(state),
         LayoutMode::Cascade => cascade_location(state),
         LayoutMode::Floating => floating_location(state),
@@ -186,7 +186,7 @@ fn output_under(state: &Yaor) -> Option<&Output> {
 /// En flottant (v0.6 étape 1b), aucune disposition automatique : la
 /// fenêtre rejoint la liste flottante directement.
 pub fn register(state: &mut Yaor, window: &WindowElement) {
-    if crate::config::get().layout.mode == LayoutMode::Floating {
+    if crate::config::layout_mode() == LayoutMode::Floating {
         state.layout.floating.push(window.clone());
         tracing::debug!("layout : fenêtre flottante recensée");
         return;
@@ -340,7 +340,7 @@ pub(crate) fn restore_minimized(state: &mut Yaor, idx: usize) {
 /// mortes, adoption des éléments non recensés (mode permuté au
 /// rechargement), disposition maître+pile **par sortie**.
 pub fn recompute(state: &mut Yaor) {
-    let mode = crate::config::get().layout.mode;
+    let mode = crate::config::layout_mode();
     if mode == LayoutMode::Cascade {
         // v0.4 exact : no-op strict (aucune régression permise).
         // Purge des décorations si le mode vient du flottant
@@ -621,7 +621,7 @@ fn mods_match(expected: ModifiersState, actual: &ModifiersState) -> bool {
 
 /// Exécute une action de bureau.
 pub fn run_action(state: &mut Yaor, action: Action) {
-    let mode = crate::config::get().layout.mode;
+    let mode = crate::config::layout_mode();
     let tiling_only = matches!(
         action,
         Action::FocusNext

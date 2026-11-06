@@ -18,6 +18,8 @@
 // contributors). Journal : stderr préfixé « yaor-dock: » (jetons QA courts).
 // Connexion : WAYLAND_DISPLAY sous XDG_RUNTIME_DIR (socket du compositor).
 
+use std::os::fd::AsRawFd;
+
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_layer, delegate_output, delegate_pointer, delegate_registry,
@@ -169,6 +171,13 @@ fn initial(app_id: &str, title: &str) -> char {
     }
 }
 
+/// Dock visible pour un profil donné : il n'appartient qu'au profil
+/// macOS-like (étape 3). Profil absent = comportement de l'étape 2 : le
+/// dock lancé s'affiche, quel que soit `[layout] mode`.
+fn dock_visible(profile: Option<yaor_config::Profile>) -> bool {
+    profile.map_or(true, |p| p.wants_dock())
+}
+
 // ---------------------------------------------------------------------------
 // État du dock
 // ---------------------------------------------------------------------------
@@ -200,6 +209,10 @@ struct Dock {
 
     /// Tuile sous le pointeur (mise en évidence, redessin sur changement).
     hovered: Option<usize>,
+
+    /// Dock affiché ? (étape 3 : présent dans le seul profil macOS-like —
+    /// masqué il est réduit à une surface 1x1 transparente).
+    visible: bool,
 
     pool: SlotPool,
     pool_capacity: usize,
@@ -240,6 +253,19 @@ impl Dock {
             .pool
             .create_buffer(w, h, stride, wl_shm::Format::Argb8888)
             .expect("création du buffer du dock");
+        if !self.visible {
+            // Profil non macOS-like (étape 3) : surface réduite à 1x1 et
+            // buffer transparent — rien à l'écran, aucune zone réservée.
+            canvas.fill(0);
+            self.layer
+                .wl_surface()
+                .damage_buffer(0, 0, w, h);
+            buffer
+                .attach_to(self.layer.wl_surface())
+                .expect("attach dock");
+            self.layer.commit();
+            return;
+        }
         {
             // Fond transparent : wl_shm ne garantit pas un buffer vierge
             // (slots réutilisés) — on efface avant de peindre la barre.
@@ -400,7 +426,9 @@ impl Dock {
     /// qui renvoie un configure — le redessin part de là (jamais de buffer
     /// attaché à une taille que le compositor n'a pas encore validée).
     fn sync_size(&mut self) {
-        if !self.configured {
+        // Masqué (profil non macOS-like) : la surface reste 1x1, la liste
+        // des fenêtres ne la redimensionne pas.
+        if !self.configured || !self.visible {
             return;
         }
         let target = self.geom.width(self.entries.len());
@@ -409,6 +437,55 @@ impl Dock {
             self.layer.commit();
         } else {
             self.draw();
+        }
+    }
+
+    /// Affiche ou masque la barre (étape 3). Masquée : surface 1x1
+    /// transparente (aucune zone exclusive, rien à l'écran) ; affichée :
+    /// largeur des tuiles redemandée, le redessin part du configure.
+    fn set_visible(&mut self, visible: bool) {
+        self.visible = visible;
+        if !visible {
+            self.layer.set_size(1, 1);
+            self.layer.commit();
+        } else if self.configured {
+            // Largeur inconnue : on redemande celle du contenu actuel.
+            self.width = 0;
+            self.layer
+                .set_size(self.geom.width(self.entries.len()), self.geom.height);
+            self.layer.commit();
+        }
+    }
+
+    /// Rechargement au SIGHUP (étape 3) : le compositor applique le nouveau
+    /// profil, le dock suit — thème, géométrie `[dock]` et visibilité
+    /// (profil macOS-like seul). Journal : jeton « dock : masqué ».
+    fn reload_config(&mut self) {
+        let (cfg, src) = yaor_config::DesktopConfig::load();
+        self.theme = Theme::from_config(&cfg.theme);
+        self.geom = Geometry::from_config(&cfg.dock);
+        let visible = dock_visible(cfg.profile.name);
+        eprintln!(
+            "{PROG}: [{:.3}] rechargement : profil {} - dock {} (accent #{:06X}, source {})",
+            uptime(),
+            match cfg.profile.name {
+                Some(p) => p.as_str(),
+                None => "aucun",
+            },
+            if visible { "affiché" } else { "masqué" },
+            self.theme.accent & 0x00FF_FFFF,
+            match src {
+                Some(p) => p.display().to_string(),
+                None => "défauts".to_string(),
+            }
+        );
+        if visible != self.visible {
+            self.set_visible(visible);
+        } else if visible {
+            // Thème éventuellement neuf et `[dock]` éventuellement modifié :
+            // taille redemandée, le configure déclenche le redessin.
+            self.width = 0;
+            self.sync_size();
         }
     }
 
@@ -877,6 +954,18 @@ fn main() -> std::process::ExitCode {
         geom.gap,
         geom.margin_bottom
     );
+    // Profil élu (étape 3) : hors profil macOS-like le dock démarre masqué.
+    // Journalisé avant la connexion (contrôle de configuration hors session).
+    let visible = dock_visible(cfg.profile.name);
+    eprintln!(
+        "{PROG}: [{:.3}] profil : {} - dock {}",
+        uptime(),
+        match cfg.profile.name {
+            Some(p) => p.as_str(),
+            None => "aucun",
+        },
+        if visible { "affiché" } else { "masqué" }
+    );
 
     let conn = match Connection::connect_to_env() {
         Ok(conn) => conn,
@@ -897,9 +986,14 @@ fn main() -> std::process::ExitCode {
     // faute de zone exclusive, les fenêtres gardent tout l'écran.
     let surface = compositor.create_surface(&qh);
     let layer = layer_shell.create_layer_surface(&qh, surface, Layer::Top, Some(NAMESPACE), None);
+    // Masqué (profil non macOS-like) : surface 1x1, il ne revient qu'au
+    // SIGHUP qui élit le profil macOS-like.
     layer.set_anchor(Anchor::BOTTOM);
     layer.set_margin(0, 0, geom.margin_bottom as i32, 0);
-    layer.set_size(geom.width(0), geom.height);
+    layer.set_size(
+        if visible { geom.width(0) } else { 1 },
+        if visible { geom.height } else { 1 },
+    );
     layer.set_exclusive_zone(0);
     layer.set_keyboard_interactivity(KeyboardInteractivity::None);
     // Commit initial sans buffer : déclenche le configure du compositor,
@@ -926,6 +1020,7 @@ fn main() -> std::process::ExitCode {
         foreign_manager: None,
         seat_object: None,
         hovered: None,
+        visible,
         pool,
         pool_capacity: initial_need,
         pointer: None,
@@ -943,7 +1038,17 @@ fn main() -> std::process::ExitCode {
         Err(e) => eprintln!("{PROG}: foreign-toplevel indisponible : {e:?}"),
     }
 
+    // SIGHUP (étape 3) : même rechargement que le panel — l'attente
+    // surveille le fd Wayland et le tube du signal.
+    let hup_tube = yaor_config::hup::install();
     while !dock.exit {
+        if let Some(tube) = hup_tube {
+            let wl_fd = conn.backend().poll_fd().as_raw_fd();
+            if yaor_config::hup::wait(wl_fd, tube) {
+                dock.reload_config();
+                let _ = conn.flush();
+            }
+        }
         if event_queue.blocking_dispatch(&mut dock).is_err() {
             break;
         }
@@ -955,6 +1060,16 @@ fn main() -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dock_masque_hors_profil_macos_like() {
+        use yaor_config::Profile;
+        // Profil absent : le dock lancé s'affiche (comportement étape 2).
+        assert!(dock_visible(None));
+        assert!(dock_visible(Some(Profile::Macos)));
+        assert!(!dock_visible(Some(Profile::Classic)));
+        assert!(!dock_visible(Some(Profile::Tiling)));
+    }
 
     fn geometrie() -> Geometry {
         Geometry::from_config(&yaor_config::DockConfig::default())

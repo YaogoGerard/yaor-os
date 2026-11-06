@@ -20,10 +20,11 @@
 //
 // Connexion : WAYLAND_DISPLAY sous XDG_RUNTIME_DIR (socket du compositor).
 
+use std::os::fd::AsRawFd;
 use std::process::Command;
 
 use smithay_client_toolkit::{
-    compositor::{CompositorHandler, CompositorState},
+    compositor::{CompositorHandler, CompositorState, Region},
     delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer,
     delegate_registry, delegate_seat, delegate_shm,
     output::{OutputHandler, OutputState},
@@ -123,12 +124,13 @@ const TB_BTN_STEP: u32 = TB_BTN_W + 4;
 /// design sont visuelles (décision produit), le lancement sera câblé
 /// pour les apps YAOR internes dans une étape ultérieure.
 
-static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-
-/// Thème courant (copie : `Theme` est `Copy`) — palette canonique tant
+/// Thème courant, rechargé au SIGHUP (étape 3) : palette canonique tant
 /// que [`init_assets`] n'a pas tourné.
+static THEME: std::sync::RwLock<Theme> = std::sync::RwLock::new(Theme::CANONIQUE);
+
+/// Thème courant (copie : `Theme` est `Copy`).
 fn th() -> Theme {
-    *THEME.get().unwrap_or(&Theme::CANONIQUE)
+    *THEME.read().expect("thème verrouillé")
 }
 
 /// Position du bouton menu : le logo 24x24 occupe x=2..26, le bouton
@@ -144,17 +146,19 @@ static LOGO: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
 /// (`[theme]`, 1e.theme) puis emblème (`logo.path`, 1e.logo). Aucun
 /// échec bloquant : chaque élément retombe sur sa valeur canonique.
 /// Journalisé en jetons courts — preuve QA de la source utilisée.
-fn init_assets() {
+/// Renvoie la configuration lue (profil élu — étape 3).
+fn init_assets() -> yaor_config::DesktopConfig {
     let (cfg, src) = yaor_config::DesktopConfig::load();
     init_theme(&cfg, src.as_deref());
     init_logo(&cfg);
+    cfg
 }
 
-/// Thème de l'interface : couleurs résolues une fois (`desktop.toml`
-/// [theme], repli canonique couleur par couleur).
+/// Thème de l'interface (`desktop.toml` [theme], repli canonique couleur
+/// par couleur) — réappliqué à chaque rechargement (SIGHUP).
 fn init_theme(cfg: &yaor_config::DesktopConfig, src: Option<&std::path::Path>) {
     let theme = Theme::from_config(&cfg.theme);
-    let _ = THEME.set(theme);
+    *THEME.write().expect("thème verrouillé") = theme;
     eprintln!(
         "{PROG}: [{:.3}] thème : accent #{:06X} panel #{:06X} source {}",
         uptime(),
@@ -281,6 +285,13 @@ fn clock_text() -> String {
     format!("{:02}:{:02}  {:02} {}. {}", hh, mm, d, MONTHS[(m as usize - 1) % 12], y)
 }
 
+/// Taskbar visible pour un profil donné : elle appartient aux profils
+/// classique et tiling ; le profil macOS-like la remplace par le dock
+/// (étape 3). Profil absent = comportement historique (taskbar).
+fn taskbar_visible(profile: Option<yaor_config::Profile>) -> bool {
+    profile.map_or(true, |p| p.wants_taskbar())
+}
+
 /// Libellé d'un bouton de taskbar : capitales (police bitmap), borné à la
 /// largeur utile du bouton — un titre trop long est tronqué, jamais débordé
 /// sur le bouton voisin (mesuré par le harnais QA).
@@ -313,6 +324,11 @@ struct Panel {
     /// — jalon 1b.c).
     taskbar: Option<LayerSurface>,
     tb_width: u32,
+    /// Taskbar affichée ? (étape 3 : masquée hors profils classique et
+    /// tiling — la surface reste mappée, transparente et sans entrée).
+    taskbar_visible: bool,
+    /// Région d'entrée vide des états masqués (détruite au retour).
+    empty_region: Option<Region>,
 
     /// Global zwlr_foreign_toplevel_manager_v1 (liste des fenêtres +
     /// activation/restauration — jalon 1b.c).
@@ -521,6 +537,22 @@ impl Panel {
             .pool
             .create_buffer(w as i32, h as i32, stride, wl_shm::Format::Argb8888)
             .expect("création du buffer de taskbar");
+        if !self.taskbar_visible {
+            // Profil macOS-like (étape 3) : la taskbar n'existe pas. La
+            // surface reste mappée — elle revient au SIGHUP si le profil
+            // change — mais elle est invisible : buffer entièrement
+            // transparent et région d'entrée vide (les clics traversent
+            // vers les fenêtres, cf. apply_taskbar).
+            canvas.fill(0);
+            taskbar
+                .wl_surface()
+                .damage_buffer(0, 0, w as i32, h as i32);
+            buffer
+                .attach_to(taskbar.wl_surface())
+                .expect("attach taskbar");
+            taskbar.commit();
+            return;
+        }
         {
             let (cw, ch) = (w as i32, h as i32);
             fill_rect(&mut canvas, cw, ch, 0, 0, cw, ch, th().panel_bg);
@@ -595,6 +627,62 @@ impl Panel {
             focus,
             minimized
         );
+    }
+
+    /// Applique la visibilité courante de la taskbar : zone exclusive
+    /// (les fenêtres récupèrent la bande de 24 px quand elle est masquée)
+    /// et région d'entrée (les clics traversent une taskbar masquée).
+    /// Le commit déclenche l'arrange du compositor, qui renvoie un
+    /// configure — le redessin part de là.
+    fn apply_taskbar(&mut self) {
+        let Some(taskbar) = self.taskbar.clone() else {
+            return;
+        };
+        if self.taskbar_visible {
+            taskbar.set_exclusive_zone(TASKBAR_H as i32);
+            // `None` = région infinie (toute la surface prend les clics).
+            taskbar.wl_surface().set_input_region(None);
+            self.empty_region = None;
+        } else {
+            taskbar.set_exclusive_zone(0);
+            let region = match self.empty_region.take() {
+                Some(r) => r,
+                None => Region::new(&self.compositor).expect("région d'entrée vide"),
+            };
+            // Région créée sans rectangle : entièrement vide (aucune entrée).
+            taskbar.wl_surface().set_input_region(Some(region.wl_region()));
+            self.empty_region = Some(region);
+        }
+        taskbar.commit();
+    }
+
+    /// Rechargement au SIGHUP (étape 3) : le compositor applique le nouveau
+    /// profil, le panel suit — thème ([theme]) et visibilité de la taskbar
+    /// (profil macOS-like : masquée). Journal : jeton « taskbar : masquée ».
+    fn reload_config(&mut self, qh: &QueueHandle<Self>) {
+        let (cfg, src) = yaor_config::DesktopConfig::load();
+        init_theme(&cfg, src.as_deref());
+        let visible = taskbar_visible(cfg.profile.name);
+        let profile = match cfg.profile.name {
+            Some(p) => p.as_str(),
+            None => "aucun",
+        };
+        if visible != self.taskbar_visible {
+            self.taskbar_visible = visible;
+            eprintln!(
+                "{PROG}: [{:.3}] taskbar : {} (profil {profile})",
+                uptime(),
+                if visible { "affichée" } else { "masquée" }
+            );
+            self.apply_taskbar();
+        } else {
+            eprintln!(
+                "{PROG}: [{:.3}] rechargement : profil {profile}, taskbar inchangée",
+                uptime()
+            );
+        }
+        self.draw_bar(qh);
+        self.draw_taskbar();
     }
 
     /// Clic sur un bouton de la taskbar : restauration (si minimisée)
@@ -1169,7 +1257,19 @@ fn main() -> std::process::ExitCode {
     // Thème (1e.theme) et emblème (1e.logo) : chargés avant la session
     // — une lecture de configuration et un décodage PNG uniques, la
     // suite du rendu lit la palette et le bitmap en mémoire.
-    init_assets();
+    let cfg = init_assets();
+    let taskbar_shown = taskbar_visible(cfg.profile.name);
+    // Profil élu (étape 3) : journalisé avant la connexion, donc visible
+    // même sans compositor (contrôle de configuration hors session).
+    eprintln!(
+        "{PROG}: [{:.3}] profil : {} - taskbar {}",
+        uptime(),
+        match cfg.profile.name {
+            Some(p) => p.as_str(),
+            None => "aucun",
+        },
+        if taskbar_shown { "visible" } else { "masquée" }
+    );
 
     let conn = match Connection::connect_to_env() {
         Ok(conn) => conn,
@@ -1205,7 +1305,16 @@ fn main() -> std::process::ExitCode {
         layer_shell.create_layer_surface(&qh, tb_surface, Layer::Top, Some("yaor-panel-taskbar"), None);
     taskbar.set_anchor(Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
     taskbar.set_size(0, TASKBAR_H);
-    taskbar.set_exclusive_zone(TASKBAR_H as i32);
+    // Profil macOS-like (étape 3) : la taskbar n'est pas visible — aucune
+    // bande réservée et région d'entrée vide, dès la première configure.
+    taskbar.set_exclusive_zone(if taskbar_shown { TASKBAR_H as i32 } else { 0 });
+    let empty_region = if taskbar_shown {
+        None
+    } else {
+        let region = Region::new(&compositor).expect("région d'entrée vide");
+        taskbar.wl_surface().set_input_region(Some(region.wl_region()));
+        Some(region)
+    };
     taskbar.set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
     taskbar.commit();
 
@@ -1229,6 +1338,8 @@ fn main() -> std::process::ExitCode {
         menu: None,
         taskbar: Some(taskbar),
         tb_width: 0,
+        taskbar_visible: taskbar_shown,
+        empty_region,
         foreign_manager: None,
         entries: Vec::new(),
         seat_object: None,
@@ -1252,7 +1363,19 @@ fn main() -> std::process::ExitCode {
         Err(e) => eprintln!("{PROG}: foreign-toplevel indisponible : {e:?}"),
     }
 
+    // SIGHUP (étape 3) : le client recharge `desktop.toml` comme le
+    // compositor. L'attente surveille le fd Wayland ET le tube du signal
+    // (pas de minuterie ni de scrutation) ; sans tube, la boucle reste
+    // strictement bloquante comme en v0.5.
+    let hup_tube = yaor_config::hup::install();
     while !panel.exit {
+        if let Some(tube) = hup_tube {
+            let wl_fd = conn.backend().poll_fd().as_raw_fd();
+            if yaor_config::hup::wait(wl_fd, tube) {
+                panel.reload_config(&qh);
+                let _ = conn.flush();
+            }
+        }
         if event_queue.blocking_dispatch(&mut panel).is_err() {
             break;
         }
@@ -1264,6 +1387,17 @@ fn main() -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn taskbar_masquee_hors_profils_classique_et_tiling() {
+        use yaor_config::Profile;
+        // Profil absent : comportement historique (taskbar présente).
+        assert!(taskbar_visible(None));
+        assert!(taskbar_visible(Some(Profile::Classic)));
+        assert!(taskbar_visible(Some(Profile::Tiling)));
+        // macOS-like : le dock remplace la taskbar.
+        assert!(!taskbar_visible(Some(Profile::Macos)));
+    }
 
     #[test]
     fn libelle_de_taskbar_tronque_et_met_en_capitales() {

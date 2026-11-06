@@ -11,7 +11,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-pub use yaor_config::{DesktopConfig, ImageFit, LayoutMode, WallpaperConfig};
+pub use yaor_config::{DesktopConfig, ImageFit, LayoutMode, Profile, WallpaperConfig};
 
 /// Demande de rechargement (SIGHUP → gestionnaire asynchrone-sûr).
 pub static RELOAD_REQUESTED: AtomicBool = AtomicBool::new(false);
@@ -128,7 +128,19 @@ pub fn install_reload_handler() {
 /// configuration une fois l'état global actualisé.
 pub fn reload() -> DesktopConfig {
     let (cfg, path) = DesktopConfig::load();
+    // Bascule de profil (étape 3) : elle se lit AVANT l'écriture, d'où
+    // le journal dédié — le compositor applique la disposition du
+    // nouveau profil, les clients suivent par leur propre rechargement.
+    let avant = config_state().read().unwrap().profile.name;
     journal(&cfg, path.as_deref(), "configuration rechargée (SIGHUP)");
+    if avant != cfg.profile.name {
+        tracing::info!(
+            "profil : {} -> {} (disposition {})",
+            profile_label(avant),
+            profile_label(cfg.profile.name),
+            mode_label(cfg.layout_mode()),
+        );
+    }
     *config_state().write().unwrap() = cfg.clone();
     // Thème éventuellement nouveau : les buffers de décoration doivent
     // se reconstruire (clé de cache = theme_epoch()).
@@ -139,6 +151,31 @@ pub fn reload() -> DesktopConfig {
 /// Configuration courante (copie légère pour la suite du code).
 pub fn get() -> DesktopConfig {
     config_state().read().unwrap().clone()
+}
+
+/// Mode de disposition **effectif** : le profil élu, quand il y en a un,
+/// impose sa disposition (étape 3) ; sinon `[layout] mode` décide
+/// (comportement historique). Point unique de vérité pour la politique
+/// de placement et les décorations serveur.
+pub fn layout_mode() -> LayoutMode {
+    config_state().read().unwrap().layout_mode()
+}
+
+/// Libellé d'un mode de disposition (journal).
+fn mode_label(mode: LayoutMode) -> &'static str {
+    match mode {
+        LayoutMode::Cascade => "cascade",
+        LayoutMode::MasterStack => "master-stack",
+        LayoutMode::Floating => "floating",
+    }
+}
+
+/// Libellé d'un profil (ou de son absence).
+fn profile_label(profile: Option<Profile>) -> &'static str {
+    match profile {
+        Some(p) => p.as_str(),
+        None => "aucun",
+    }
 }
 
 /// Modifie la configuration en place (raccourci Mod+g sur le ratio).
@@ -153,11 +190,11 @@ fn journal(cfg: &DesktopConfig, path: Option<&std::path::Path>, motif: &str) {
         Some(p) => tracing::info!("{motif} : {}", p.display()),
         None => tracing::info!("{motif} : défauts compilés (aucun fichier)"),
     }
-    let mode = match cfg.layout.mode {
-        LayoutMode::Cascade => "cascade",
-        LayoutMode::MasterStack => "master-stack",
-        LayoutMode::Floating => "floating",
-    };
+    let mode = mode_label(cfg.layout_mode());
+    tracing::info!(
+        "profil : {} (disposition {mode})",
+        profile_label(cfg.profile.name)
+    );
     tracing::info!(
         "configuration : mode {mode}, ratio {:.3}, gaps {}, raccourcis close={} quit={} focus={}/{} minimize={}",
         cfg.layout.ratio,
@@ -197,6 +234,29 @@ mod tests {
         assert!((ambre[0] - 0.9098).abs() < 0.001);
         assert!((ambre[1] - 0.5255).abs() < 0.001);
         assert_eq!(ambre[3], 1.0, "alpha opaque");
+    }
+
+    #[test]
+    fn profil_elit_impose_la_disposition_effective() {
+        // Sans profil : `[layout] mode` décide (compatibilité v0.4/v0.5).
+        update(|c| {
+            c.profile.name = None;
+            c.layout.mode = LayoutMode::Cascade;
+        });
+        assert_eq!(layout_mode(), LayoutMode::Cascade);
+
+        // Profil tiling : maître+pile, quel que soit `[layout] mode`.
+        update(|c| c.profile.name = Some(Profile::Tiling));
+        assert_eq!(layout_mode(), LayoutMode::MasterStack);
+
+        // Profils classiques : flottant.
+        update(|c| c.profile.name = Some(Profile::Classic));
+        assert_eq!(layout_mode(), LayoutMode::Floating);
+        update(|c| c.profile.name = Some(Profile::Macos));
+        assert_eq!(layout_mode(), LayoutMode::Floating);
+
+        // Remise en état pour les autres tests du binaire.
+        update(|c| c.profile.name = None);
     }
 
     #[test]

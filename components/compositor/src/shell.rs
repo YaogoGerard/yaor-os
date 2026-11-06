@@ -201,7 +201,7 @@ impl XdgShellHandler for Yaor {
         // Enveloppe + décorations serveur en flottant (jalon 1b.b) :
         // l'élément porte sa barre de titre dans l'espace.
         let window = crate::element::WindowElement(window);
-        window.set_ssd(crate::config::get().layout.mode == yaor_config::LayoutMode::Floating);
+        window.set_ssd(crate::config::layout_mode() == yaor_config::LayoutMode::Floating);
         let position = crate::policy::next_window_location(self);
         // Recensement tiling (v0.5) avant la pose dans l'espace : la
         // boucle re-tile à la frame suivante selon la configuration.
