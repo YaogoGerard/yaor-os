@@ -65,9 +65,33 @@ fn uptime() -> f64 {
 const BAR_H: u32 = 24;
 /// Largeur du bouton menu (px logiques).
 const BTN_W: u32 = 60;
-/// Dimensions du volet menu : une entrée de 24 px par app + bordures.
-const MENU_W: u32 = 140;
-const MENU_ENTRY_H: u32 = 24;
+/// Dimensions du volet menu 1d.menu (fidèle au design Classique) :
+/// 360x330, ancré bas-gauche au-dessus de la taskbar (marge 10 px en
+/// plus de la zone exclusive de 24 px de la taskbar).
+const MENU_W: u32 = 360;
+const MENU_H: u32 = 330;
+const MENU_GAP: i32 = 10;
+/// Géométrie de la grille ÉPINGLÉES (coordonnées volet) : tuiles 48 px
+/// arrondies, 4 colonnes (pas 80 px), 2 rangées (pas 78 px).
+const MENU_TILE: u32 = 48;
+const MENU_TILE_STEP: u32 = 80;
+const MENU_TILE_PITCH: u32 = 78;
+const MENU_GRID_X: i32 = 36;
+const MENU_GRID_Y: i32 = 118;
+/// Tuiles épinglées (1d.menu — décision produit : visuelles, pas de
+/// scan .desktop ; le lancement sera câblé pour les apps internes
+/// seulement). (libellé, glyphe, style : 0 sombre, 1 ambre plein,
+/// 2 contour ambre.)
+const MENU_PINS: &[(&str, &str, u8)] = &[
+    ("FICHIERS", "F", 1),
+    ("TERMINAL", ">", 2),
+    ("WEB", "W", 0),
+    ("EDITEUR", "E", 1),
+    ("REGLAGES", "R", 0),
+    ("PROFILS", "D", 2),
+    ("MUSIQUE", "M", 0),
+    ("CALCUL", "C", 0),
+];
 
 // Taskbar basse (jalon v0.6 étape 1d.tb — maquette profil classique) :
 // pilule emblème à gauche, pilules à libellés (coins arrondis AA),
@@ -86,9 +110,9 @@ const TB_BORDER_REST: u32 = 0xFF_5A_5A_64;
 /// Séparateur vertical emblème | fenêtres.
 const TB_SEP: u32 = 0xFF_2A_2A_33;
 
-/// Apps de démo du menu (décision produit v0.6 : apps YAOR internes,
-/// pas de scan .desktop). (libellé affiché, binaire à lancer.)
-const APPS: &[(&str, &str)] = &[("WAYTEST", "waytest"), ("XWTEST", "xwtest")];
+/// Apps de démo du menu : supprimées en 1d.menu — les 8 tuiles du
+/// design sont visuelles (décision produit), le lancement sera câblé
+/// pour les apps YAOR internes dans une étape ultérieure.
 
 // Couleurs Argb8888 (0xAARRGGBB — converties en octets BGR/A au
 // rendu). Identité « ambre sur noir » d'après l'emblème du produit
@@ -99,6 +123,10 @@ const BTN_FG: u32 = 0xFF_10_10_14; // texte du bouton (noir)
 const MENU_BG: u32 = 0xFF_10_10_14;
 const BORDER: u32 = 0xFF_B9_6A_1F; // bordure du volet (ambre sombre)
 const TEXT_FG: u32 = 0xFF_F2_E8_DC; // texte clair chaud
+// 1d.menu : teintes du volet (maquette validée).
+const MENU_TILE_BG: u32 = 0xFF_26_26_2E; // tuile sombre / pilule recherche
+const MENU_GRAY: u32 = 0xFF_8A_8A_92; // textes secondaires
+const MENU_SEP: u32 = 0xFF_2A_2A_33; // séparateur
 
 /// Position du bouton menu : le logo 24x24 occupe x=2..26, le bouton
 /// le suit (QA : clic au centre (60,12)).
@@ -233,6 +261,31 @@ const GLYPHS: &[(char, [&str; 7])] = &[
     (
         'V',
         ["X...X", "X...X", "X...X", "X...X", ".X.X.", ".X.X.", "..X.."],
+    ),
+    // 1d.menu : glyphes du volet (libellés + symboles de tuiles).
+    (
+        'B',
+        ["XXXX.", "X...X", "X...X", "XXXX.", "X...X", "X...X", "XXXX."],
+    ),
+    (
+        'G',
+        ["0XXX.", "X...X", "X....", "X..XX", "X...X", "X...X", "0XXX0"],
+    ),
+    (
+        'H',
+        ["X...X", "X...X", "X...X", "XXXXX", "X...X", "X...X", "X...X"],
+    ),
+    (
+        'P',
+        ["XXXX.", "X...X", "X...X", "XXXX.", "X....", "X....", "X...."],
+    ),
+    (
+        'Q',
+        ["0XXX0", "X...X", "X...X", "X...X", "X.X.X", "X..X.", "0XX.X"],
+    ),
+    (
+        '>',
+        ["X....", ".X...", "..X..", "...X.", "..X..", ".X...", "X...."],
     ),
 ];
 
@@ -409,6 +462,107 @@ fn fill_flame(canvas: &mut [u8], w: i32, h: i32, cx: i32, y_tip: i32, base_w: i3
     }
 }
 
+// --- 1d.menu : formes du volet (rectangle arrondi, cercle, anneau,
+// texte agrandi) — mêmes conventions AA 1 px que les pilules. ---------
+
+/// Couverture d'un rectangle arrondi (rayon `r`) au point (px, py) —
+/// SDF de rectangle arrondi, AA 1 px.
+fn rrect_cov(px: f64, py: f64, x0: f64, y0: f64, rw: f64, rh: f64, r: f64) -> f64 {
+    let dx = (x0 + r - px).max(px - (x0 + rw - r)).max(0.0);
+    let dy = (y0 + r - py).max(py - (y0 + rh - r)).max(0.0);
+    if dx == 0.0 && dy == 0.0 {
+        return 1.0;
+    }
+    let d = if dx > 0.0 && dy > 0.0 {
+        (dx * dx + dy * dy).sqrt()
+    } else {
+        dx.max(dy)
+    };
+    (0.5 + r - d).clamp(0.0, 1.0)
+}
+
+/// Rectangle arrondi plein (bords adoucis, fond existant conservé).
+fn fill_rrect(
+    canvas: &mut [u8],
+    w: i32,
+    h: i32,
+    x0: i32,
+    y0: i32,
+    rw: i32,
+    rh: i32,
+    r: i32,
+    color: u32,
+) {
+    for y in y0..y0 + rh {
+        for x in x0..x0 + rw {
+            let cov = rrect_cov(
+                x as f64 + 0.5,
+                y as f64 + 0.5,
+                x0 as f64,
+                y0 as f64,
+                rw as f64,
+                rh as f64,
+                r as f64,
+            );
+            blend_px(canvas, w, h, x, y, color, cov);
+        }
+    }
+}
+
+/// Disque plein (bords adoucis).
+fn fill_circle(canvas: &mut [u8], w: i32, h: i32, cx: i32, cy: i32, r: i32, color: u32) {
+    for y in cy - r - 1..=cy + r + 1 {
+        for x in cx - r - 1..=cx + r + 1 {
+            let d = ((x - cx) as f64).hypot((y - cy) as f64);
+            let cov = (r as f64 + 0.5 - d).clamp(0.0, 1.0);
+            blend_px(canvas, w, h, x, y, color, cov);
+        }
+    }
+}
+
+/// Anneau (rayon `r`, épaisseur `t`) — symbole power du volet.
+fn fill_ring(canvas: &mut [u8], w: i32, h: i32, cx: i32, cy: i32, r: i32, t: i32, color: u32) {
+    let lo = (r - t) as f64;
+    let hi = (r + t) as f64;
+    for y in cy - r - t - 1..=cy + r + t + 1 {
+        for x in cx - r - t - 1..=cx + r + t + 1 {
+            let d = ((x - cx) as f64).hypot((y - cy) as f64);
+            let cov = (hi - 0.5 - d).clamp(0.0, 1.0) * (d - lo + 0.5).clamp(0.0, 1.0);
+            blend_px(canvas, w, h, x, y, color, cov);
+        }
+    }
+}
+
+/// Texte 5x7 agrandi d'un facteur `sc` (entête « YAOR » du volet).
+fn draw_text_scaled(
+    canvas: &mut [u8],
+    w: i32,
+    h: i32,
+    text: &str,
+    x0: i32,
+    y0: i32,
+    color: u32,
+    sc: i32,
+) {
+    let mut x = x0;
+    for ch in text.chars() {
+        if let Some(rows) = glyph(ch) {
+            for (ry, row) in rows.iter().enumerate() {
+                for (rx, c) in row.chars().enumerate() {
+                    if c == 'X' {
+                        for sy in 0..sc {
+                            for sx in 0..sc {
+                                put(canvas, w, h, x + rx as i32 * sc + sx, y0 + ry as i32 * sc + sy, color);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        x += 6 * sc;
+    }
+}
+
 /// Heure locale du panel : (année, mois, jour, h, min) — conversion
 /// civile d'UNIX (algorithme de H. Hinnant). L'invité vise UTC (QEMU) ;
 /// une vraie gestion du fuseau passera par timedatectl (étape ultérieure).
@@ -537,10 +691,13 @@ impl Panel {
         self.bar.commit();
     }
 
-    /// Rendu du volet menu (fond, bordure, entrées d'apps).
+    /// Rendu du volet menu 1d.menu (fidèle au design Classique,
+    /// maquette validée) : emblème + YAOR OS, champ de recherche,
+    /// grille ÉPINGLÉES 4x2, séparateur, rangée utilisateur + power.
+    /// Journal : jetons « menu : rendu ».
     fn draw_menu(&mut self, layer: &LayerSurface) {
         let w = MENU_W;
-        let h = MENU_ENTRY_H * APPS.len() as u32 + 8;
+        let h = MENU_H;
         self.ensure_pool(w as i32, h as i32);
         let stride = w as i32 * 4;
         let (buffer, mut canvas) = self
@@ -550,22 +707,107 @@ impl Panel {
         {
             let (cw, ch) = (w as i32, h as i32);
             fill_rect(&mut canvas, cw, ch, 0, 0, cw, ch, MENU_BG);
-            // bordure : 1 px
-            fill_rect(&mut canvas, cw, ch, 0, 0, cw, 1, BORDER);
-            fill_rect(&mut canvas, cw, ch, 0, ch - 1, cw, 1, BORDER);
-            fill_rect(&mut canvas, cw, ch, 0, 0, 1, ch, BORDER);
-            fill_rect(&mut canvas, cw, ch, cw - 1, 0, 1, ch, BORDER);
-            for (idx, (label, _)) in APPS.iter().enumerate() {
-                let top = 4 + (idx as u32 * MENU_ENTRY_H) as i32;
-                let ty = top + (MENU_ENTRY_H as i32 - 7) / 2;
-                draw_text(&mut canvas, cw, ch, label, 8, ty, TEXT_FG);
+
+            // En-tête : emblème ambre (disque + flamme découpée) +
+            // « YAOR » agrandi + « OS » ambre dessous.
+            fill_circle(&mut canvas, cw, ch, 30, 34, 14, BTN_BG);
+            fill_flame(&mut canvas, cw, ch, 30, 24, 16, 20, MENU_BG);
+            draw_text_scaled(&mut canvas, cw, ch, "YAOR", 56, 22, TEXT_FG, 2);
+            draw_text(&mut canvas, cw, ch, "OS", 58, 42, BTN_BG);
+
+            // Champ de recherche : pilule sombre, texte grisé.
+            fill_rrect(&mut canvas, cw, ch, 16, 62, MENU_W as i32 - 32, 28, 14, MENU_TILE_BG);
+            draw_text(
+                &mut canvas,
+                cw,
+                ch,
+                "RECHERCHER UNE APPLICATION...",
+                28,
+                72,
+                MENU_GRAY,
+            );
+
+            // Section ÉPINGLÉES + grille 4x2 (tuiles 48 px, 3 styles).
+            draw_text(&mut canvas, cw, ch, "EPINGLES", 16, 104, MENU_GRAY);
+            for (idx, (label, sym, style)) in MENU_PINS.iter().enumerate() {
+                let col = (idx % 4) as i32;
+                let row = (idx / 4) as i32;
+                let tx = MENU_GRID_X + col * MENU_TILE_STEP as i32;
+                let ty = MENU_GRID_Y + row * MENU_TILE_PITCH as i32;
+                let (fg, tile_r) = match style {
+                    1 => (MENU_BG, BTN_BG),
+                    2 => (BTN_BG, BORDER),
+                    _ => (TEXT_FG, MENU_TILE_BG),
+                };
+                fill_rrect(
+                    &mut canvas,
+                    cw,
+                    ch,
+                    tx,
+                    ty,
+                    MENU_TILE as i32,
+                    MENU_TILE as i32,
+                    10,
+                    tile_r,
+                );
+                if *style == 2 {
+                    // Contour ambre : fond sombre encarté de 2 px.
+                    fill_rrect(
+                        &mut canvas,
+                        cw,
+                        ch,
+                        tx + 2,
+                        ty + 2,
+                        MENU_TILE as i32 - 4,
+                        MENU_TILE as i32 - 4,
+                        8,
+                        MENU_BG,
+                    );
+                }
+                // Glyphe centré (agrandi x2 : lisibilité dans la tuile).
+                let gx = tx + (MENU_TILE as i32 - 5 * 2) / 2;
+                draw_text_scaled(&mut canvas, cw, ch, sym, gx, ty + 16, fg, 2);
+                // Libellé centré sous la tuile.
+                let lw = text_width(label);
+                draw_text(
+                    &mut canvas,
+                    cw,
+                    ch,
+                    label,
+                    tx + (MENU_TILE as i32 - lw) / 2,
+                    ty + MENU_TILE as i32 + 6,
+                    MENU_GRAY,
+                );
             }
+
+            // Séparateur + rangée utilisateur : avatar + nom, bouton
+            // power (anneau + barre verticale).
+            let uy = MENU_H as i32 - 52;
+            fill_rect(&mut canvas, cw, ch, 16, uy, MENU_W as i32 - 32, 1, MENU_SEP);
+            fill_circle(&mut canvas, cw, ch, 32, uy + 22, 12, BTN_BG);
+            draw_text(&mut canvas, cw, ch, "UTILISATEUR", 54, uy + 18, TEXT_FG);
+            fill_rrect(
+                &mut canvas,
+                cw,
+                ch,
+                MENU_W as i32 - 52,
+                uy + 4,
+                36,
+                36,
+                10,
+                MENU_TILE_BG,
+            );
+            let pcx = MENU_W as i32 - 34;
+            let pcy = uy + 24;
+            fill_ring(&mut canvas, cw, ch, pcx, pcy, 7, 2, BTN_BG);
+            fill_rect(&mut canvas, cw, ch, pcx, pcy - 11, 1, 9, BTN_BG);
         }
         layer
             .wl_surface()
             .damage_buffer(0, 0, w as i32, h as i32);
         buffer.attach_to(layer.wl_surface()).expect("attach menu");
         layer.commit();
+        eprintln!("{PROG}: [{:.3}] menu : rendu {}x{}", uptime(), w, h);
     }
 
     /// Rendu de la taskbar basse (1d.tb — maquette profil classique) :
@@ -712,14 +954,15 @@ impl Panel {
         let layer = self
             .layer_shell
             .create_layer_surface(qh, surface, Layer::Overlay, Some("yaor-panel-menu"), None);
-        layer.set_anchor(Anchor::TOP | Anchor::LEFT);
-        // Marge haute 0 : la zone exclusive de la barre (24 px) est
-        // DÉJÀ soustraite par le layer map — Smithay empile marge ET
-        // zone exclusive, un set_margin(BAR_H, …) décalait le volet
-        // de 24 px (volet à y=48 au lieu de 24) et faussait le
-        // hit-test des entrées (QA v0.6-étape 1).
-        layer.set_margin(0, 0, 0, 4);
-        layer.set_size(MENU_W, MENU_ENTRY_H * APPS.len() as u32 + 8);
+        // 1d.menu : ancré BAS-GAUCHE, au-dessus de la taskbar. La zone
+        // exclusive de la taskbar (24 px) est DÉJÀ soustraite par le
+        // layer map (même mécanisme que la barre haute, cf. commit de
+        // l'étape 1). Signature sctk : set_margin(top, right, bottom,
+        // left) — bottom = gap du design, left = retrait du volet
+        // (maquette : volet à (20, 436)).
+        layer.set_anchor(Anchor::BOTTOM | Anchor::LEFT);
+        layer.set_margin(0, 0, MENU_GAP, 20);
+        layer.set_size(MENU_W, MENU_H);
         // Clavier exclusif pendant l'ouverture : les touches sont
         // routées au volet par le compositor (Escape referme — preuve
         // du routage clavier layer-shell de l'étape 1).
@@ -731,6 +974,8 @@ impl Panel {
 
     /// Lance une app de démo du menu (env hérité : WAYLAND_DISPLAY,
     /// DISPLAY — le compositor et Xwayland servent les clients).
+    #[allow(dead_code)] // 1d.menu : tuiles visuelles — câblage au fil
+    // des apps YAOR internes réelles (étape ultérieure).
     fn launch(&self, bin: &str) {
         eprintln!("{PROG}: [{:.3}] lancement {bin} demandé (fork…)", uptime());
         match Command::new(bin).spawn() {
@@ -1026,12 +1271,43 @@ impl PointerHandler for Panel {
                 if event.surface == *menu.wl_surface() {
                     if let Press { button, .. } = event.kind {
                         if button == 0x110 {
-                            // Entrée sous le clic (bandes de MENU_ENTRY_H).
-                            let idx = ((y as u32).saturating_sub(4)) / MENU_ENTRY_H;
-                            if let Some((_, bin)) = APPS.get(idx as usize) {
-                                self.launch(bin);
+                            let (x, y) = (x as i32, y as i32);
+                            // Grille ÉPINGLÉES : tuiles 48 px, pas 80/78
+                            // (même géométrie que draw_menu). Les tuiles
+                            // sont visuelles — jeton journal + fermeture.
+                            let gx = x - MENU_GRID_X;
+                            let gy = y - MENU_GRID_Y;
+                            if gx >= 0
+                                && gy >= 0
+                                && gx < 4 * MENU_TILE_STEP as i32
+                                && gy < 2 * MENU_TILE_PITCH as i32
+                            {
+                                let col = gx / MENU_TILE_STEP as i32;
+                                let row = gy / MENU_TILE_PITCH as i32;
+                                let lx = gx - col * MENU_TILE_STEP as i32;
+                                let ly = gy - row * MENU_TILE_PITCH as i32;
+                                if lx < MENU_TILE as i32 && ly < MENU_TILE as i32 {
+                                    let idx = (row * 4 + col) as usize;
+                                    if let Some((label, _, _)) = MENU_PINS.get(idx) {
+                                        eprintln!(
+                                            "{PROG}: [{:.3}] menu : tuile {label} (visuelle)",
+                                            uptime()
+                                        );
+                                        self.close_menu();
+                                        return;
+                                    }
+                                }
                             }
-                            self.close_menu();
+                            // Bouton power : pilule (MW-52, uy+4) 36x36.
+                            let uy = MENU_H as i32 - 52;
+                            if x >= MENU_W as i32 - 52
+                                && x < MENU_W as i32 - 16
+                                && y >= uy + 4
+                                && y < uy + 40
+                            {
+                                eprintln!("{PROG}: [{:.3}] menu : power (visuel)", uptime());
+                                self.close_menu();
+                            }
                         }
                     }
                 }
@@ -1246,7 +1522,7 @@ fn main() -> std::process::ExitCode {
     // wl_shm_pool.resize) a provoqué un décrochage du panel au premier
     // rendu du menu (QA v0.6-étape 1) — on la rend impossible.
     let bar_need = 1280 * BAR_H as usize * 4;
-    let menu_need = MENU_W as usize * (MENU_ENTRY_H * APPS.len() as u32 + 8) as usize * 4;
+    let menu_need = MENU_W as usize * MENU_H as usize * 4;
     let pool_capacity = 2 * bar_need + menu_need + 2 * bar_need;
     let pool = SlotPool::new(pool_capacity, &shm).expect("création du slot pool");
 
