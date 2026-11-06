@@ -1783,6 +1783,7 @@ dependencies = [
  "wayland-protocols-wlr",
  "yaor-assets",
  "yaor-config",
+ "yaor-ui",
 ]
 
 [[package]]
@@ -1790,6 +1791,13 @@ name = "yaor-slot"
 version = "0.2.0"
 dependencies = [
  "yaor-common",
+]
+
+[[package]]
+name = "yaor-ui"
+version = "0.2.0"
+dependencies = [
+ "yaor-config",
 ]
 
 [[package]]

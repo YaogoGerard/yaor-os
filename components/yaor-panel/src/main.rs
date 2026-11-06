@@ -52,6 +52,14 @@ use wayland_protocols_wlr::foreign_toplevel::v1::client::{
     zwlr_foreign_toplevel_handle_v1::{Event as ToplevelEvent, ZwlrForeignToplevelHandleV1},
     zwlr_foreign_toplevel_manager_v1::{Event as ManagerEvent, ZwlrForeignToplevelManagerV1},
 };
+// Primitives de rendu partagées avec yaor-dock (étape 2) : canvas Argb8888,
+// formes anti-aliasées, police bitmap 5x7 et thème « ambre sur noir ». Le
+// panel ne définit plus ni palette ni glyphes — un seul fournisseur pour
+// les deux clients du bureau (yaor-ui).
+use yaor_ui::{
+    blend, blit, draw_text, draw_text_scaled, fill_circle, fill_pill, fill_rect, fill_rrect,
+    fill_ring, text_width, Theme,
+};
 
 mod logo;
 
@@ -115,59 +123,6 @@ const TB_BTN_STEP: u32 = TB_BTN_W + 4;
 /// design sont visuelles (décision produit), le lancement sera câblé
 /// pour les apps YAOR internes dans une étape ultérieure.
 
-// ---------------------------------------------------------------------------
-// Thème « ambre sur noir » (1e.theme) : couleurs Argb8888 (0xAARRGGBB,
-// converties en octets BGR/A au rendu) lues une fois au démarrage dans
-// `desktop.toml` ([theme]) — même contrat que le compositor, donc même
-// crate `yaor-config`, aucun thème dupliqué. Une chaîne invalide
-// retombe sur la palette canonique du branding, couleur par couleur.
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Theme {
-    panel_bg: u32,
-    accent: u32,
-    accent_dark: u32,
-    button_bg: u32,
-    text_fg: u32,
-    text_gray: u32,
-    separator: u32,
-}
-
-impl Theme {
-    /// Palette canonique (docs/05-ui-ux/branding/) : repli de chaque
-    /// couleur et valeurs d'usine de `default.toml`.
-    const CANONIQUE: Theme = Theme {
-        panel_bg: 0xFF_10_10_14,
-        accent: 0xFF_E8_86_2E,
-        accent_dark: 0xFF_B9_6A_1F,
-        button_bg: 0xFF_26_26_2E,
-        text_fg: 0xFF_F2_E8_DC,
-        text_gray: 0xFF_8A_8A_92,
-        separator: 0xFF_2A_2A_33,
-    };
-
-    fn from_config(t: &yaor_config::ThemeConfig) -> Theme {
-        let d = Theme::CANONIQUE;
-        let c = |s: &str, repli: u32| yaor_config::parse_color(s).unwrap_or(repli);
-        Theme {
-            panel_bg: c(&t.panel_bg, d.panel_bg),
-            accent: c(&t.accent, d.accent),
-            accent_dark: c(&t.accent_dark, d.accent_dark),
-            button_bg: c(&t.button_bg, d.button_bg),
-            text_fg: c(&t.text_fg, d.text_fg),
-            text_gray: c(&t.text_gray, d.text_gray),
-            separator: c(&t.separator, d.separator),
-        }
-    }
-
-    /// Liseré des pilules taskbar au repos : gris secondaire atténué
-    /// (le thème ne porte pas de couleur dédiée).
-    fn rest_border(&self) -> u32 {
-        dim(self.text_gray, 0.62)
-    }
-}
-
 static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
 
 /// Thème courant (copie : `Theme` est `Copy`) — palette canonique tant
@@ -176,220 +131,9 @@ fn th() -> Theme {
     *THEME.get().unwrap_or(&Theme::CANONIQUE)
 }
 
-/// Atténue les composantes RVB d'une couleur 0xAARRGGBB (alpha
-/// conservé) — dérivation du liseré au repos.
-fn dim(color: u32, factor: f64) -> u32 {
-    let f = factor.clamp(0.0, 1.0);
-    let ch = |shift: u32| {
-        let v = ((color >> shift) & 0xFF) as f64 * f;
-        ((v.round() as u32) & 0xFF) << shift
-    };
-    (color & 0xFF00_0000) | ch(16) | ch(8) | ch(0)
-}
-
 /// Position du bouton menu : le logo 24x24 occupe x=2..26, le bouton
 /// le suit (QA : clic au centre (60,12)).
 const BTN_X: u32 = 30;
-
-// ---------------------------------------------------------------------------
-// Police bitmap 5x7 (capitales, chiffres, « . ») — dessin littéral.
-// ---------------------------------------------------------------------------
-
-/// Glyphes 5x7 : 7 lignes de 5 colonnes, « X » = pixel allumé.
-const GLYPHS: &[(char, [&str; 7])] = &[
-    (
-        '0',
-        ["0XXX0", "0..X0", "X..X0", "X..X0", "X..X0", "X..X0", "0XXX0"],
-    ),
-    (
-        '1',
-        ["..X..", ".XX..", "..X..", "..X..", "..X..", "..X..", "0XXXX"],
-    ),
-    (
-        '2',
-        ["0XXX0", "X...X", "....X", "...X.", "..X..", ".X...", "XXXXX"],
-    ),
-    (
-        '3',
-        ["XXXXX", "....X", "...X.", "..XX.", "....X", "....X", "XXXXX"],
-    ),
-    (
-        '4',
-        ["X...X", "X...X", "X...X", "XXXXX", "....X", "....X", "....X"],
-    ),
-    (
-        '5',
-        ["XXXXX", "X....", "XXXX.", "....X", "....X", "X...X", "0XXX0"],
-    ),
-    (
-        '6',
-        [".XXX.", "X....", "X....", "XXXX.", "X...X", "X...X", ".XXX."],
-    ),
-    (
-        '7',
-        ["XXXXX", "....X", "...X.", "..X..", ".X...", ".X...", ".X..."],
-    ),
-    (
-        '8',
-        [".XXX.", "X...X", "X...X", ".XXX.", "X...X", "X...X", ".XXX."],
-    ),
-    (
-        '9',
-        [".XXX.", "X...X", "X...X", ".XXXX", "....X", "....X", ".XXX."],
-    ),
-    (
-        'A',
-        [".XXX.", "X...X", "X...X", "XXXXX", "X...X", "X...X", "X...X"],
-    ),
-    (
-        'E',
-        ["XXXXX", "X....", "X....", "XXXX.", "X....", "X....", "XXXXX"],
-    ),
-    (
-        'M',
-        ["X...X", "XX.XX", "X.X.X", "X.X.X", "X...X", "X...X", "X...X"],
-    ),
-    (
-        'N',
-        ["X...X", "XX..X", "XX..X", "X.X.X", "X..XX", "X..XX", "X...X"],
-    ),
-    (
-        'O',
-        [".XXX.", "X...X", "X...X", "X...X", "X...X", "X...X", ".XXX."],
-    ),
-    (
-        'R',
-        ["XXXX.", "X...X", "X...X", "XXXX.", "X.X..", "X..X.", "X...X"],
-    ),
-    (
-        'S',
-        [".XXXX", "X....", "X....", ".XXX.", "....X", "....X", "XXXX."],
-    ),
-    (
-        'T',
-        ["XXXXX", "..X..", "..X..", "..X..", "..X..", "..X..", "..X.."],
-    ),
-    (
-        'U',
-        ["X...X", "X...X", "X...X", "X...X", "X...X", "X...X", ".XXX."],
-    ),
-    (
-        'W',
-        ["X...X", "X...X", "X...X", "X.X.X", "X.X.X", "X.X.X", ".X.X."],
-    ),
-    (
-        'X',
-        ["X...X", "X...X", ".X.X.", "..X..", "..X..", ".X.X.", "X...X"],
-    ),
-    (
-        'Y',
-        ["X...X", "X...X", ".X.X.", "..X..", "..X..", "..X..", "..X.."],
-    ),
-    (
-        '.',
-        [".....", ".....", ".....", ".....", ".....", ".XX..", ".XX.."],
-    ),
-    (
-        ':',
-        [".....", ".XX..", ".XX..", ".....", ".....", ".XX..", ".XX.."],
-    ),
-    (
-        'C',
-        [".XXX.", "X...X", "X....", "X....", "X....", "X...X", ".XXX."],
-    ),
-    (
-        'D',
-        ["XXXX.", "X...X", "X...X", "X...X", "X...X", "X...X", "XXXX."],
-    ),
-    (
-        'F',
-        ["XXXXX", "X....", "X....", "XXXX.", "X....", "X....", "X...."],
-    ),
-    (
-        'I',
-        ["XXXXX", "..X..", "..X..", "..X..", "..X..", "..X..", "XXXXX"],
-    ),
-    (
-        'J',
-        ["....X", "....X", "....X", "....X", "X...X", "X...X", ".XXX."],
-    ),
-    (
-        'L',
-        ["X....", "X....", "X....", "X....", "X....", "X....", "XXXXX"],
-    ),
-    (
-        'V',
-        ["X...X", "X...X", "X...X", "X...X", ".X.X.", ".X.X.", "..X.."],
-    ),
-    // 1d.menu : glyphes du volet (libellés + symboles de tuiles).
-    (
-        'B',
-        ["XXXX.", "X...X", "X...X", "XXXX.", "X...X", "X...X", "XXXX."],
-    ),
-    (
-        'G',
-        ["0XXX.", "X...X", "X....", "X..XX", "X...X", "X...X", "0XXX0"],
-    ),
-    (
-        'H',
-        ["X...X", "X...X", "X...X", "XXXXX", "X...X", "X...X", "X...X"],
-    ),
-    (
-        'P',
-        ["XXXX.", "X...X", "X...X", "XXXX.", "X....", "X....", "X...."],
-    ),
-    (
-        'Q',
-        ["0XXX0", "X...X", "X...X", "X...X", "X.X.X", "X..X.", "0XX.X"],
-    ),
-    (
-        '>',
-        ["X....", ".X...", "..X..", "...X.", "..X..", ".X...", "X...."],
-    ),
-];
-
-fn glyph(ch: char) -> Option<&'static [&'static str; 7]> {
-    let up = ch.to_ascii_uppercase();
-    GLYPHS.iter().find(|(c, _)| *c == up).map(|(_, g)| g)
-}
-/// Largeur d'un texte rendu (6 px par glyphe : 5 + 1 d'espacement).
-fn text_width(s: &str) -> i32 {
-    (s.chars().count() as i32) * 6
-}
-
-// ---------------------------------------------------------------------------
-// Rendu (canvas wl_shm, octets B,G,R,A — petit boutisme Argb8888).
-// ---------------------------------------------------------------------------
-
-fn put(canvas: &mut [u8], w: i32, h: i32, x: i32, y: i32, color: u32) {
-    if x < 0 || y < 0 || x >= w || y >= h {
-        return;
-    }
-    let i = ((y * w + x) * 4) as usize;
-    if i + 3 < canvas.len() {
-        canvas[i] = (color & 0xFF) as u8;
-        canvas[i + 1] = ((color >> 8) & 0xFF) as u8;
-        canvas[i + 2] = ((color >> 16) & 0xFF) as u8;
-        canvas[i + 3] = ((color >> 24) & 0xFF) as u8;
-    }
-}
-
-fn fill_rect(
-    canvas: &mut [u8],
-    w: i32,
-    h: i32,
-    x0: i32,
-    y0: i32,
-    rw: i32,
-    rh: i32,
-    color: u32,
-) {
-    for y in y0..y0 + rh {
-        for x in x0..x0 + rw {
-            put(canvas, w, h, x, y, color);
-        }
-    }
-}
 
 /// Emblème 24x24 en Argb8888 (B,G,R,A), chargé une seule fois au
 /// démarrage (1e.logo). Vide tant que [`init_logo`] n'a pas tourné :
@@ -449,101 +193,9 @@ fn init_logo(cfg: &yaor_config::DesktopConfig) {
     eprintln!("{PROG}: emblème : bitmap incorporé - logo.path vide");
 }
 
-/// Logo 24x24 : blit mélangé (source over) — pixel transparent sauté
-/// (le noir du panneau transparaît), pixel translucide mélangé à
-/// l'existant. `src` : 24x24 Argb8888 (B,G,R,A), `logo.rs` en repli.
-fn blit_logo(canvas: &mut [u8], w: i32, h: i32, x0: i32, y0: i32, src: &[u8]) {
-    for (row, slice) in src.chunks_exact(24 * 4).enumerate().take(24) {
-        let y = y0 + row as i32;
-        if y < 0 || y >= h {
-            continue;
-        }
-        for col in 0..24usize {
-            let a = slice[col * 4 + 3] as f64 / 255.0;
-            if a <= 0.0 {
-                continue;
-            }
-            let x = x0 + col as i32;
-            if x < 0 || x >= w {
-                continue;
-            }
-            let off = (y as usize * w as usize + x as usize) * 4;
-            for k in 0..3 {
-                let bg = canvas[off + k] as f64;
-                let fg = slice[col * 4 + k] as f64;
-                canvas[off + k] = (bg + (fg - bg) * a).round() as u8;
-            }
-            canvas[off + 3] = 0xFF;
-        }
-    }
-}
-
 fn draw_logo(canvas: &mut [u8], w: i32, h: i32, x0: i32, y0: i32) {
     let src = LOGO.get().map(|v| v.as_slice()).unwrap_or(&logo::LOGO_24[..]);
-    blit_logo(canvas, w, h, x0, y0, src);
-}
-
-fn draw_text(canvas: &mut [u8], w: i32, h: i32, text: &str, x0: i32, y0: i32, color: u32) {
-    let mut x = x0;
-    for ch in text.chars() {
-        if let Some(rows) = glyph(ch) {
-            for (ry, row) in rows.iter().enumerate() {
-                for (rx, c) in row.chars().enumerate() {
-                    if c == 'X' {
-                        put(canvas, w, h, x + rx as i32, y0 + ry as i32, color);
-                    }
-                }
-            }
-        }
-        x += 6;
-    }
-}
-
-// --- 1d.tb : pilules arrondies + emblème + horloge -------------------------
-
-/// Mélange un pixel (couleur `color` Argb8888) sur le canvas avec la
-/// couverture `cov` (0..1) — bords anti-aliasés des pilules.
-fn blend_px(canvas: &mut [u8], w: i32, h: i32, x: i32, y: i32, color: u32, cov: f64) {
-    if cov <= 0.0 || x < 0 || y < 0 || x >= w || y >= h {
-        return;
-    }
-    let i = ((y * w + x) * 4) as usize;
-    if i + 3 >= canvas.len() {
-        return;
-    }
-    let a = cov.clamp(0.0, 1.0);
-    // couleurs de fond et de premier plan (octets B,G,R)
-    for k in 0..3 {
-        let bg = canvas[i + k] as f64;
-        let fg = ((color >> (8 * k)) & 0xFF) as f64;
-        canvas[i + k] = (bg + (fg - bg) * a).round() as u8;
-    }
-    // alpha : rendu opaque dès qu'on touche (surface de la barre)
-    canvas[i + 3] = 0xFF;
-}
-
-/// Couverture d'une « pilule » (rectangle à extrémités semi-circulaires,
-/// rayon = h/2) au point (px, py) — SDF de rectangle arrondi, AA 1 px.
-fn pill_cov(px: f64, py: f64, x0: f64, y0: f64, pw: f64, ph: f64) -> f64 {
-    let r = ph / 2.0;
-    let cx = x0 + pw / 2.0;
-    let cy = y0 + r;
-    let qx = (px - cx).abs() - (pw / 2.0 - r);
-    let qy = (py - cy).abs() - (ph / 2.0 - r);
-    let dx = qx.max(0.0);
-    let dy = qy.max(0.0);
-    let d = (dx * dx + dy * dy).sqrt() + qx.max(qy).min(0.0) - r;
-    (0.5 - d).clamp(0.0, 1.0)
-}
-
-/// Pilule pleine (bords adoucis, fond existant conservé aux coins).
-fn fill_pill(canvas: &mut [u8], w: i32, h: i32, x0: i32, y0: i32, pw: i32, ph: i32, color: u32) {
-    for y in y0..y0 + ph {
-        for x in x0..x0 + pw {
-            let cov = pill_cov(x as f64 + 0.5, y as f64 + 0.5, x0 as f64, y0 as f64, pw as f64, ph as f64);
-            blend_px(canvas, w, h, x, y, color, cov);
-        }
-    }
+    blit(canvas, w, h, x0, y0, src, 24, 24);
 }
 
 /// Mini-flamme ambre (silhouette du fond d'écran, réduite) : triangle
@@ -581,110 +233,9 @@ fn fill_flame(canvas: &mut [u8], w: i32, h: i32, cx: i32, y_tip: i32, base_w: i3
             }
             if hit > 0 {
                 let cov = hit as f64 / 4.0;
-                blend_px(canvas, w, h, x, y, color, cov);
+                blend(canvas, w, h, x, y, color, cov);
             }
         }
-    }
-}
-
-// --- 1d.menu : formes du volet (rectangle arrondi, cercle, anneau,
-// texte agrandi) — mêmes conventions AA 1 px que les pilules. ---------
-
-/// Couverture d'un rectangle arrondi (rayon `r`) au point (px, py) —
-/// SDF de rectangle arrondi, AA 1 px.
-fn rrect_cov(px: f64, py: f64, x0: f64, y0: f64, rw: f64, rh: f64, r: f64) -> f64 {
-    let dx = (x0 + r - px).max(px - (x0 + rw - r)).max(0.0);
-    let dy = (y0 + r - py).max(py - (y0 + rh - r)).max(0.0);
-    if dx == 0.0 && dy == 0.0 {
-        return 1.0;
-    }
-    let d = if dx > 0.0 && dy > 0.0 {
-        (dx * dx + dy * dy).sqrt()
-    } else {
-        dx.max(dy)
-    };
-    (0.5 + r - d).clamp(0.0, 1.0)
-}
-
-/// Rectangle arrondi plein (bords adoucis, fond existant conservé).
-fn fill_rrect(
-    canvas: &mut [u8],
-    w: i32,
-    h: i32,
-    x0: i32,
-    y0: i32,
-    rw: i32,
-    rh: i32,
-    r: i32,
-    color: u32,
-) {
-    for y in y0..y0 + rh {
-        for x in x0..x0 + rw {
-            let cov = rrect_cov(
-                x as f64 + 0.5,
-                y as f64 + 0.5,
-                x0 as f64,
-                y0 as f64,
-                rw as f64,
-                rh as f64,
-                r as f64,
-            );
-            blend_px(canvas, w, h, x, y, color, cov);
-        }
-    }
-}
-
-/// Disque plein (bords adoucis).
-fn fill_circle(canvas: &mut [u8], w: i32, h: i32, cx: i32, cy: i32, r: i32, color: u32) {
-    for y in cy - r - 1..=cy + r + 1 {
-        for x in cx - r - 1..=cx + r + 1 {
-            let d = ((x - cx) as f64).hypot((y - cy) as f64);
-            let cov = (r as f64 + 0.5 - d).clamp(0.0, 1.0);
-            blend_px(canvas, w, h, x, y, color, cov);
-        }
-    }
-}
-
-/// Anneau (rayon `r`, épaisseur `t`) — symbole power du volet.
-fn fill_ring(canvas: &mut [u8], w: i32, h: i32, cx: i32, cy: i32, r: i32, t: i32, color: u32) {
-    let lo = (r - t) as f64;
-    let hi = (r + t) as f64;
-    for y in cy - r - t - 1..=cy + r + t + 1 {
-        for x in cx - r - t - 1..=cx + r + t + 1 {
-            let d = ((x - cx) as f64).hypot((y - cy) as f64);
-            let cov = (hi - 0.5 - d).clamp(0.0, 1.0) * (d - lo + 0.5).clamp(0.0, 1.0);
-            blend_px(canvas, w, h, x, y, color, cov);
-        }
-    }
-}
-
-/// Texte 5x7 agrandi d'un facteur `sc` (entête « YAOR » du volet).
-fn draw_text_scaled(
-    canvas: &mut [u8],
-    w: i32,
-    h: i32,
-    text: &str,
-    x0: i32,
-    y0: i32,
-    color: u32,
-    sc: i32,
-) {
-    let mut x = x0;
-    for ch in text.chars() {
-        if let Some(rows) = glyph(ch) {
-            for (ry, row) in rows.iter().enumerate() {
-                for (rx, c) in row.chars().enumerate() {
-                    if c == 'X' {
-                        for sy in 0..sc {
-                            for sx in 0..sc {
-                                put(canvas, w, h, x + rx as i32 * sc + sx, y0 + ry as i32 * sc + sy, color);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        x += 6 * sc;
     }
 }
 
@@ -696,6 +247,12 @@ fn civil_now() -> (i64, u32, u32, u32, u32) {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
+    civil_from_unix(secs)
+}
+
+/// Conversion civile pure d'un instant UNIX (séparée de l'horloge pour
+/// être testable) — algorithme de H. Hinnant `civil_from_days`.
+fn civil_from_unix(secs: i64) -> (i64, u32, u32, u32, u32) {
     let days = secs.div_euclid(86_400);
     let sod = secs.rem_euclid(86_400);
     let hh = (sod / 3_600) as u32;
@@ -724,10 +281,20 @@ fn clock_text() -> String {
     format!("{:02}:{:02}  {:02} {}. {}", hh, mm, d, MONTHS[(m as usize - 1) % 12], y)
 }
 
+/// Libellé d'un bouton de taskbar : capitales (police bitmap), borné à la
+/// largeur utile du bouton — un titre trop long est tronqué, jamais débordé
+/// sur le bouton voisin (mesuré par le harnais QA).
+fn taskbar_label(title: &str) -> String {
+    title
+        .chars()
+        .take(((TB_BTN_W - 12) / 6) as usize)
+        .map(|c| c.to_ascii_uppercase())
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // État du panneau
 // ---------------------------------------------------------------------------
-
 struct Panel {
     registry_state: RegistryState,
     seat_state: SeatState,
@@ -995,12 +562,7 @@ impl Panel {
                     th().button_bg,
                 );
                 // titre (capitales — police bitmap), borné au bouton.
-                let label: String = entry
-                    .title
-                    .chars()
-                    .take(((TB_BTN_W - 12) / 6) as usize)
-                    .map(|c| c.to_ascii_uppercase())
-                    .collect();
+                let label = taskbar_label(&entry.title);
                 let tx = x0 + (TB_BTN_W as i32 - text_width(&label)) / 2;
                 let ty = y0 + (TB_BTN_H as i32 - 7) / 2;
                 draw_text(&mut canvas, cw, ch, &label, tx, ty, th().text_fg);
@@ -1703,59 +1265,21 @@ fn main() -> std::process::ExitCode {
 mod tests {
     use super::*;
 
-    /// Emblème entièrement rouge à `alpha`, canvas noir opaque.
-    fn canvas_et_logo(alpha: u8) -> (Vec<u8>, Vec<u8>) {
-        let mut canvas = vec![0u8; 24 * 24 * 4];
-        for px in canvas.chunks_exact_mut(4) {
-            px[3] = 0xFF;
-        }
-        let mut logo = vec![0u8; 24 * 24 * 4];
-        for px in logo.chunks_exact_mut(4) {
-            px[2] = 0xFF; // rouge (ordre B,G,R,A)
-            px[3] = alpha;
-        }
-        (canvas, logo)
+    #[test]
+    fn libelle_de_taskbar_tronque_et_met_en_capitales() {
+        // 18 caractères tiennent dans 120 px (18 * 6 = 108 < 120 - 12).
+        assert_eq!(taskbar_label("waytest"), "WAYTEST");
+        let long = taskbar_label(&"a".repeat(60));
+        assert_eq!(long.chars().count(), 18, "titre borné à la largeur du bouton");
+        assert!(text_width(&long) <= TB_BTN_W as i32 - 12);
     }
 
     #[test]
-    fn blit_logo_melange_l_alpha() {
-        let (mut canvas, logo) = canvas_et_logo(128);
-        blit_logo(&mut canvas, 24, 24, 0, 0, &logo);
-        assert_eq!(canvas[0..4], [0, 0, 128, 0xFF], "rouge mélangé sur noir");
-    }
-
-    #[test]
-    fn blit_logo_ignore_le_transparent() {
-        let (mut canvas, logo) = canvas_et_logo(0);
-        canvas[0..4].copy_from_slice(&[9, 9, 9, 0xFF]);
-        blit_logo(&mut canvas, 24, 24, 0, 0, &logo);
-        assert_eq!(canvas[0..4], [9, 9, 9, 0xFF], "pixel transparent laissé tel quel");
-    }
-
-    #[test]
-    fn blit_logo_hors_canvas_ne_panique_pas() {
-        let (mut canvas, logo) = canvas_et_logo(255);
-        // Ancrage négatif et à cheval sur le bord droit.
-        blit_logo(&mut canvas, 24, 24, -10, 20, &logo);
-        assert_eq!(canvas.len(), 24 * 24 * 4);
-    }
-
-    #[test]
-    fn dim_attenue_les_composantes_sans_toucher_l_alpha() {
-        assert_eq!(dim(0xFF8A8A92, 1.0), 0xFF8A8A92);
-        assert_eq!(dim(0xFF8A8A92, 0.5), 0xFF454549);
-        assert_eq!(dim(0xFFFF_FFFF, 0.0), 0xFF000000);
-    }
-
-    #[test]
-    fn theme_replie_couleur_par_couleur() {
-        let cfg = yaor_config::ThemeConfig {
-            accent: "#00AAFF".to_string(),
-            panel_bg: "invalide".to_string(),
-            ..Default::default()
-        };
-        let t = Theme::from_config(&cfg);
-        assert_eq!(t.accent, 0xFF00AAFF, "couleur valide reprise");
-        assert_eq!(t.panel_bg, Theme::CANONIQUE.panel_bg, "repli canonique");
+    fn conversion_civile_d_un_instant_connu() {
+        // 2026-11-06T00:00:00Z (date de l'étape 1e) et l'époque UNIX.
+        assert_eq!(civil_from_unix(1_793_923_200), (2026, 11, 6, 0, 0));
+        assert_eq!(civil_from_unix(0), (1970, 1, 1, 0, 0));
+        // Fin de journée : les minutes ne débordent pas sur l'heure.
+        assert_eq!(civil_from_unix(86_399), (1970, 1, 1, 23, 59));
     }
 }

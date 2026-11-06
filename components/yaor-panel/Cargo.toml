@@ -41,3 +41,9 @@ path = "../yaor-assets"
 # donc même crate, aucun format dupliqué.
 [dependencies.yaor-config]
 path = "../yaor-config"
+
+# Primitives de rendu partagées (étape 2) : canvas Argb8888, formes
+# anti-aliasées, police bitmap 5x7 et thème — mêmes fonctions pour le
+# panel et le dock, un seul fournisseur (extraction depuis ce crate).
+[dependencies.yaor-ui]
+path = "../yaor-ui"
