@@ -734,6 +734,54 @@ centrée, tuiles des fenêtres, activation au clic, absence de zone
 réservée) — non exécutable dans l'environnement de rédaction (étapes 04
 et 06 en root).
 
+### Étape 3 — changement de profil à chaud (6 novembre 2026)
+
+Les trois profils ont désormais leurs surfaces : la barre et la taskbar
+(classique, étape 1), le dock (macOS-like, étape 2), le maître+pile
+(tiling, v0.5). Cette étape les rend **électifs** — un profil est une
+configuration de l'expérience de bureau, pas un système distinct (HLD
+`desktop-architecture`), et la bascule se fait **sans quitter la
+session**, par le SIGHUP déjà utilisé pour la configuration (v0.5).
+
+- **`[profile] name`** (`classic` | `macos` | `tiling`) dans
+  `desktop.toml`, **opt-in** : section absente = comportement v0.4/v0.5
+  exact (`[layout] mode` décide, aucune surface masquée — les QA
+  établies ne bougent pas, d'où la section commentée dans
+  `default.toml`). `DesktopConfig::layout_mode()` porte la règle
+  « profil prime sur `[layout] mode` » ; le profil choisit aussi les
+  surfaces : taskbar en classique et tiling, dock en macOS-like.
+- **Compositor** — un seul point de vérité, `config::layout_mode()`, là
+  où six lectures de `[layout] mode` étaient dispersées (politique de
+  placement, décorations serveur des fenêtres Wayland et X11). Au
+  SIGHUP, la bascule est journalisée (`profil : classic -> macos
+  (disposition floating)`) et la disposition est ré-appliquée à la
+  frame suivante : fenêtres tuilées libérées sur place (tiling →
+  flottant), décorations serveur posées/retirées selon le mode.
+- **Clients** — le panel et le dock relisent `desktop.toml` au SIGHUP.
+  Le module `yaor_config::hup` installe un gestionnaire
+  async-signal-safe (store atomique + un octet dans un tube) et les
+  boucles attendent en `poll` sur le fd Wayland **et** sur le tube :
+  ni minuterie, ni scrutation de fichier, réveil immédiat. Le panel
+  garde sa barre et **masque sa taskbar** hors profils classique et
+  tiling (zone exclusive 0 → les fenêtres récupèrent la bande de
+  24 px ; région d'entrée vide → les clics traversent ; buffer
+  transparent, la surface reste mappée pour revenir). Le dock fait de
+  même hors profil macOS-like (surface ramenée à 1×1). Thème et
+  `[dock]` sont rechargés au passage.
+
+Tests : `yaor-config` 14 (profils élu/absent/inconnu, préséance sur
+`[layout] mode`, réveil par SIGHUP réel), `yaor-dock` 5 (visibilité),
+`yaor-panel` 3 (visibilité de la taskbar), `compositor` 5 (disposition
+effective) — **70/70** au total, `cargo test --workspace` vert.
+
+**Reste à faire** : les **espaces de travail** du profil tiling
+(maquette : 1-5 en barre) — étape suivante ; le lancement des surfaces
+par le profil (aujourd'hui le harnais QA démarre panel et dock, qui se
+masquent selon le profil) ; la QA QEMU du changement à chaud
+(TEST-UI-004 : bascule, taskbar/dock, disposition, absence de zone
+réservée) — non exécutable dans l'environnement de rédaction (étapes 04
+et 06 en root), donc **aucune preuve à l'écran** pour cette étape.
+
 ### Clôture de v0.4 (28 octobre 2026)
 
 Tous les critères de sortie du jalon sont cochés avec preuves (session KMS,

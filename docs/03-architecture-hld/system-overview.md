@@ -129,4 +129,10 @@ Principes de lecture :
   l'écran, contrairement à la taskbar du profil classique (zone
   exclusive de 24 px). Il ne dessine que du rendu wl_shm et lit la
   liste des fenêtres par `zwlr_foreign_toplevel_management_v1`, le
-  même canal que la taskbar.
+  même canal que la taskbar ;
+- **le profil (`[profile] name`, étape 3) est relu au SIGHUP par le
+  compositor ET par les clients** : pas de protocole privé ni de
+  gestionnaire de session — chacun relit `desktop.toml` et applique sa
+  part (disposition au compositor ; taskbar au panel, dock au
+  `yaor-dock`), le masquage d'une surface se faisant zone exclusive 0
+  + région d'entrée vide, sans démonter la couche.

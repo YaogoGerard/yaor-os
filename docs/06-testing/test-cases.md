@@ -315,7 +315,7 @@ panel : requêtes `activate`/`unset_minimized`). Rendus
 TEST-UI-001 est **refermé** (REQ-SW-008 « de type Windows-like » :
 barre + menu + fenêtres flottantes + décorations serveur + taskbar
 livrés et vérifiés). Restant au jalon v0.6 (hors TEST-UI-001) :
-changement de profil à chaud (étape 3, TEST-UI-004 à détailler).
+changement de profil à chaud (étape 3 : TEST-UI-004).
 Maquettes SVG, rendus cibles des trois profils et identité visuelle
 livrés dans `docs/05-ui-ux/` (`mockups/`, `design/`, `branding/`).
 
@@ -353,8 +353,34 @@ Activer le profil en mosaïque, ouvrir plusieurs fenêtres et vérifier leur dis
 Rendu cible : [`../05-ui-ux/design/Tiling.png`](../05-ui-ux/design/Tiling.png)
 (espaces de travail 1-5, maître+pile, barre supérieure avec titre
 focusé et indicateur de layout). Layout maître+pile vérifié depuis
-v0.5 (`t-yaor-tiling` 26/26 + 6/6) ; espaces de travail et
-changement de profil : jalon v0.6 étape 3 — cas à détailler.
+v0.5 (`t-yaor-tiling` 26/26 + 6/6) ; les espaces de travail restent à
+livrer (étape suivante) et le changement de profil est couvert par
+TEST-UI-004.
+
+## TEST-UI-004 — Changement de profil à chaud
+**Vérifie :** REQ-SW-009, REQ-SW-010
+
+Élire successivement les trois profils dans `desktop.toml` et envoyer
+SIGHUP au compositor (`kill -HUP $(pidof yaor-compositor)`) **sans
+quitter la session** : chaque bascule doit être visible sur les
+screendumps alors que la fenêtre reste ouverte.
+
+**v0.6 étape 3 — livré (`[profile] name`, relu par le compositor, le
+panel et le dock) ; contrôles prévus** (à porter dans un harnais
+`t-yaor-profil.py` — il n'existe pas encore, ces contrôles ne sont
+**pas** exécutés) :
+
+| Contrôle | Attendu | Mesure |
+|---|---|---|
+| journal compositor | `profil : ancien -> nouveau (disposition …)` | stdout série du compositor |
+| `classic` | taskbar visible, dock absent, fenêtres flottantes | screendump + journal `taskbar : affichée` / `dock : masqué` |
+| `macos` | taskbar disparue, dock centré, fenêtres flottantes | screendump : bande basse identique au fond d'écran |
+| `tiling` | maître+pile, taskbar visible, dock absent | géométrie des fenêtres mesurée sur le screendump |
+| zone réservée | en `macos`, une fenêtre maximisée recouvre la bande de 24 px | différence de tiling nulle vs barre seule |
+| retour arrière | `macos` → `classic` → `macos` revient à l'identique | deux screendumps identiques (octet à octet hors horloge) |
+
+Régressions attendues vertes : TEST-UI-001/002/003 et TEST-DESK-001
+(SIGHUP sans `[profile]` : comportement inchangé).
 
 ## Harnais d'exécution QA
 

@@ -42,11 +42,40 @@ socket Wayland reste publiée. TEST-CONFIG-001/TEST-DESK-001 : ratio
 screendumps ; le rebind close=Mod+X est prouvé à l'usage (Mod+Q
 inactif, Mod+X ferme la fenêtre focusée).
 
+## Profil élu — `[profile]` (v0.6 étape 3)
+
+`[profile] name` (`classic` | `macos` | `tiling`) élit un **profil
+d'interface**. Un profil n'est pas un système distinct (HLD
+`desktop-architecture`) : il choisit la disposition et les surfaces
+visibles, à partir d'un seul programme.
+
+| Profil | `layout_mode()` | Taskbar (`yaor-panel`) | Dock (`yaor-dock`) |
+|---|---|---|---|
+| `classic` | `floating` | visible (zone 24 px) | masqué |
+| `macos` | `floating` | masquée (zone 0) | visible |
+| `tiling` | `master-stack` | visible | masqué |
+| absent | `[layout] mode` | visible | visible |
+
+- **Ancienneté préservée** : section absente = comportement v0.4/v0.5
+  exact ; le profil est opt-in, d'où `[profile]` commenté dans
+  `default.toml`.
+- `DesktopConfig::layout_mode()` porte la règle « profil prime sur
+  `[layout] mode` » ; le compositor n'a qu'un point de vérité
+  (`config::layout_mode()`), consommé par la politique de placement et
+  les décorations serveur.
+- **Bascule à chaud** : le compositor relit `desktop.toml` au SIGHUP
+  (v0.5) et journalise `profil : ancien -> nouveau (disposition …)` ;
+  les clients y réagissent par le module `yaor_config::hup` —
+  gestionnaire de signal async-signal-safe (store atomique + un octet
+  dans un tube), `poll` sur le fd Wayland **et** sur le tube, donc ni
+  minuterie ni scrutation de fichier. Sans `[profile]`, rien ne change.
+
 ## Arborescence (consolidée pour v0.5)
 
 ```text
 ~/.config/yaor/
-└── desktop.toml        # v0.5 étape 1 : [layout] + [keys]
+└── desktop.toml        # v0.5 [layout] + [keys] ; v0.6 [profile], [theme],
+                        # [wallpaper], [logo], [dock]
 ```
 
 Les fichiers avancés (theme.toml, windows.toml, panel.toml,

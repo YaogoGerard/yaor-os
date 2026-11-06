@@ -1,6 +1,6 @@
 # YAOR Design System
 
-**Statut :** v0.6 — *mise à jour : 29 octobre 2026*
+**Statut :** v0.6 — *mise à jour : 6 novembre 2026*
 
 Le design system définit les éléments visuels communs : couleurs,
 typographie, espacements, icônes, boutons, panneaux, fenêtres, menus.
@@ -38,7 +38,27 @@ thème porte aussi le rayon des coins de fenêtre (`corner_radius`, borné
 2..24) et l'intensité de l'ombre (`shadow`, 0..1). Le compositor les
 applique à chaud au SIGHUP (les buffers de décoration portent une
 version de thème dans leur clé de cache) ; les clients du bureau
-(panel, dock) la lisent à leur démarrage.
+(panel, dock) la relisent à leur démarrage et à chaque SIGHUP (étape 3).
+
+## Profils et surfaces (étape 3)
+
+Chaque profil compose les mêmes primitives mais n'affiche pas les mêmes
+surfaces ; la bascule est un rechargement de `desktop.toml` (SIGHUP),
+pas un redémarrage.
+
+| Profil | Barre haute | Taskbar basse | Dock | Fenêtres |
+|---|---|---|---|---|
+| `classic` | oui (YAOR, menu, version) | oui (24 px, pleine largeur) | masqué | flottantes, décorations serveur |
+| `macos` | oui (barre de menus) | masquée (aucune zone réservée) | oui (centré, 72 px) | flottantes, décorations serveur |
+| `tiling` | oui | oui | masqué | maître+pile |
+| *(section absente)* | oui | oui | si lancé | selon `[layout] mode` |
+
+Une surface masquée reste mappée : elle est peinte **entièrement
+transparente** et son entrée est retirée (taskbar : zone exclusive 0 +
+région d'entrée vide ; dock : 1×1), donc elle ne vole ni clic ni
+pixel et revient au SIGHUP suivant. Aucun profil ne réserve
+l'espace du dock (les fenêtres gardent tout l'écran), seul le profil
+classique/tiling réserve la bande de 24 px de la taskbar.
 
 ## Typographie
 
