@@ -6,7 +6,8 @@
 # Mod = Super), wallpaper.path (image PNG/JPEG ; vide = dégradé
 # procédural), wallpaper.fit (« cover » | « fit »), logo.path (image
 # PNG ; vide = bitmap incorporé), theme.* (couleurs « #RRGGBB »,
-# corner_radius, shadow).
+# corner_radius, shadow), dock.height, dock.icon (dock du profil
+# macOS-like).
 # Champs absents : valeur par défaut compilée — fichier partiel valable.
 #
 # Configurable par l'utilisateur dans ~/.config/yaor/desktop.toml
@@ -44,7 +45,8 @@ path = "/usr/share/yaor/logo.png"
 
 # Thème « ambre sur noir » (1e.theme) — palette canonique du branding.
 # Couleurs « #RRGGBB » (ou « #RRGGBBAA ») routées par le compositor
-# (décorations, à chaud au SIGHUP) et par le panel (à son démarrage).
+# (décorations, à chaud au SIGHUP) et par les clients du bureau
+# (panel, dock — à leur démarrage).
 # Une valeur invalide retombe sur la couleur canonique, pas sur du noir.
 # corner_radius : borné 2..24 ; shadow : 0.0 (aucune) à 1.0 (max).
 [theme]
@@ -57,3 +59,11 @@ text_gray = "#8A8A92"
 separator = "#2A2A33"
 corner_radius = 10
 shadow = 0.55
+
+# Dock du profil macOS-like (v0.6 étape 2, `yaor-dock`) : barre
+# flottante centrée en bas, sans zone exclusive (les fenêtres gardent
+# tout l'écran). height : bornée 40..200 ; icon : côté d'une tuile,
+# borné 24..height-16.
+[dock]
+height = 72
+icon = 56

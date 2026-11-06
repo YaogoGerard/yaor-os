@@ -1768,6 +1768,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "yaor-dock"
+version = "0.2.0"
+dependencies = [
+ "smithay-client-toolkit",
+ "wayland-client",
+ "wayland-protocols-wlr",
+ "yaor-assets",
+ "yaor-config",
+ "yaor-ui",
+]
+
+[[package]]
 name = "yaor-install"
 version = "0.2.0"
 dependencies = [

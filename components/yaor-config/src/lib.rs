@@ -117,6 +117,7 @@ pub struct DesktopConfig {
     pub wallpaper: WallpaperConfig,
     pub logo: LogoConfig,
     pub theme: ThemeConfig,
+    pub dock: DockConfig,
 }
 
 /// Mise à l'échelle d'une image à l'écran (1e.fond).
@@ -164,6 +165,29 @@ impl Default for LogoConfig {
     fn default() -> Self {
         Self {
             path: "/usr/share/yaor/logo.png".to_string(),
+        }
+    }
+}
+
+/// Dock du profil macOS-like (v0.6 étape 2) : barre flottante ancrée en
+/// bas, centrée, peinte sur fond transparent (pas de zone exclusive —
+/// les fenêtres gardent tout l'écran, comme le dock macOS).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct DockConfig {
+    /// Hauteur de la barre, en pixels logiques (le dock la borne à
+    /// 40..200 — une valeur aberrante ne casse pas le bureau).
+    pub height: u32,
+    /// Côté d'une tuile (emblème ou fenêtre), en pixels logiques
+    /// (borné à 24..hauteur-16 pour garder une marge dans la barre).
+    pub icon: u32,
+}
+
+impl Default for DockConfig {
+    fn default() -> Self {
+        Self {
+            height: 72,
+            icon: 56,
         }
     }
 }
@@ -313,6 +337,17 @@ mod tests {
         assert_eq!(parse_color(&cfg.theme.accent), Some(0xFFE8862E));
         assert_eq!(cfg.theme.corner_radius, 10);
         assert!(cfg.theme.shadow > 0.0 && cfg.theme.shadow <= 1.0);
+    }
+
+    #[test]
+    fn dock_defauts_profil_macos() {
+        let cfg = DesktopConfig::parse_str("").unwrap();
+        assert_eq!(cfg.dock.height, 72);
+        assert_eq!(cfg.dock.icon, 56);
+        // Section partielle : `icon` seul est admis, `height` garde son défaut.
+        let partiel = DesktopConfig::parse_str("[dock]\nicon = 48\n").unwrap();
+        assert_eq!(partiel.dock.icon, 48);
+        assert_eq!(partiel.dock.height, 72);
     }
 
     #[test]
