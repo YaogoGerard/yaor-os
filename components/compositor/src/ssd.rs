@@ -10,19 +10,24 @@
 // Palette de référence : docs/05-ui-ux/branding/README.md.
 
 use smithay::{
-    backend::renderer::{
-        element::{
-            solid::{SolidColorBuffer, SolidColorRenderElement},
-            AsRenderElements, Kind,
+    backend::{
+        allocator::Fourcc,
+        renderer::{
+            element::{
+                memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
+                solid::SolidColorBuffer,
+                AsRenderElements, Kind,
+            },
+            Renderer,
         },
-        Renderer,
     },
     input::Seat,
     reexports::wayland_protocols::xdg::shell::server::xdg_toplevel,
     reexports::wayland_server::Resource,
-    utils::{Logical, Point, Serial},
+    utils::{Logical, Point, Serial, Transform},
     wayland::seat::WaylandFocus,
 };
+use smithay::backend::renderer::ImportMem;
 use std::cell::{RefCell, RefMut};
 
 use crate::{element::WindowElement, state::Yaor};
@@ -31,16 +36,19 @@ use crate::{element::WindowElement, state::Yaor};
 // Palette « ambre sur noir » (docs/05-ui-ux/design-system.md)
 // ---------------------------------------------------------------------------
 
-/// Fond de la barre de titre (`#101014`).
-const BG_COLOR: [f32; 4] = [0.0627, 0.0627, 0.0784, 1.0];
-/// Boutons au repos (`#26262E`).
-const BUTTON_COLOR: [f32; 4] = [0.149, 0.149, 0.180, 1.0];
-/// Boutons survolés (`#3A3A44`).
-const BUTTON_HOVER_COLOR: [f32; 4] = [0.227, 0.227, 0.267, 1.0];
 /// Bordure fenêtre focusée — accent (`#E8862E`).
 const BORDER_FOCUSED_COLOR: [f32; 4] = [0.9098, 0.5255, 0.1804, 1.0];
 /// Bordure fenêtre au repos — accent sombre (`#B96A1F`).
 const BORDER_UNFOCUSED_COLOR: [f32; 4] = [0.7255, 0.4157, 0.1216, 1.0];
+
+// Couleurs u32 (0xAARRGGBB) pour le rendu par pixel (buffers mémoire).
+const BG_U: u32 = 0xFF_10_10_14;
+const BUTTON_U: u32 = 0xFF_26_26_2E;
+const BUTTON_HOVER_U: u32 = 0xFF_3A_3A_44;
+const FOCUS_U: u32 = 0xFF_E8_86_2E;
+const UNFOCUSED_U: u32 = 0xFF_B9_6A_1F;
+/// Glyphes des pastilles (gris clair).
+const GLYPH_U: u32 = 0xFF_C8_C8_CD;
 
 /// Hauteur de la barre de titre (px logiques).
 pub const HEADER_H: i32 = 28;
@@ -48,7 +56,57 @@ pub const HEADER_H: i32 = 28;
 pub const BUTTON_W: u32 = 32;
 /// Épaisseur de la bordure de focus (px logiques).
 pub const BORDER_W: i32 = 2;
-const BUTTON_H: i32 = HEADER_H;
+
+// --- 1d.ssd : coins arrondis, pastilles, ombre ------------------------------
+
+/// Rayon des coins arrondis (px logiques).
+pub(crate) const CORNER_R: i32 = 10;
+/// Marge de l'ombre douce autour de la fenêtre.
+pub(crate) const SHADOW_M: i32 = 16;
+/// Diamètre des pastilles de bouton.
+const PASTILLE_D: i32 = 14;
+
+// ---------------------------------------------------------------------------
+// Rendu par pixel (buffers mémoire Argb8888 prémultiplié, 1d.ssd)
+// ---------------------------------------------------------------------------
+
+/// Composite « source over » prémultiplié d'un pixel de couleur
+/// `color` (0xAARRGGBB) avec la couverture `a` (0..1).
+fn over_px(px: &mut [u8], w: i32, h: i32, x: i32, y: i32, color: u32, a: f64) {
+    if a <= 0.0 || x < 0 || y < 0 || x >= w || y >= h {
+        return;
+    }
+    let a = a.clamp(0.0, 1.0);
+    let i = ((y * w + x) * 4) as usize;
+    let da = px[i + 3] as f64 / 255.0;
+    for k in 0..3 {
+        // octets B,G,R (petit boutisme) — k=0 -> poids bas
+        let src = ((color >> (8 * k)) & 0xFF) as f64 / 255.0 * a;
+        let dst = px[i + k] as f64 / 255.0; // déjà prémultiplié
+        px[i + k] = ((src + dst * (1.0 - a)) * 255.0).round() as u8;
+    }
+    px[i + 3] = ((a + da * (1.0 - a)) * 255.0).round() as u8;
+}
+
+/// Couverture d'un rectangle à coins supérieurs arrondis (rayon `r`,
+/// coins inférieurs droits) — AA 1 px sur l'arc et le bord droit.
+fn rounded_top_alpha(x: i32, y: i32, w: i32, _h: i32, r: i32) -> f64 {
+    let (fx, fy) = (x as f64 + 0.5, y as f64 + 0.5);
+    let mut a = 1.0;
+    if fx > w as f64 - 0.5 {
+        a *= (w as f64 + 0.5 - fx).clamp(0.0, 1.0);
+    }
+    if fy < r as f64 {
+        if fx < r as f64 {
+            let d = (r as f64 - fx).hypot(r as f64 - fy);
+            a *= (r as f64 + 0.5 - d).clamp(0.0, 1.0);
+        } else if fx > (w - r) as f64 {
+            let d = (fx - (w - r) as f64).hypot(r as f64 - fy);
+            a *= (r as f64 + 0.5 - d).clamp(0.0, 1.0);
+        }
+    }
+    a
+}
 
 /// État de décoration d'une fenêtre (porté par la user_data de
 /// l'élément — modèle anvil WindowState).
@@ -63,12 +121,55 @@ pub struct DecorationState {
     pub maximized_pre_loc: Option<smithay::utils::Point<i32, Logical>>,
     pub header_bar: HeaderBar,
     pub border: Border,
+    /// Ombre douce (1d.ssd) : cache (largeur, hauteur totale, focus).
+    pub shadow: Option<((i32, i32, bool), MemoryRenderBuffer)>,
 }
 
-/// Barre de titre : fond + trois boutons à droite (minimiser,
-/// agrandir, fermer — façon Windows). Hit-test sur la position du
-/// pointeur en coordonnées LOCALES à l'élément (Smithay passe
-/// `MotionEvent.location - loc` aux cibles pointeur).
+/// Ombre douce (1d.ssd) : halo noir semi-transparent autour de la
+/// fenêtre — gaussienne de distance au rectangle (σ 9 px), plus
+/// marquée si focusée. Buffer (w+2M) x (h+2M), cache par clé.
+pub(crate) fn shadow_buffer(w: i32, h: i32, focused: bool) -> MemoryRenderBuffer {
+    let bw = w + 2 * SHADOW_M;
+    let bh = h + 2 * SHADOW_M;
+    let mut px = vec![0u8; (4 * (bw * bh)) as usize];
+    let amp = if focused { 0.55 } else { 0.40 };
+    let sigma2 = 2.0 * 9.0 * 9.0;
+    for y in 0..bh {
+        for x in 0..bw {
+            let dx = if x < SHADOW_M {
+                (SHADOW_M - x) as f64
+            } else if x >= SHADOW_M + w {
+                (x - (SHADOW_M + w) + 1) as f64
+            } else {
+                0.0
+            };
+            let dy = if y < SHADOW_M {
+                (SHADOW_M - y) as f64
+            } else if y >= SHADOW_M + h {
+                (y - (SHADOW_M + h) + 1) as f64
+            } else {
+                0.0
+            };
+            let d2 = dx * dx + dy * dy;
+            if d2 > 400.0 {
+                // au-delà de ~2σ : rien (économie de blend)
+                continue;
+            }
+            let a = amp * (-d2 / sigma2).exp();
+            if a > 0.004 {
+                over_px(&mut px, bw, bh, x, y, 0xFF_00_00_00, a);
+            }
+        }
+    }
+    MemoryRenderBuffer::from_slice(&px, Fourcc::Argb8888, (bw, bh), 1, Transform::Normal, None)
+}
+
+/// Barre de titre : fond à coins supérieurs arrondis + trois pastilles
+/// à droite (minimiser, agrandir, fermer — 1d.ssd), rendues dans UN
+/// buffer mémoire reconstruit seulement si géométrie/survol/focus
+/// changent. Hit-test sur la position du pointeur en coordonnées
+/// LOCALES à l'élément (Smithaye passe `MotionEvent.location - loc`
+/// aux cibles pointeur) — les zones de clic 32 px sont inchangées.
 #[derive(Debug, Clone)]
 pub struct HeaderBar {
     pub pointer_loc: Option<Point<f64, Logical>>,
@@ -76,20 +177,137 @@ pub struct HeaderBar {
     pub minimize_hover: bool,
     pub maximize_hover: bool,
     pub close_hover: bool,
-    pub background: SolidColorBuffer,
-    pub minimize_button: SolidColorBuffer,
-    pub maximize_button: SolidColorBuffer,
-    pub close_button: SolidColorBuffer,
+    /// Buffer mémoire unique (fond arrondi + pastilles + glyphes).
+    pub buffer: MemoryRenderBuffer,
+    /// Clé du dernier rendu : (largeur, focus, 3 survols).
+    cache: Option<(u32, bool, bool, bool, bool)>,
+}
+
+/// Barre de titre : construction du buffer (silhouette arrondie en
+/// haut — anneau bordure + fond — puis pastilles et glyphes).
+fn header_buffer(width: u32, focused: bool, min_hover: bool, max_hover: bool, close_hover: bool) -> MemoryRenderBuffer {
+    let w = width as i32;
+    let h = HEADER_H;
+    let mut px = vec![0u8; (4 * (w * h)) as usize];
+
+    // 1) anneau extérieur : silhouette arrondie en haut, couleur bordure.
+    let border = if focused { FOCUS_U } else { UNFOCUSED_U };
+    for y in 0..h {
+        for x in 0..w {
+            let a = rounded_top_alpha(x, y, w, h, CORNER_R);
+            over_px(&mut px, w, h, x, y, border, a);
+        }
+    }
+    // 2) fond intérieur (encart 2 px, rayon réduit) — les 2 px du bas
+    //    restent bordure pleine : soulignement ambre de la barre
+    //    (anneau continu autour de la fenêtre, design Classique).
+    for y in BORDER_W..h - BORDER_W {
+        for x in BORDER_W..w - BORDER_W {
+            let a = rounded_top_alpha(
+                x - BORDER_W,
+                y - BORDER_W,
+                w - 2 * BORDER_W,
+                h - 2 * BORDER_W,
+                CORNER_R - BORDER_W,
+            );
+            over_px(&mut px, w, h, x, y, BG_U, a);
+        }
+    }
+
+    // 3) pastilles : cercles 14 px centrés dans les zones 32 px
+    //    (minimiser, agrandir, fermer — de gauche à droite).
+    let cy = h / 2;
+    let centers = [
+        (w - (3 * BUTTON_W as i32 - BUTTON_W as i32 / 2), cy, min_hover),
+        (w - (2 * BUTTON_W as i32 - BUTTON_W as i32 / 2), cy, max_hover),
+        (w - BUTTON_W as i32 / 2, cy, close_hover),
+    ];
+    for (cx, cy, hover) in centers {
+        let color = if hover { BUTTON_HOVER_U } else { BUTTON_U };
+        let r = PASTILLE_D as f64 / 2.0;
+        for dy in -r as i32..=r as i32 {
+            for dx in -r as i32..=r as i32 {
+                let d = (dx as f64 + 0.5).hypot(dy as f64 + 0.5);
+                let cov = (r + 0.5 - d).clamp(0.0, 1.0);
+                over_px(&mut px, w, h, cx + dx, cy + dy, color, cov);
+            }
+        }
+        // 4) glyphe (7x7) : – ▢ ×
+        match (cx, hover) {
+            (cx, _) if cx == centers[0].0 => {
+                // minimiser : barre horizontale
+                for gx in -3..=3 {
+                    over_px(&mut px, w, h, cx + gx, cy, GLYPH_U, 1.0);
+                }
+            }
+            (cx, _) if cx == centers[1].0 => {
+                // agrandir : carré 7x7 en trait 1 px
+                for g in -3..=3 {
+                    over_px(&mut px, w, h, cx + g, cy - 3, GLYPH_U, 1.0);
+                    over_px(&mut px, w, h, cx + g, cy + 3, GLYPH_U, 1.0);
+                    over_px(&mut px, w, h, cx - 3, cy + g, GLYPH_U, 1.0);
+                    over_px(&mut px, w, h, cx + 3, cy + g, GLYPH_U, 1.0);
+                }
+            }
+            (cx, _) if cx == centers[2].0 => {
+                // fermer : croix en diagonales
+                for g in -3..=3 {
+                    over_px(&mut px, w, h, cx + g, cy + g, GLYPH_U, 1.0);
+                    over_px(&mut px, w, h, cx + g, cy - g, GLYPH_U, 1.0);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    MemoryRenderBuffer::from_slice(&px, Fourcc::Argb8888, (w, h), 1, Transform::Normal, None)
 }
 
 /// Buffers de la bordure de focus : soulignement de la barre de titre
 /// (bande haute) + gauche/droite/bas autour de la surface cliente.
+/// 1d.ssd : anneaux de coins bas (quart d'anneau ambre + « morsure
+/// d'ombre » par-dessus le coin carré du client — Smithay 0.7 ne sait
+/// pas découper une surface cliente en arrondi ; documenté comme
+/// compromis : coins hauts réellement arrondis via le header).
 #[derive(Debug, Clone)]
 pub struct Border {
     pub top: SolidColorBuffer,
     pub left: SolidColorBuffer,
     pub right: SolidColorBuffer,
     pub bottom: SolidColorBuffer,
+    /// Quart d'anneau bas-gauche (CORNER_R x CORNER_R).
+    pub corner_bl: MemoryRenderBuffer,
+    /// Quart d'anneau bas-droit (CORNER_R x CORNER_R).
+    pub corner_br: MemoryRenderBuffer,
+    /// Clé du dernier rendu des anneaux : (surface_h, focus).
+    pub corners_cache: Option<(i32, bool)>,
+}
+
+/// Quart d'anneau de coin bas (buffer CORNER_R x CORNER_R) :
+/// arc bordure + remplissage « ombre » au-delà de l'arc (la zone du
+/// coin carré du client est assombrie au lieu d'être découpée).
+/// `bottom_right` : centre du cercle en (0,0) local sinon (R,0).
+fn corner_buffer(focused: bool, bottom_right: bool) -> MemoryRenderBuffer {
+    let r = CORNER_R;
+    let mut px = vec![0u8; (4 * (r * r)) as usize];
+    let border = if focused { FOCUS_U } else { UNFOCUSED_U };
+    let (ccx, ccy) = if bottom_right { (0.0, 0.0) } else { (r as f64, 0.0) };
+    for ly in 0..r {
+        for lx in 0..r {
+            let d = (lx as f64 + 0.5 - ccx).hypot(ly as f64 + 0.5 - ccy);
+            // zone extérieure à l'arc : « morsure d'ombre » (noir
+            // semi-transparent, cohérent avec l'ombre de fenêtre).
+            if d > r as f64 {
+                let a = (d - r as f64 - 0.5).clamp(0.0, 1.0) * 0.5;
+                over_px(&mut px, r, r, lx, ly, 0xFF_00_00_00, a);
+            }
+            // quart d'anneau bordure
+            let ring = (r as f64 + 0.5 - d).clamp(0.0, 1.0)
+                * (d - (r - BORDER_W) as f64 + 0.5).clamp(0.0, 1.0);
+            over_px(&mut px, r, r, lx, ly, border, ring);
+        }
+    }
+    MemoryRenderBuffer::from_slice(&px, Fourcc::Argb8888, (r, r), 1, Transform::Normal, None)
 }
 
 /// Action demandée par un clic dans la barre de titre (résolue par
@@ -134,15 +352,13 @@ impl HeaderBar {
         }
     }
 
-    pub fn redraw(&mut self, width: u32) {
+    /// Met à jour le buffer mémoire seulement si géométrie, focus ou
+    /// survols ont changé (sinon le buffer est réutilisé tel quel).
+    pub fn redraw(&mut self, width: u32, focused: bool) {
         if width == 0 {
             self.width = 0;
             return;
         }
-
-        self.background.update((width as i32, HEADER_H), BG_COLOR);
-
-        let needs_redraw_buttons = width != self.width;
         self.width = width;
 
         let hover = |loc: &Option<Point<f64, Logical>>, from: u32, to: u32| {
@@ -157,99 +373,58 @@ impl HeaderBar {
         let max_hover = hover(&self.pointer_loc, width - 2 * BUTTON_W, width - BUTTON_W);
         let close_hover = hover(&self.pointer_loc, width - BUTTON_W, width);
 
-        if needs_redraw_buttons || min_hover != self.minimize_hover {
-            self.minimize_button.update(
-                (BUTTON_W as i32, BUTTON_H),
-                if min_hover {
-                    BUTTON_HOVER_COLOR
-                } else {
-                    BUTTON_COLOR
-                },
-            );
-            self.minimize_hover = min_hover;
+        // recalcul des survols AVANT la comparaison de cache : le
+        // pointeur a pu bouger depuis le dernier rendu.
+        let key = (width, focused, min_hover, max_hover, close_hover);
+        if self.cache == Some(key) {
+            return;
         }
-        if needs_redraw_buttons || max_hover != self.maximize_hover {
-            self.maximize_button.update(
-                (BUTTON_W as i32, BUTTON_H),
-                if max_hover {
-                    BUTTON_HOVER_COLOR
-                } else {
-                    BUTTON_COLOR
-                },
-            );
-            self.maximize_hover = max_hover;
-        }
-        if needs_redraw_buttons || close_hover != self.close_hover {
-            self.close_button.update(
-                (BUTTON_W as i32, BUTTON_H),
-                if close_hover {
-                    BUTTON_HOVER_COLOR
-                } else {
-                    BUTTON_COLOR
-                },
-            );
-            self.close_hover = close_hover;
-        }
+
+        self.buffer = header_buffer(width, focused, min_hover, max_hover, close_hover);
+        self.cache = Some(key);
+        self.minimize_hover = min_hover;
+        self.maximize_hover = max_hover;
+        self.close_hover = close_hover;
     }
 }
 
-impl<R: Renderer> AsRenderElements<R> for HeaderBar {
-    type RenderElement = SolidColorRenderElement;
+impl<R> AsRenderElements<R> for HeaderBar
+where
+    R: Renderer + ImportMem,
+    R::TextureId: Clone + Send + 'static,
+{
+    type RenderElement = MemoryRenderBufferRenderElement<R>;
 
     fn render_elements<C: From<Self::RenderElement>>(
         &self,
-        _renderer: &mut R,
+        renderer: &mut R,
         location: Point<i32, smithay::utils::Physical>,
-        scale: smithay::utils::Scale<f64>,
-        alpha: f32,
+        _scale: smithay::utils::Scale<f64>,
+        _alpha: f32,
     ) -> Vec<C> {
-        let offset = |x: i32| {
-            location
-                + Point::<i32, Logical>::from((x, 0)).to_physical_precise_round(scale)
-        };
-        let w = self.width as i32;
-        vec![
-            // fond d'abord (dessous), boutons par-dessus à droite
-            SolidColorRenderElement::from_buffer(
-                &self.background,
-                location,
-                scale,
-                alpha,
-                Kind::Unspecified,
-            )
-            .into(),
-            SolidColorRenderElement::from_buffer(
-                &self.minimize_button,
-                offset(w - 3 * BUTTON_W as i32),
-                scale,
-                alpha,
-                Kind::Unspecified,
-            )
-            .into(),
-            SolidColorRenderElement::from_buffer(
-                &self.maximize_button,
-                offset(w - 2 * BUTTON_W as i32),
-                scale,
-                alpha,
-                Kind::Unspecified,
-            )
-            .into(),
-            SolidColorRenderElement::from_buffer(
-                &self.close_button,
-                offset(w - BUTTON_W as i32),
-                scale,
-                alpha,
-                Kind::Unspecified,
-            )
-            .into(),
-        ]
+        let loc_f = Point::<f64, smithay::utils::Physical>::from((
+            location.x as f64,
+            location.y as f64,
+        ));
+        let elem = MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            loc_f,
+            &self.buffer,
+            None,
+            None,
+            None,
+            Kind::Unspecified,
+        )
+        .expect("buffer de barre de titre");
+        vec![C::from(elem)]
     }
 }
 
 impl Border {
     /// Met à jour les buffers de bordure selon le focus (couleur) et
     /// la géométrie courante de la surface (taille). Appelé à chaque
-    /// rendu de l'élément (SSD actif).
+    /// rendu de l'élément (SSD actif). Les anneaux de coins ne sont
+    /// reconstruits qu'au changement de focus.
     pub fn redraw(&mut self, width: i32, surface_h: i32, focused: bool) {
         let color = if focused {
             BORDER_FOCUSED_COLOR
@@ -264,6 +439,12 @@ impl Border {
         self.left.update((BORDER_W, surface_h + BORDER_W), color);
         self.right.update((BORDER_W, surface_h + BORDER_W), color);
         self.bottom.update((width + 2 * BORDER_W, BORDER_W), color);
+
+        if self.corners_cache != Some((surface_h, focused)) {
+            self.corner_bl = corner_buffer(focused, false);
+            self.corner_br = corner_buffer(focused, true);
+            self.corners_cache = Some((surface_h, focused));
+        }
     }
 }
 
@@ -415,17 +596,39 @@ impl WindowElement {
                     minimize_hover: false,
                     maximize_hover: false,
                     close_hover: false,
-                    background: SolidColorBuffer::default(),
-                    minimize_button: SolidColorBuffer::default(),
-                    maximize_button: SolidColorBuffer::default(),
-                    close_button: SolidColorBuffer::default(),
+                    // buffer trompe d'attente : remplacé au premier
+                    // redraw (vraie taille connue au rendu).
+                    buffer: MemoryRenderBuffer::new(
+                        Fourcc::Argb8888,
+                        (1, 1),
+                        1,
+                        Transform::Normal,
+                        None,
+                    ),
+                    cache: None,
                 },
                 border: Border {
                     top: SolidColorBuffer::default(),
                     left: SolidColorBuffer::default(),
                     right: SolidColorBuffer::default(),
                     bottom: SolidColorBuffer::default(),
+                    corner_bl: MemoryRenderBuffer::new(
+                        Fourcc::Argb8888,
+                        (1, 1),
+                        1,
+                        Transform::Normal,
+                        None,
+                    ),
+                    corner_br: MemoryRenderBuffer::new(
+                        Fourcc::Argb8888,
+                        (1, 1),
+                        1,
+                        Transform::Normal,
+                        None,
+                    ),
+                    corners_cache: None,
                 },
+                shadow: None,
             })
         });
 

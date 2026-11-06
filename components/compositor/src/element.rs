@@ -21,12 +21,14 @@ use smithay::{
     backend::input::ButtonState,
     backend::renderer::{
         element::{
+            memory::MemoryRenderBufferRenderElement,
             solid::SolidColorRenderElement,
             surface::WaylandSurfaceRenderElement,
             AsRenderElements, Kind,
         },
         ImportAll, ImportMem, Renderer, Texture,
     },
+    utils::Physical,
     desktop::{
         space::SpaceElement,
         utils::OutputPresentationFeedback,
@@ -343,7 +345,7 @@ impl<R: Renderer> std::fmt::Debug for WindowRenderElement<R> {
 impl<R> AsRenderElements<R> for WindowElement
 where
     R: Renderer + ImportAll + ImportMem,
-    R::TextureId: Clone + Texture + 'static,
+    R::TextureId: Clone + Texture + Send + 'static,
 {
     type RenderElement = WindowRenderElement<R>;
 
@@ -367,31 +369,70 @@ where
                     .collect();
             }
 
-            // 1) barre de titre (fond + boutons) à l'origine de l'élément
+            // 1) barre de titre (coins hauts arrondis + pastilles) et
+            //    bordure — 1d.ssd : le header sait le focus, redraw
+            //    avec la clé (largeur, focus, survols).
             let mut state = self.decoration_state();
-            state.header_bar.redraw(width as u32);
             let focused = state.is_focused;
+            state.header_bar.redraw(width as u32, focused);
             state.border.redraw(width, surface_h, focused);
 
-            let mut vec = AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
+            let h_total = HEADER_H + surface_h;
+            let ring_y = h_total - crate::ssd::CORNER_R;
+            let shadow_key = (width, h_total, focused);
+            let shadow_buf = match &state.shadow {
+                Some((k, buf)) if *k == shadow_key => buf.clone(),
+                _ => {
+                    let buf = crate::ssd::shadow_buffer(width, h_total, focused);
+                    state.shadow = Some((shadow_key, buf.clone()));
+                    buf
+                }
+            };
+
+            // ORDRE : premier poussé = dessus. Anneaux de coins EN
+            // PREMIER (dessus du client), ombre EN DERNIER (dessous).
+            let mut vec: Vec<WindowRenderElement<R>> = Vec::new();
+            let border_loc = |x: i32, y: i32| {
+                location
+                    + Point::<i32, Logical>::from((x, y)).to_physical_precise_round(scale)
+            };
+            let loc_f = |p: Point<i32, Physical>| {
+                Point::<f64, Physical>::from((p.x as f64, p.y as f64))
+            };
+            for (buf, x) in [
+                (&state.border.corner_bl, 0),
+                (&state.border.corner_br, width - crate::ssd::CORNER_R),
+            ] {
+                let elem = MemoryRenderBufferRenderElement::from_buffer(
+                    renderer,
+                    loc_f(border_loc(x, ring_y)),
+                    buf,
+                    None,
+                    None,
+                    None,
+                    Kind::Unspecified,
+                )
+                .expect("anneau de coin");
+                vec.push(WindowRenderElement::Memory(elem));
+            }
+
+            // 2) barre de titre (buffer mémoire unique).
+            let header_elems = AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
                 &state.header_bar,
                 renderer,
                 location,
                 scale,
                 alpha,
             );
+            vec.extend(header_elems);
 
-            // 2) bordure de focus : soulignement de barre (top), puis
+            // 3) bordure de focus : soulignement de barre (top), puis
             //    gauche/droite/bas autour de la surface
-            let border_loc = |x: i32, y: i32| {
-                location
-                    + Point::<i32, Logical>::from((x, y)).to_physical_precise_round(scale)
-            };
             for (buffer, x, y) in [
                 (&state.border.top, 0, HEADER_H - crate::ssd::BORDER_W),
                 (&state.border.left, -crate::ssd::BORDER_W, HEADER_H),
                 (&state.border.right, width, HEADER_H),
-                (&state.border.bottom, -crate::ssd::BORDER_W, HEADER_H + surface_h),
+                (&state.border.bottom, -crate::ssd::BORDER_W, h_total),
             ] {
                 vec.push(WindowRenderElement::Decoration(
                     SolidColorRenderElement::from_buffer(
@@ -405,7 +446,22 @@ where
             }
             drop(state);
 
-            // 3) surface cliente, décalée sous la barre de titre
+            // 4) ombre douce EN DERNIER (dessous de la pile) — halo
+            //    (w+2M)x(h+2M) centré sur la fenêtre complète.
+            vec.push(WindowRenderElement::Memory(
+                MemoryRenderBufferRenderElement::from_buffer(
+                    renderer,
+                    loc_f(border_loc(-crate::ssd::SHADOW_M, -crate::ssd::SHADOW_M)),
+                    &shadow_buf,
+                    None,
+                    None,
+                    None,
+                    Kind::Unspecified,
+                )
+                .expect("ombre de fenêtre"),
+            ));
+
+            // 5) surface cliente, décalée sous la barre de titre
             location.y += (scale.y * HEADER_H as f64) as i32;
             let window_elements =
                 AsRenderElements::render_elements(&self.0, renderer, location, scale, alpha);
