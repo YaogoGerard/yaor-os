@@ -108,10 +108,71 @@ impl Default for KeysConfig {
     }
 }
 
+/// Profil d'interface (jalon v0.6 étape 3, REQ-SW-009/010).
+///
+/// Un profil est une **configuration de l'expérience de bureau**, pas un
+/// système distinct (HLD desktop-architecture) : il choisit la
+/// disposition des fenêtres et quelles surfaces de l'UI Engine sont
+/// visibles. Le compositor n'en change pas — seul ce que pilotent la
+/// politique de placement et les clients (panel, dock) change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Profile {
+    /// Windows-like : barre supérieure + menu + taskbar basse, fenêtres
+    /// flottantes.
+    Classic,
+    /// macOS-like : barre supérieure + dock centré, fenêtres flottantes.
+    Macos,
+    /// Tiling : barre supérieure, maître + pile (v0.5), taskbar.
+    Tiling,
+}
+
+impl Profile {
+    /// Nom de sérialisation (`[profile] name`), journalisable.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Profile::Classic => "classic",
+            Profile::Macos => "macos",
+            Profile::Tiling => "tiling",
+        }
+    }
+
+    /// Disposition des fenêtres imposée par le profil.
+    pub fn layout_mode(self) -> LayoutMode {
+        match self {
+            Profile::Classic | Profile::Macos => LayoutMode::Floating,
+            Profile::Tiling => LayoutMode::MasterStack,
+        }
+    }
+
+    /// Taskbar basse (`yaor-panel`, zone exclusive 24 px) visible ?
+    pub fn wants_taskbar(self) -> bool {
+        match self {
+            Profile::Classic | Profile::Tiling => true,
+            Profile::Macos => false,
+        }
+    }
+
+    /// Dock flottant (`yaor-dock`) visible ?
+    pub fn wants_dock(self) -> bool {
+        self == Profile::Macos
+    }
+}
+
+/// Section `[profile]` : profil élu. `name = None` (section absente)
+/// conserve le comportement historique — `[layout] mode` seul décide,
+/// aucune surface n'est masquée (QA v0.4/v0.5 inchangées).
+#[derive(Debug, Clone, Copy, PartialEq, Default, Deserialize)]
+#[serde(default)]
+pub struct ProfileConfig {
+    pub name: Option<Profile>,
+}
+
 /// Configuration complète du bureau.
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
 #[serde(default)]
 pub struct DesktopConfig {
+    pub profile: ProfileConfig,
     pub layout: LayoutConfig,
     pub keys: KeysConfig,
     pub wallpaper: WallpaperConfig,
@@ -259,6 +320,16 @@ pub fn parse_color(s: &str) -> Option<u32> {
 }
 
 impl DesktopConfig {
+    /// Mode de disposition effectif : le profil, quand il est élu,
+    /// impose sa disposition ; sinon `[layout] mode` décide (défaut
+    /// cascade — comportement v0.4 conservé).
+    pub fn layout_mode(&self) -> LayoutMode {
+        match self.profile.name {
+            Some(p) => p.layout_mode(),
+            None => self.layout.mode,
+        }
+    }
+
     /// Parse une chaîne [desktop.toml] (utilisé en test et par le loader).
     pub fn parse_str(text: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(text)
@@ -280,6 +351,114 @@ impl DesktopConfig {
             }
         }
         (Self::default(), None)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Réveil par SIGHUP (clients du bureau)
+// ---------------------------------------------------------------------------
+
+/// Réveil des clients du bureau (panel, dock) au SIGHUP.
+///
+/// Le compositor recharge `desktop.toml` de son côté (v0.5) ; les
+/// clients doivent en faire autant pour suivre le profil élu (étape 3 :
+/// une taskbar masquée hors profil classique, un dock hors profil
+/// macOS-like). Le gestionnaire de signal ne fait qu'un store atomique
+/// et une écriture d'un octet dans un tube (`write` est
+/// async-signal-safe) ; la boucle d'événements attend avec `poll` sur le
+/// fd Wayland **et** sur le tube — le rechargement n'ajoute donc ni
+/// minuterie ni scrutation de fichier.
+pub mod hup {
+    use std::os::fd::RawFd;
+    use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+
+    static REQUESTED: AtomicBool = AtomicBool::new(false);
+    static PIPE_W: AtomicI32 = AtomicI32::new(-1);
+
+    extern "C" fn handler(_sig: libc::c_int) {
+        REQUESTED.store(true, Ordering::SeqCst);
+        let fd = PIPE_W.load(Ordering::SeqCst);
+        if fd >= 0 {
+            let octet = 1u8;
+            // SAFETY : `write` est async-signal-safe et le tube ne bloque
+            // pas (lecture vidée à chaque tour de boucle).
+            unsafe {
+                libc::write(fd, &octet as *const u8 as *const libc::c_void, 1);
+            }
+        }
+    }
+
+    /// Installe le gestionnaire SIGHUP et renvoie le fd de lecture du
+    /// tube (extrémité à surveiller). `None` si le tube n'a pas pu être
+    /// créé : l'appelant garde alors sa boucle bloquante d'origine.
+    pub fn install() -> Option<RawFd> {
+        let mut fds = [0 as RawFd; 2];
+        // SAFETY : deux entiers pour pipe2 ; O_CLOEXEC évite la fuite du
+        // tube vers les clients lancés ensuite.
+        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+            return None;
+        }
+        // Lecture non bloquante : `drain` rend toujours la main.
+        // SAFETY : fcntl sur un fd qu'on vient d'ouvrir.
+        unsafe {
+            libc::fcntl(fds[0], libc::F_SETFL, libc::O_NONBLOCK);
+        }
+        PIPE_W.store(fds[1], Ordering::SeqCst);
+        // SAFETY : le gestionnaire ne fait qu'un store atomique et un write.
+        unsafe { libc::signal(libc::SIGHUP, handler as *const () as libc::sighandler_t) };
+        Some(fds[0])
+    }
+
+    /// Vrai si un SIGHUP est arrivé depuis le dernier appel.
+    pub fn requested() -> bool {
+        REQUESTED.swap(false, Ordering::SeqCst)
+    }
+
+    /// Vide le tube (une écriture par signal reçu).
+    pub fn drain(tube: RawFd) {
+        let mut buf = [0u8; 64];
+        loop {
+            // SAFETY : lecture dans un tampon local, fd valide et non
+            // bloquant.
+            let n = unsafe { libc::read(tube, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
+            if n <= 0 || (n as usize) < buf.len() {
+                break;
+            }
+        }
+    }
+
+    /// Attend un réveil : données Wayland (`wayland`) ou SIGHUP (`tube`).
+    /// Renvoie `true` quand un SIGHUP est à traiter (tube vidé, drapeau
+    /// remis à zéro). Un fd négatif est ignoré par `poll`.
+    pub fn wait(wayland: RawFd, tube: RawFd) -> bool {
+        let mut fds = [
+            libc::pollfd {
+                fd: wayland,
+                events: libc::POLLIN,
+                revents: 0,
+            },
+            libc::pollfd {
+                fd: tube,
+                events: libc::POLLIN,
+                revents: 0,
+            },
+        ];
+        loop {
+            // SAFETY : tableau de deux pollfd initialisés.
+            let n = unsafe { libc::poll(fds.as_mut_ptr(), 2, -1) };
+            if n < 0 {
+                // Interruption par un autre signal : on réessaie.
+                continue;
+            }
+            break;
+        }
+        let mut signale = false;
+        if fds[1].revents != 0 {
+            drain(tube);
+            signale = true;
+        }
+        // Le `|` (et non `||`) garantit la remise à zéro du drapeau.
+        signale | requested()
     }
 }
 
@@ -348,6 +527,68 @@ mod tests {
         let partiel = DesktopConfig::parse_str("[dock]\nicon = 48\n").unwrap();
         assert_eq!(partiel.dock.icon, 48);
         assert_eq!(partiel.dock.height, 72);
+    }
+
+    #[test]
+    fn profil_absent_conserve_le_comportement_historique() {
+        let cfg = DesktopConfig::parse_str("[layout]\nmode = \"cascade\"\n").unwrap();
+        assert_eq!(cfg.profile.name, None);
+        // Aucun profil élu : `[layout] mode` décide seul (QA v0.4/v0.5).
+        assert_eq!(cfg.layout_mode(), LayoutMode::Cascade);
+        let vide = DesktopConfig::parse_str("").unwrap();
+        assert_eq!(vide.layout_mode(), LayoutMode::Cascade);
+    }
+
+    #[test]
+    fn profil_elit_disposition_et_surfaces() {
+        let classic = DesktopConfig::parse_str("[profile]\nname = \"classic\"\n").unwrap();
+        assert_eq!(classic.profile.name, Some(Profile::Classic));
+        assert_eq!(classic.layout_mode(), LayoutMode::Floating);
+        assert!(Profile::Classic.wants_taskbar());
+        assert!(!Profile::Classic.wants_dock());
+
+        let macos = DesktopConfig::parse_str("[profile]\nname = \"macos\"\n").unwrap();
+        assert_eq!(macos.profile.name, Some(Profile::Macos));
+        assert_eq!(macos.layout_mode(), LayoutMode::Floating);
+        assert!(!Profile::Macos.wants_taskbar(), "pas de taskbar macOS-like");
+        assert!(Profile::Macos.wants_dock());
+
+        let tiling = DesktopConfig::parse_str("[profile]\nname = \"tiling\"\n").unwrap();
+        assert_eq!(tiling.profile.name, Some(Profile::Tiling));
+        assert_eq!(tiling.layout_mode(), LayoutMode::MasterStack);
+        assert!(Profile::Tiling.wants_taskbar());
+        assert!(!Profile::Tiling.wants_dock());
+    }
+
+    #[test]
+    fn profil_prime_sur_le_mode_de_disposition() {
+        // Profil élu : il impose sa disposition, même si `[layout] mode`
+        // dit autre chose (le profil est le niveau le plus haut).
+        let cfg = DesktopConfig::parse_str(
+            "[profile]\nname = \"tiling\"\n\n[layout]\nmode = \"cascade\"\n",
+        )
+        .unwrap();
+        assert_eq!(cfg.layout.mode, LayoutMode::Cascade, "valeur du fichier conservée");
+        assert_eq!(cfg.layout_mode(), LayoutMode::MasterStack);
+    }
+
+    #[test]
+    fn profil_inconnu_rejette() {
+        assert!(DesktopConfig::parse_str("[profile]\nname = \"gnome\"\n").is_err());
+    }
+
+    #[test]
+    fn sighup_reveille_la_boucle() {
+        // Un seul test touche au signal process-wide (les tests du binaire
+        // partagent le processus) : install, drain à vide, puis SIGHUP.
+        let tube = hup::install().expect("tube de réveil");
+        hup::drain(tube);
+        assert!(!hup::requested(), "aucun signal reçu pour l'instant");
+        // SAFETY : le gestionnaire installé ne fait qu'un store et un write.
+        unsafe { libc::raise(libc::SIGHUP) };
+        // fd wayland -1 : ignoré par poll ; le tube doit réveiller.
+        assert!(hup::wait(-1, tube), "le SIGHUP doit réveiller la boucle");
+        assert!(!hup::requested(), "drapeau remis à zéro après traitement");
     }
 
     #[test]

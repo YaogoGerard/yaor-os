@@ -11,5 +11,6 @@ name = "yaor_config"
 path = "src/lib.rs"
 
 [dependencies]
+libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 toml = "1"

@@ -1,18 +1,29 @@
 # Configuration du bureau YAOR (desktop.toml) — valeurs de fabrication
 # (v0.5 « Desktop Core », /etc/yaor/desktop.toml).
 #
-# Champs admis : layout.mode (« cascade » | « master-stack » | «
-# floating »), layout.ratio, layout.gaps, keys.* (chaînes « Mod+… »,
-# Mod = Super), wallpaper.path (image PNG/JPEG ; vide = dégradé
-# procédural), wallpaper.fit (« cover » | « fit »), logo.path (image
-# PNG ; vide = bitmap incorporé), theme.* (couleurs « #RRGGBB »,
-# corner_radius, shadow), dock.height, dock.icon (dock du profil
-# macOS-like).
+# Champs admis : profile.name (« classic » | « macos » | « tiling »),
+# layout.mode (« cascade » | « master-stack » | « floating »),
+# layout.ratio, layout.gaps, keys.* (chaînes « Mod+… », Mod = Super),
+# wallpaper.path (image PNG/JPEG ; vide = dégradé procédural),
+# wallpaper.fit (« cover » | « fit »), logo.path (image PNG ; vide =
+# bitmap incorporé), theme.* (couleurs « #RRGGBB », corner_radius,
+# shadow), dock.height, dock.icon (dock du profil macOS-like).
 # Champs absents : valeur par défaut compilée — fichier partiel valable.
 #
 # Configurable par l'utilisateur dans ~/.config/yaor/desktop.toml
 # (prioritaire) ; SIGHUP au compositor recharge sans quitter la session
 # (TEST-DESK-001, REQ-SW-006/015).
+
+# Profil d'interface élu (v0.6 étape 3) — laissé commenté : section
+# absente, `[layout] mode` décide seul et aucune surface n'est masquée
+# (comportement livré depuis v0.4/v0.5, QA inchangées).
+#   classic : barre + menu + taskbar basse, fenêtres flottantes
+#   macos   : barre + dock centré (taskbar masquée), fenêtres flottantes
+#   tiling  : barre + taskbar, maître+pile (v0.5)
+# Le profil prime sur `[layout] mode`. Rechargé au SIGHUP par le
+# compositor ET par les clients du bureau (panel, dock).
+# [profile]
+# name = "classic"
 
 [layout]
 # « cascade » : comportement historique v0.4 (aucune régression sur les
