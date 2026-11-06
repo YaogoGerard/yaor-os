@@ -621,7 +621,7 @@ procéduraux : `desktop.toml` expose `[wallpaper]` (`path`, `fit`),
 workspace) décode PNG/JPEG via la crate `image` vendue dans l'arbre
 Smithay (ADR-018), et le build installe les fichiers dans
 `/usr/share/yaor/` (phase `yaor_components`). Livraison : commit
-`97bf0de`.
+`8c38949`.
 
 - **1e.fond — compositor.** `render.rs` charge `wallpaper.path` et
   cadre l'image à la taille de la sortie : `cover` (défaut) recadre le
@@ -652,12 +652,34 @@ le test est corrigé.
 d'emblème), `cargo check --workspace --all-targets` vert, build
 hors-ligne (`CARGO_NET_OFFLINE`) sur l'arbre vendu.
 
+#### 1e.theme — palette, rayon et ombre routés
+
+`[theme]` n'est plus de la configuration morte :
+
+- **compositor** — `config.rs` résout la section en `Palette` (couleurs
+  0xAARRGGBB, repli canonique **par couleur**, `corner_radius` borné
+  2..24, `shadow` borné 0..1) et journalise le thème effectif
+  (`thème : accent #E8862E … rayon 10 ombre 0.55`) ; `ssd.rs` tire du
+  thème la bordure de focus, le fond de la barre de titre, les
+  pastilles (survol dérivé par éclaircissement), les glyphes, le rayon
+  des coins (dessin **et** géométrie des anneaux, via `ssd::corner_r`)
+  et l'intensité de l'ombre. `theme_epoch()` est incrémenté à chaque
+  SIGHUP et fait partie des clés de cache (barre de titre, anneaux de
+  coins, ombre) : le thème change **sans quitter la session**.
+- **panel** — `init_assets` charge `desktop.toml` une fois et résout
+  les couleurs (barre, bouton, volet, tuiles, textes, séparateurs,
+  liseré au repos dérivé par atténuation du gris secondaire).
+  Journal : `thème : accent #E8862E panel #101014 source <fichier>`.
+
+Tests : `yaor-config` 8, `yaor-assets` 6, `yaor-common` 25,
+`yaor-compositor` 4 (dont résolution RGBA et bornes du thème),
+`yaor-panel` 5 (mélange d'emblème, atténuation, repli couleur par
+couleur) — **48/48**, `cargo check --workspace --all-targets` vert.
+
 **Reste à faire** : la **QA QEMU** du jalon (rebuild ISO 04→06,
-`t-yaor-panel` emblème/taskbar, screendump du fond d'écran) — non
-exécutable dans l'environnement de rédaction (étapes 04 et 06 en
-root) ; l'étape **1e.theme** (routage de `[theme]` : `corner_radius`,
-`shadow`, palette SSD/panel) — les champs sont lus par la
-configuration mais pas encore appliqués à l'exécution ; un asset de
+`t-yaor-panel` emblème/taskbar, screendump du fond d'écran,
+rechargement de thème par SIGHUP) — non exécutable dans
+l'environnement de rédaction (étapes 04 et 06 en root) ; un asset de
 fond à la résolution native des sorties QA (l'image fournie fait
 678x452, agrandie en `cover`).
 

@@ -30,6 +30,16 @@ Rôles dérivés (rendus) : fond de champ `#1E1E26`, texte secondaire
 gris chaud (~`#9A938A`), état « fenêtre lancée » = point ambre,
 surface au repos = gris neutre `#26262E`.
 
+Depuis l'étape 1e (v0.6), cette palette n'est plus compilée en dur :
+elle est lue dans `[theme]` de `desktop.toml`
+(`components/yaor-config/default.toml`), couleur par couleur, avec ces
+valeurs comme défauts **et** comme repli si une chaîne est invalide. Le
+thème porte aussi le rayon des coins de fenêtre (`corner_radius`, borné
+2..24) et l'intensité de l'ombre (`shadow`, 0..1). Le compositor les
+applique à chaud au SIGHUP (les buffers de décoration portent une
+version de thème dans leur clé de cache) ; le panel lit la
+configuration à son démarrage.
+
 ## Typographie
 
 - **Produit (rendu actuel)** : police bitmap 5×7 incorporée
