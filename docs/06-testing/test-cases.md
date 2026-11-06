@@ -326,8 +326,24 @@ Activer le profil « barre de menus supérieure + dock » et vérifier la dispos
 
 Rendu cible : [`../05-ui-ux/design/macOS-like.png`](../05-ui-ux/design/macOS-like.png)
 (barre de menus, dock centré, feux tricolores ambre, dialog « Profils
-de bureau »). Jalon v0.6 étape 2 — cas à détailler à l'ouverture de
-l'étape.
+de bureau »). Jalon v0.6 étape 2.
+
+**v0.6 étape 2 — dock livré (`yaor-dock`) ; contrôles prévus** (à porter
+dans un harnais `t-yaor-dock.py` versionné avec ceux du panel — le
+harnais n'existe pas encore, donc ces contrôles ne sont **pas** encore
+exécutés) :
+
+| Contrôle | Attendu | Mesure |
+|---|---|---|
+| surface | couche Top, namespace `yaor-dock`, ancrage bas seul | journal du compositor `layer-shell : panneau « yaor-dock » sur …` |
+| centrage | barre centrée horizontalement | bord gauche ≈ bord droit (±2 px) sur le screendump |
+| aucune zone réservée | une fenêtre maximisée occupe tout l'écran, le dock la recouvre | différence de tiling nulle vs sans dock |
+| transparence | hors de la barre, le fond d'écran reste visible (pas de rectangle noir) | pixels du screendump égaux au fond (±2) |
+| tuiles | emblème + une tuile par fenêtre, liseré ambre sur la fenêtre focusée | liserés ambre comptés, journal `dock : rendu N tuile(s)` |
+| activation | clic sur une tuile restaure puis active la fenêtre | journal `dock : activation envoyée idx=…` et focus effectif |
+
+Régressions attendues vertes : TEST-UI-001 (profil classique inchangé),
+TEST-DESK-001/002 (configuration et tiling).
 
 ## TEST-UI-003 — Profil tiling
 **Vérifie :** REQ-SW-010

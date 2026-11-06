@@ -37,8 +37,8 @@ valeurs comme défauts **et** comme repli si une chaîne est invalide. Le
 thème porte aussi le rayon des coins de fenêtre (`corner_radius`, borné
 2..24) et l'intensité de l'ombre (`shadow`, 0..1). Le compositor les
 applique à chaud au SIGHUP (les buffers de décoration portent une
-version de thème dans leur clé de cache) ; le panel lit la
-configuration à son démarrage.
+version de thème dans leur clé de cache) ; les clients du bureau
+(panel, dock) la lisent à leur démarrage.
 
 ## Typographie
 
@@ -62,7 +62,7 @@ chaque composant est dans [`design/`](design/) :
 | Taskbar | Classique | barre basse : emblem, boutons de fenêtres, zone d'état (langue, batterie, horloge, date) |
 | Volet menu d'applications | Classique | recherche, grille « Épinglées » (tuiles monogrammes), utilisateur, alimentation |
 | Barre de menus | macOS-like | menus de l'app active + zone d'état |
-| Dock | macOS-like | lanceurs centrés, points d'état, séparateurs |
+| Dock | macOS-like | barre flottante centrée en bas (tuile d'emblème + une tuile par fenêtre), point d'état du focus — `yaor-dock`, étape 2 |
 | Barre tiling | Tiling | espaces de travail 1-5, titre focusé, indicateur de layout, CPU/batterie/horloge |
 | Dialog modal | macOS-like | carte centrée, boutons `Annuler` (neutre) / `Appliquer` (accent), badge « Actif » |
 | Cartes d'état | Tiling | Moniteur : jauges CPU/Mémoire/Disque à l'accent ambre |
@@ -72,6 +72,12 @@ chaque composant est dans [`design/`](design/) :
 
 - Barre/panel : zone exclusive de **24 px** (mesurable par
   différence de tiling, voir TEST-UI-001) ;
+- Dock (macOS-like) : hauteur **72 px** et tuiles **56 px** par défaut
+  (`[dock]` de `desktop.toml`, bornées 40..200 et 24..hauteur-16),
+  marges intérieures 10 px, pas de 10 px, **10 px au-dessus du bas de
+  l'écran** et **aucune zone exclusive** — les fenêtres gardent tout
+  l'écran (repère QA : la barre est centrée, sa largeur vaut
+  2×10 + 56 + n×(56+10)) ;
 - Décalage de cascade / naissance flottante : **24 px** par fenêtre ;
 - Boutons de fenêtre : carrés ~28 px (zones de clic QA des
   décorations, étape 1b.b) ;
@@ -79,8 +85,9 @@ chaque composant est dans [`design/`](design/) :
 
 ## Icônes
 
-- **Emblème** : bitmap 24×24 incorporé (`yaor-panel/src/logo.rs`),
-  affiché à gauche du bouton menu et dans les barres des rendus ;
+- **Emblème** : l'image `logo.path` (24×24 dans le panel, tuile du
+  dock) ; le bitmap 24×24 incorporé (`yaor-panel/src/logo.rs`) ne sert
+  plus que de repli ;
 - **Tuiles monogrammes** : carrés arrondis (accent ambre ou gris)
   avec monogramme — Fichiers `F`, Terminal `>_`, Web `W`, Éditeur
   `É`, Réglages `R`, Profils `D`, Musique `M`, Calcul `C` ;
@@ -93,6 +100,7 @@ chaque composant est dans [`design/`](design/) :
 |---|---|
 | Focus fenêtre | bordure ambre + titre actif |
 | Fenêtre lancée (dock/taskbar) | point ambre sous la tuile / bouton enfoncé |
+| Survol d'une tuile de dock | liseré ambre atténué et fond `#B96A1F` |
 | Profil actif | badge « Actif » ambre sur la carte |
 | Survol (rendus) | surface éclaircie ~10 % |
 | Danger (fermer) | croix au survol, sans couleur dédiée (restée neutre dans les rendus) |

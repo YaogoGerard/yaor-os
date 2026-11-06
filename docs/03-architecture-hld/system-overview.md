@@ -59,7 +59,7 @@ flowchart LR
         PANEL["yaor-panel\n(layer-shell Top + Overlay)"]
         WT["waytest (C, xdg-shell)"]
         XWT["xwtest (C, client X11)"]
-        DOCK["yaor-dock (étape 2)"]
+        DOCK["yaor-dock\n(layer-shell Top, centré)"]
     end
 
     subgraph OUT["Outils produit"]
@@ -78,7 +78,7 @@ flowchart LR
     XWT -->|"X11 (socket X0)"| XWAY
     PANEL -.->|"lance (env hérité WAYLAND_DISPLAY + DISPLAY=:0)"| WT
     PANEL -.->|"lance (env hérité)"| XWT
-    DOCK -.->|"zwlr_layer_shell_v1 (Bottom)"| COMP
+    DOCK -->|"zwlr_layer_shell_v1 (Top) + wl_shm + foreign-toplevel"| COMP
 
     %% --- Compositor : bas de pile ---
     COMP -->|"libseat (session)"| SEAT
@@ -122,4 +122,11 @@ Principes de lecture :
   l'espace de fenêtrage, leurs zones exclusives soustraites de la zone
   utile du tiling ;
 - `yaor-panel` est le point d'entrée des apps YAOR internes (menu) :
-  il les lance avec l'environnement hérité (Wayland ET X11).
+  il les lance avec l'environnement hérité (Wayland ET X11) ;
+- `yaor-dock` (profil macOS-like, étape 2) est un second client
+  layer-shell : ancré **bas seul**, donc centré par le layer-map du
+  compositor, **sans zone exclusive** — les fenêtres gardent tout
+  l'écran, contrairement à la taskbar du profil classique (zone
+  exclusive de 24 px). Il ne dessine que du rendu wl_shm et lit la
+  liste des fenêtres par `zwlr_foreign_toplevel_management_v1`, le
+  même canal que la taskbar.

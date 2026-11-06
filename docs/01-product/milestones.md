@@ -683,6 +683,57 @@ l'environnement de rédaction (étapes 04 et 06 en root) ; un asset de
 fond à la résolution native des sorties QA (l'image fournie fait
 678x452, agrandie en `cover`).
 
+### Étape 2 — profil macOS-like : dock flottant (6 novembre 2026)
+
+Le profil macOS-like demande **barre supérieure + dock**. La barre est
+livrée depuis l'étape 1 (`yaor-panel`) ; cette étape apporte le **dock**,
+client layer-shell dédié `yaor-dock` — conforme à la décision d'ouverture
+du jalon (barre/dock/panneau = clients séparés, jamais dans le
+compositor).
+
+- **Crate partagée `yaor-ui`** — le dock a besoin des mêmes primitives que
+  le panel (canvas Argb8888, rectangles et pilules anti-aliasés par SDF,
+  police bitmap 5×7, palette `[theme]`). Plutôt que de les dupliquer,
+  elles sont extraites du panel dans `components/yaor-ui` : le panel les
+  consomme désormais (rendu **inchangé**, seules les définitions ont
+  bougé, ses tests de dessin suivent) et le dock s'en sert. S'y ajoute
+  `fill_rrect_premul` (RGB prémultiplié + alpha de couverture) pour les
+  surfaces **non opaques** : sans elle, les coins arrondis du dock
+  laisseraient une frange sombre sur le fond d'écran.
+- **`yaor-dock`** — barre en couche Top ancrée **bas seul** : le
+  layer-map du compositor la **centre** horizontalement (`arrange`) et la
+  zone exclusive vaut 0, donc **les fenêtres gardent tout l'écran** — à
+  la différence de la taskbar du profil classique (zone exclusive de
+  24 px, pleine largeur). Contenu : tuile d'emblème (lanceur, image
+  `logo.path` réduite à la tuile) puis une tuile par fenêtre publiée par
+  `zwlr_foreign_toplevel_management_v1` — même canal que la taskbar —
+  avec l'initiale de l'app_id, un point ambre quand la fenêtre a le focus
+  et une mise en évidence au survol. Clic : restauration si minimisée
+  puis activation. La largeur est recalculée à chaque changement de
+  liste (`set_size` + commit) : l'`arrange` du compositor renvoie un
+  configure, le redessin part de la taille validée.
+- **Configuration** — section `[dock]` de `desktop.toml` : `height`
+  (72 px) et `icon` (56 px), **bornés par le client** (40..200 et
+  24..hauteur-16) pour qu'une valeur aberrante ne casse pas le bureau.
+- **Image** — `yaor-dock` est compilé puis installé dans `/usr/bin` par
+  la phase `yaor_components`, avec un contrôle `--version` comme les
+  autres binaires.
+
+Tests : `yaor-ui` 12 (formes AA, prémultiplié, police, thème, blit),
+`yaor-dock` 4 (géométrie et centrage, bornes, hit-test des tuiles,
+initiale), `yaor-config` 9 (`[dock]` partiel), `yaor-panel` 2 (libellé de
+taskbar, conversion civile), plus les suites existantes — **62/62**,
+`cargo check --workspace --all-targets` vert.
+
+**Reste à faire** : le **changement de profil** (étape 3) — élire le
+profil au SIGHUP et démarrer barre/taskbar/dock en conséquence
+(aujourd'hui les surfaces se lancent séparément) ; l'**agrandissement au
+survol** du dock (maquette macOS) exige une surface plus haute que la
+barre, donc un arbitrage d'animation ; la QA QEMU (`t-yaor-dock` : barre
+centrée, tuiles des fenêtres, activation au clic, absence de zone
+réservée) — non exécutable dans l'environnement de rédaction (étapes 04
+et 06 en root).
+
 ### Clôture de v0.4 (28 octobre 2026)
 
 Tous les critères de sortie du jalon sont cochés avec preuves (session KMS,
