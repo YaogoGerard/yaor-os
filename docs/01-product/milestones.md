@@ -613,6 +613,54 @@ close/maximize) sous taskbar basse ; QA étendue de `t-yaor-panel`
 (tiling 26/26+6/6 inchangé — le profil tiling ne change pas) ;
 maquette `mockup-profil-classique.svg` mise à jour = cible de l'étape.
 
+### Étape 1e — bureau réel : fond d'écran et emblème (6 novembre 2026)
+
+Le bureau affiche les **assets du produit** au lieu de rendus
+procéduraux : `desktop.toml` expose `[wallpaper]` (`path`, `fit`),
+`[logo]` (`path`) et `[theme]` ; la crate `yaor-assets` (membre du
+workspace) décode PNG/JPEG via la crate `image` vendue dans l'arbre
+Smithay (ADR-018), et le build installe les fichiers dans
+`/usr/share/yaor/` (phase `yaor_components`). Livraison : commit
+`97bf0de`.
+
+- **1e.fond — compositor.** `render.rs` charge `wallpaper.path` et
+  cadre l'image à la taille de la sortie : `cover` (défaut) recadre le
+  débordement au centre, `fit` centre l'image entière sur le dégradé
+  procédural conservé (1d.fond). Le buffer est mis en cache par
+  (taille, chemin, cadrage) — un décodage par changement, jamais par
+  image — et un SIGHUP reprend la nouvelle image. Repli : chemin vide,
+  fichier absent ou format illisible → dégradé procédural (le bureau
+  démarre toujours). Journal : `fond d'écran : <chemin> 678x452 ->
+  1280x800 cover`.
+- **1e.logo — panel.** `yaor-panel` lit `logo.path` (même crate
+  `yaor-config`, aucun format dupliqué), réduit l'image à 24x24
+  (`yaor-assets::resize`, lanczos3) et la blitte avec **mélange
+  alpha** (les pixels translucides se composent sur le noir du
+  panneau) ; le bitmap incorporé `logo.rs` devient le repli. Journal :
+  `emblème : <chemin> 1254x1254 -> 24x24`.
+
+**Défauts corrigés au passage** (travail 1e antérieur, jamais
+recompilé) : `yaor_config::parse_color` rendait `#RRGGBBAA` dans
+l'ordre RRGGBBAA alors que le contrat et les buffers Argb8888 exigent
+AARRGGBB (alpha en tête) ; le test `yaor_assets::cover_size` attendait
+un cadrage « contain » (400x800) sur une source portrait alors que
+`cover` doit couvrir la cible (1280x2560) — la fonction était juste,
+le test est corrigé.
+
+**Vérifications exécutées** : `cargo test -p yaor-config -p yaor-assets`
+**14/14** (8 + 6), `yaor-panel` **3/3** (mélange et bornes du blit
+d'emblème), `cargo check --workspace --all-targets` vert, build
+hors-ligne (`CARGO_NET_OFFLINE`) sur l'arbre vendu.
+
+**Reste à faire** : la **QA QEMU** du jalon (rebuild ISO 04→06,
+`t-yaor-panel` emblème/taskbar, screendump du fond d'écran) — non
+exécutable dans l'environnement de rédaction (étapes 04 et 06 en
+root) ; l'étape **1e.theme** (routage de `[theme]` : `corner_radius`,
+`shadow`, palette SSD/panel) — les champs sont lus par la
+configuration mais pas encore appliqués à l'exécution ; un asset de
+fond à la résolution native des sorties QA (l'image fournie fait
+678x452, agrandie en `cover`).
+
 ### Clôture de v0.4 (28 octobre 2026)
 
 Tous les critères de sortie du jalon sont cochés avec preuves (session KMS,
