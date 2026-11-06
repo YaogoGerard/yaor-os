@@ -1953,6 +1953,15 @@ phase_yaor_components() {
     # l'utilisateur la surcharge dans ~/.config/yaor/desktop.toml.
     log "pose de la configuration du bureau par défaut (/etc/yaor/desktop.toml)"
     run chroot_run "install -d /etc/yaor && install -m 0644 /build/components/yaor-config/default.toml /etc/yaor/desktop.toml && grep -q 'mode = \"cascade\"' /etc/yaor/desktop.toml && echo 'config du bureau posée'"
+    # Assets réels du bureau (1e) : emblème + fond d'écran décodés au
+    # démarrage par yaor-assets (chemins par défaut de desktop.toml).
+    # Ils vivent dans la crate yaor-assets (assets/) — /build/components
+    # est déjà monté dans le chroot, aucune source doc requise.
+    log "pose des assets du bureau (/usr/share/yaor)"
+    run chroot_run "install -d /usr/share/yaor && \
+        install -m 0644 /build/components/yaor-assets/assets/logo.png /usr/share/yaor/logo.png && \
+        install -m 0644 /build/components/yaor-assets/assets/fond_ecran.png /usr/share/yaor/fond_ecran.png && \
+        test -s /usr/share/yaor/logo.png && echo 'assets du bureau posés'"
 }
 
 # --- Exécution --------------------------------------------------------------

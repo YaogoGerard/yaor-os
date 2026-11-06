@@ -11,7 +11,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-pub use yaor_config::{DesktopConfig, LayoutMode};
+pub use yaor_config::{DesktopConfig, ImageFit, LayoutMode, WallpaperConfig};
 
 /// Demande de rechargement (SIGHUP → gestionnaire asynchrone-sûr).
 pub static RELOAD_REQUESTED: AtomicBool = AtomicBool::new(false);

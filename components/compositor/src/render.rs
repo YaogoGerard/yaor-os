@@ -253,20 +253,11 @@ where
 }
 
 // Hotspot d'un curseur surface (lecture des attributs, comme anvil).
-/// Fond d'écran (1d.fond) : rendu procédural en mémoire — dégradé
-/// sombre chaud + lueur emblème ambre à droite avec silhouette de
-/// flamme (façon `design/Classique.png`). Aucun asset (ADR-018) :
-/// tout est calculé, buffer réutilisé tant que la taille ne change pas.
-fn wallpaper_buffer(size: Size<i32, Buffer>) -> MemoryRenderBuffer {
-    static CACHE: std::sync::Mutex<Option<(Size<i32, Buffer>, MemoryRenderBuffer)>> =
-        std::sync::Mutex::new(None);
-    if let Some((s, buf)) = CACHE.lock().unwrap().as_ref() {
-        if *s == size {
-            return buf.clone();
-        }
-    }
-
-    let (w, h) = (size.w, size.h);
+/// Fond d'écran procédural (1d.fond) : dégradé sombre chaud + lueur
+/// emblème ambre à droite avec silhouette de flamme (façon
+/// `design/Classique.png`). Sert de **repli** quand aucune image n'est
+/// exploitable (1e.fond) et de canevas des marges en mode `fit`.
+fn procedural_pixels(w: i32, h: i32) -> Vec<u8> {
     let mut px = vec![0u8; (4 * (w * h)) as usize];
 
     // Dégradé vertical : gris bleuté sombre -> brun chaud.
@@ -355,6 +346,93 @@ fn wallpaper_buffer(size: Size<i32, Buffer>) -> MemoryRenderBuffer {
         }
     }
 
+    px
+}
+
+/// Compose `src` (exactement `w` x `h`, alpha source) sur `dst` —
+/// source-over, octets Argb8888 (B,G,R,A). Utilisé pour poser l'image
+/// du fond sur le dégradé (marges du mode `fit`, pixels translucides).
+fn blend_argb8888(dst: &mut [u8], src: &[u8], w: i32, h: i32) {
+    let len = (4 * (w * h)) as usize;
+    if src.len() < len || dst.len() < len {
+        return;
+    }
+    for i in (0..len).step_by(4) {
+        let a = src[i + 3] as u32;
+        if a == 0 {
+            continue;
+        }
+        if a == 255 {
+            dst[i..i + 4].copy_from_slice(&src[i..i + 4]);
+            continue;
+        }
+        for k in 0..3 {
+            let bg = dst[i + k] as u32;
+            let fg = src[i + k] as u32;
+            dst[i + k] = ((fg * a + bg * (255 - a)) / 255) as u8;
+        }
+        dst[i + 3] = 0xFF;
+    }
+}
+
+/// Pixels du fond d'écran (1e.fond) : image de `desktop.toml`
+/// (`wallpaper.path`) décodée par `yaor-assets` et cadrée à la taille
+/// de la sortie — `cover` (défaut) ou `fit` sur le dégradé. Toute
+/// erreur (chemin vide, fichier absent, format inconnu) retombe sur le
+/// dégradé procédural : le bureau démarre toujours. Journalisé une
+/// fois par (taille, chemin, cadrage) — donc sur cache manquant ou
+/// après un SIGHUP, jamais à chaque image.
+fn wallpaper_pixels(w: i32, h: i32, cfg: &crate::config::WallpaperConfig) -> Vec<u8> {
+    let mut canvas = procedural_pixels(w, h);
+    if cfg.path.is_empty() {
+        tracing::info!("fond d'écran : dégradé procédural - wallpaper.path vide");
+        return canvas;
+    }
+    let Some(img) = yaor_assets::load_image(std::path::Path::new(&cfg.path)) else {
+        tracing::warn!(
+            "fond d'écran : {} illisible - dégradé procédural",
+            cfg.path
+        );
+        return canvas;
+    };
+    let (tw, th) = (w.max(1) as u32, h.max(1) as u32);
+    let (fitted, mot) = match cfg.fit {
+        crate::config::ImageFit::Cover => (yaor_assets::cover(&img, tw, th), "cover"),
+        crate::config::ImageFit::Fit => (yaor_assets::contain(&img, tw, th), "fit"),
+    };
+    blend_argb8888(&mut canvas, &fitted.to_argb8888(), w, h);
+    tracing::info!(
+        "fond d'écran : {} {}x{} -> {}x{} {mot}",
+        cfg.path,
+        img.w,
+        img.h,
+        tw,
+        th
+    );
+    canvas
+}
+
+/// Fond d'écran de la sortie : buffer mémoire, mis en cache par
+/// (taille, chemin, cadrage) — un décodage par changement seulement.
+/// Le cache garde les dernières entrées : deux têtes de tailles
+/// différentes ne se délogent pas mutuellement à chaque image.
+fn wallpaper_buffer(size: Size<i32, Buffer>) -> MemoryRenderBuffer {
+    struct Entry {
+        key: (Size<i32, Buffer>, String, crate::config::ImageFit),
+        buf: MemoryRenderBuffer,
+    }
+    static CACHE: std::sync::Mutex<Vec<Entry>> = std::sync::Mutex::new(Vec::new());
+
+    let wall = crate::config::get().wallpaper;
+    let key = (size, wall.path.clone(), wall.fit);
+    {
+        let cache = CACHE.lock().unwrap();
+        if let Some(hit) = cache.iter().find(|e| e.key == key) {
+            return hit.buf.clone();
+        }
+    }
+
+    let px = wallpaper_pixels(size.w, size.h, &wall);
     let buf = MemoryRenderBuffer::from_slice(
         &px,
         Fourcc::Argb8888,
@@ -363,7 +441,14 @@ fn wallpaper_buffer(size: Size<i32, Buffer>) -> MemoryRenderBuffer {
         Transform::Normal,
         None,
     );
-    *CACHE.lock().unwrap() = Some((size, buf.clone()));
+    let mut cache = CACHE.lock().unwrap();
+    if cache.len() >= 4 {
+        cache.remove(0);
+    }
+    cache.push(Entry {
+        key,
+        buf: buf.clone(),
+    });
     buf
 }
 

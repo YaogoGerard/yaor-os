@@ -13,6 +13,12 @@ livré — l'état réel de chaque profil est suivi dans
 | `Tiling.png` | Tiling | REQ-SW-010 | v0.6 étape 3 |
 | `YAOR OS — Les 3 bureaux.html` | Export interactif des trois rendus (auto-extractible) | — | — |
 
+Les **assets réels embarqués dans le système** (emblème du panel,
+fond d'écran du compositor — jalon v0.6 étape 1e) vivent dans
+[`components/yaor-assets/assets/`](../../../components/yaor-assets/assets/) :
+c'est la crate qui les décode, et le chroot de build n'y accède que
+par le montage `/build/components`.
+
 ## Ce que montrent les rendus
 
 ### `Classique.png` — taskbar basse, menu, fenêtres flottantes

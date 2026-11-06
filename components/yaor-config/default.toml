@@ -1,9 +1,12 @@
 # Configuration du bureau YAOR (desktop.toml) — valeurs de fabrication
 # (v0.5 « Desktop Core », /etc/yaor/desktop.toml).
 #
-# Champs admis : layout.mode (« cascade » | « master-stack »),
-# layout.ratio (0.0..1.0, largeur relative du maître), layout.gaps
-# (espacement en pixels), keys.* (chaînes « Mod+… », Mod = Super).
+# Champs admis : layout.mode (« cascade » | « master-stack » | «
+# floating »), layout.ratio, layout.gaps, keys.* (chaînes « Mod+… »,
+# Mod = Super), wallpaper.path (image PNG/JPEG ; vide = dégradé
+# procédural), wallpaper.fit (« cover » | « fit »), logo.path (image
+# PNG ; vide = bitmap incorporé), theme.* (couleurs « #RRGGBB »,
+# corner_radius, shadow).
 # Champs absents : valeur par défaut compilée — fichier partiel valable.
 #
 # Configurable par l'utilisateur dans ~/.config/yaor/desktop.toml
@@ -27,3 +30,28 @@ close = "Mod+Q"
 ratio_grow = "Mod+g"
 ratio_shrink = "Mod+Shift+g"
 quit = "Mod+Shift+E"
+
+# Fond d'écran réel (1e.fond) : image fournie, couvre tout l'écran.
+# Chemin vide = dégradé procédural (identité « ambre sur noir »).
+[wallpaper]
+path = "/usr/share/yaor/fond_ecran.png"
+fit = "cover"
+
+# Emblème réel (1e.logo) : affiché dans la barre, la pilule taskbar
+# et l'entête du menu. Chemin vide = bitmap incorporé 24x24.
+[logo]
+path = "/usr/share/yaor/logo.png"
+
+# Thème « ambre sur noir » (1e.theme) — palette canonique du branding.
+# Sections lues dès maintenant ; leur routage à l'exécution (palette SSD
+# et panel, rayon, ombre) relève de l'étape 1e.theme.
+[theme]
+accent = "#E8862E"
+accent_dark = "#B96A1F"
+panel_bg = "#101014"
+button_bg = "#26262E"
+text_fg = "#F2E8DC"
+text_gray = "#8A8A92"
+separator = "#2A2A33"
+corner_radius = 10
+shadow = 0.55

@@ -114,6 +114,124 @@ impl Default for KeysConfig {
 pub struct DesktopConfig {
     pub layout: LayoutConfig,
     pub keys: KeysConfig,
+    pub wallpaper: WallpaperConfig,
+    pub logo: LogoConfig,
+    pub theme: ThemeConfig,
+}
+
+/// Mise à l'échelle d'une image à l'écran (1e.fond).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ImageFit {
+    /// Couvre toute la surface (recadre ce qui dépasse) — défaut.
+    #[default]
+    Cover,
+    /// Entière, centrée, bords éventuels du fond visibles.
+    Fit,
+}
+
+/// Fond d'écran (1e.fond) : image réelle affichée par le compositor.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct WallpaperConfig {
+    /// Chemin de l'image (PNG/JPEG) ; vide = dégradé procédural
+    /// (comportement 1d.fond, repli si le fichier est absent).
+    pub path: String,
+    /// Mise à l'échelle : « cover » (défaut) ou « fit ».
+    pub fit: ImageFit,
+}
+
+impl Default for WallpaperConfig {
+    fn default() -> Self {
+        Self {
+            path: "/usr/share/yaor/fond_ecran.png".to_string(),
+            fit: ImageFit::Cover,
+        }
+    }
+}
+
+/// Emblème du panel (1e.logo) : image réelle affichée dans la barre,
+/// la pilule taskbar et l'entête du menu.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct LogoConfig {
+    /// Chemin de l'image (PNG, carré de préférence) ; vide = bitmap
+    /// incorporé (logo.rs 24x24, repli historique).
+    pub path: String,
+}
+
+impl Default for LogoConfig {
+    fn default() -> Self {
+        Self {
+            path: "/usr/share/yaor/logo.png".to_string(),
+        }
+    }
+}
+
+/// Thème de l'interface (1e.theme) : « ambre sur noir » paramétrable.
+/// Couleurs en chaînes « #RRGGBB » (ou « #RRGGBBAA ») — le repli est
+/// la palette canonique (branding/README.md).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct ThemeConfig {
+    /// Accent actif (boutons, tuiles, liseré de fenêtre focusée).
+    pub accent: String,
+    /// Accent sombre (bordure du volet, contour de tuile).
+    pub accent_dark: String,
+    /// Fonds des panneaux (barre, volet, taskbar).
+    pub panel_bg: String,
+    /// Fond des boutons / tuiles sombres.
+    pub button_bg: String,
+    /// Texte clair principal.
+    pub text_fg: String,
+    /// Texte secondaire (gris).
+    pub text_gray: String,
+    /// Séparateurs.
+    pub separator: String,
+    /// Rayon des coins de fenêtre (SSD), en pixels.
+    pub corner_radius: u32,
+    /// Intensité de l'ombre des fenêtres (0.0 = pas d'ombre, 1.0 = max).
+    pub shadow: f64,
+}
+
+impl Default for ThemeConfig {
+    fn default() -> Self {
+        Self {
+            accent: "#E8862E".to_string(),
+            accent_dark: "#B96A1F".to_string(),
+            panel_bg: "#101014".to_string(),
+            button_bg: "#26262E".to_string(),
+            text_fg: "#F2E8DC".to_string(),
+            text_gray: "#8A8A92".to_string(),
+            separator: "#2A2A33".to_string(),
+            corner_radius: 10,
+            shadow: 0.55,
+        }
+    }
+}
+
+/// Analyse une couleur « #RRGGBB » ou « #RRGGBBAA » → 0xAARRGGBB
+/// (None si le format est invalide — le consommateur appliquera son
+/// repli de palette).
+pub fn parse_color(s: &str) -> Option<u32> {
+    let hex = s.strip_prefix('#')?;
+    if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    match hex.len() {
+        6 => {
+            let v = u32::from_str_radix(hex, 16).ok()?;
+            Some(0xFF00_0000 | v)
+        }
+        // « #RRGGBBAA » : l'ordre mémoire est AARRGGBB (convention des
+        // buffers Argb8888 du panel et du compositor) — l'alpha se
+        // déplace donc en tête, il n'est pas rendu tel quel.
+        8 => {
+            let v = u32::from_str_radix(hex, 16).ok()?;
+            Some(((v & 0xFF) << 24) | (v >> 8))
+        }
+        _ => None,
+    }
 }
 
 impl DesktopConfig {
@@ -177,5 +295,47 @@ mod tests {
     #[test]
     fn mode_inconnu_rejette() {
         assert!(DesktopConfig::parse_str("[layout]\nmode = \"warp\"\n").is_err());
+    }
+
+    #[test]
+    fn couleurs_parsees() {
+        assert_eq!(parse_color("#E8862E"), Some(0xFFE8862E));
+        assert_eq!(parse_color("#e8862e"), Some(0xFFE8862E));
+        assert_eq!(parse_color("#E8862E80"), Some(0x80E8862E));
+        assert_eq!(parse_color("E8862E"), None);
+        assert_eq!(parse_color("#XYZ"), None);
+        assert_eq!(parse_color("#12345"), None);
+    }
+
+    #[test]
+    fn theme_defaut_ambre_sur_noir() {
+        let cfg = DesktopConfig::parse_str("").unwrap();
+        assert_eq!(parse_color(&cfg.theme.accent), Some(0xFFE8862E));
+        assert_eq!(cfg.theme.corner_radius, 10);
+        assert!(cfg.theme.shadow > 0.0 && cfg.theme.shadow <= 1.0);
+    }
+
+    #[test]
+    fn wallpaper_et_logo_defauts_assets_rootfs() {
+        let cfg = DesktopConfig::parse_str("").unwrap();
+        assert_eq!(cfg.wallpaper.path, "/usr/share/yaor/fond_ecran.png");
+        assert_eq!(cfg.wallpaper.fit, ImageFit::Cover);
+        assert_eq!(cfg.logo.path, "/usr/share/yaor/logo.png");
+    }
+
+    #[test]
+    fn sections_completes_lues() {
+        let cfg = DesktopConfig::parse_str(
+            "[wallpaper]\npath = \"/home/user/mur.png\"\nfit = \"fit\"\n\n\
+             [logo]\npath = \"/home/user/logo.png\"\n\n\
+             [theme]\naccent = \"#00AAFF\"\ncorner_radius = 4\nshadow = 0.0\n",
+        )
+        .unwrap();
+        assert_eq!(cfg.wallpaper.path, "/home/user/mur.png");
+        assert_eq!(cfg.wallpaper.fit, ImageFit::Fit);
+        assert_eq!(cfg.logo.path, "/home/user/logo.png");
+        assert_eq!(parse_color(&cfg.theme.accent), Some(0xFF00AAFF));
+        assert_eq!(cfg.theme.corner_radius, 4);
+        assert_eq!(cfg.theme.shadow, 0.0);
     }
 }

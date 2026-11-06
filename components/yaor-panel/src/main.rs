@@ -12,6 +12,12 @@
 // que waytest : « un besoin = un fournisseur », pas de bibliothèque de
 // texte). Journal : stderr préfixé « yaor-panel: » (jetons QA courts).
 //
+// 1e.logo : l'emblème affiché dans la barre est l'image de
+// `desktop.toml` (`logo.path`, décodée par yaor-assets et réduite à
+// 24 px) ; le bitmap incorporé de `logo.rs` ne sert plus que de repli
+// (chemin vide, fichier absent, format illisible) — le panneau démarre
+// toujours.
+//
 // Connexion : WAYLAND_DISPLAY sous XDG_RUNTIME_DIR (socket du compositor).
 
 use std::process::Command;
@@ -332,17 +338,51 @@ fn fill_rect(
     }
 }
 
-/// Logo 24x24 (module généré `logo.rs`) : blit sans mélange — pixel
-/// opaque (alpha > 0) écrit, pixel transparent sauté (le noir du
-/// panneau transparaît).
-fn draw_logo(canvas: &mut [u8], w: i32, h: i32, x0: i32, y0: i32) {
-    for (row, slice) in logo::LOGO_24.chunks_exact(24 * 4).enumerate() {
+/// Emblème 24x24 en Argb8888 (B,G,R,A), chargé une seule fois au
+/// démarrage (1e.logo). Vide tant que [`init_logo`] n'a pas tourné :
+/// le bitmap incorporé de `logo.rs` prend alors le relais.
+static LOGO: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+
+/// Charge l'emblème de la barre : `logo.path` de `desktop.toml`
+/// (yaor-assets, ré-échantillonné à 24x24), sinon bitmap incorporé.
+/// Journalisé en jetons courts — preuve QA de la source utilisée.
+fn init_logo() {
+    let (cfg, _src) = yaor_config::DesktopConfig::load();
+    if !cfg.logo.path.is_empty() {
+        if let Some(img) = yaor_assets::load_image(std::path::Path::new(&cfg.logo.path)) {
+            let px = yaor_assets::resize(&img, 24, 24).to_argb8888();
+            eprintln!(
+                "{PROG}: [{:.3}] emblème : {} {}x{} -> 24x24",
+                uptime(),
+                cfg.logo.path,
+                img.w,
+                img.h
+            );
+            let _ = LOGO.set(px);
+            return;
+        }
+        eprintln!(
+            "{PROG}: [{:.3}] emblème : {} illisible - bitmap incorporé",
+            uptime(),
+            cfg.logo.path
+        );
+        return;
+    }
+    eprintln!("{PROG}: emblème : bitmap incorporé - logo.path vide");
+}
+
+/// Logo 24x24 : blit mélangé (source over) — pixel transparent sauté
+/// (le noir du panneau transparaît), pixel translucide mélangé à
+/// l'existant. `src` : 24x24 Argb8888 (B,G,R,A), `logo.rs` en repli.
+fn blit_logo(canvas: &mut [u8], w: i32, h: i32, x0: i32, y0: i32, src: &[u8]) {
+    for (row, slice) in src.chunks_exact(24 * 4).enumerate().take(24) {
         let y = y0 + row as i32;
         if y < 0 || y >= h {
             continue;
         }
         for col in 0..24usize {
-            if slice[col * 4 + 3] == 0 {
+            let a = slice[col * 4 + 3] as f64 / 255.0;
+            if a <= 0.0 {
                 continue;
             }
             let x = x0 + col as i32;
@@ -350,12 +390,19 @@ fn draw_logo(canvas: &mut [u8], w: i32, h: i32, x0: i32, y0: i32) {
                 continue;
             }
             let off = (y as usize * w as usize + x as usize) * 4;
-            canvas[off] = slice[col * 4];
-            canvas[off + 1] = slice[col * 4 + 1];
-            canvas[off + 2] = slice[col * 4 + 2];
+            for k in 0..3 {
+                let bg = canvas[off + k] as f64;
+                let fg = slice[col * 4 + k] as f64;
+                canvas[off + k] = (bg + (fg - bg) * a).round() as u8;
+            }
             canvas[off + 3] = 0xFF;
         }
     }
+}
+
+fn draw_logo(canvas: &mut [u8], w: i32, h: i32, x0: i32, y0: i32) {
+    let src = LOGO.get().map(|v| v.as_slice()).unwrap_or(&logo::LOGO_24[..]);
+    blit_logo(canvas, w, h, x0, y0, src);
 }
 
 fn draw_text(canvas: &mut [u8], w: i32, h: i32, text: &str, x0: i32, y0: i32, color: u32) {
@@ -1479,6 +1526,10 @@ fn main() -> std::process::ExitCode {
         }
     }
 
+    // Emblème de la barre (1e.logo) : chargé avant la session — un
+    // décodage PNG unique, la suite du rendu lit le bitmap en mémoire.
+    init_logo();
+
     let conn = match Connection::connect_to_env() {
         Ok(conn) => conn,
         Err(e) => {
@@ -1567,4 +1618,46 @@ fn main() -> std::process::ExitCode {
     }
     eprintln!("{PROG}: [{:.3}] arrêt", uptime());
     std::process::ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Emblème entièrement rouge à `alpha`, canvas noir opaque.
+    fn canvas_et_logo(alpha: u8) -> (Vec<u8>, Vec<u8>) {
+        let mut canvas = vec![0u8; 24 * 24 * 4];
+        for px in canvas.chunks_exact_mut(4) {
+            px[3] = 0xFF;
+        }
+        let mut logo = vec![0u8; 24 * 24 * 4];
+        for px in logo.chunks_exact_mut(4) {
+            px[2] = 0xFF; // rouge (ordre B,G,R,A)
+            px[3] = alpha;
+        }
+        (canvas, logo)
+    }
+
+    #[test]
+    fn blit_logo_melange_l_alpha() {
+        let (mut canvas, logo) = canvas_et_logo(128);
+        blit_logo(&mut canvas, 24, 24, 0, 0, &logo);
+        assert_eq!(canvas[0..4], [0, 0, 128, 0xFF], "rouge mélangé sur noir");
+    }
+
+    #[test]
+    fn blit_logo_ignore_le_transparent() {
+        let (mut canvas, logo) = canvas_et_logo(0);
+        canvas[0..4].copy_from_slice(&[9, 9, 9, 0xFF]);
+        blit_logo(&mut canvas, 24, 24, 0, 0, &logo);
+        assert_eq!(canvas[0..4], [9, 9, 9, 0xFF], "pixel transparent laissé tel quel");
+    }
+
+    #[test]
+    fn blit_logo_hors_canvas_ne_panique_pas() {
+        let (mut canvas, logo) = canvas_et_logo(255);
+        // Ancrage négatif et à cheval sur le bord droit.
+        blit_logo(&mut canvas, 24, 24, -10, 20, &logo);
+        assert_eq!(canvas.len(), 24 * 24 * 4);
+    }
 }
