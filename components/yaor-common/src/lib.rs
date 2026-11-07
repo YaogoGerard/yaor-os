@@ -5,9 +5,6 @@
 //! - l'**état des slots A/B** persisté sur l'ESP (`/boot/yaor/slots.state`) ;
 //! - la manipulation de **`limine.conf`** (Limine 8) ;
 //! - la découverte des **slots racine** installés.
-//!
-//! Aucune dépendance externe : le module n'utilise que la bibliothèque
-//! standard, ce qui garantit un build hors-ligne (ADR-018) et reproductible.
 
 pub mod limine;
 pub mod partitions;
