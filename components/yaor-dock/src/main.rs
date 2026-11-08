@@ -264,6 +264,15 @@ impl Dock {
                 .attach_to(self.layer.wl_surface())
                 .expect("attach dock");
             self.layer.commit();
+            // Jeton QA : le masquage n'a PAS de ligne « rendu » ci-dessous
+            // (return avant le log) — sans ce jeton, un harnais qui greffe
+            // dessus le configure(1,1) croit à un configure perdu
+            // (leçon sondages 1/2/2b : tout se passe nominalement).
+            eprintln!(
+                "{PROG}: [{:.3}] masqué : tampon {w}x{} transparent attaché",
+                uptime(),
+                h
+            );
             return;
         }
         {
@@ -1041,6 +1050,12 @@ fn main() -> std::process::ExitCode {
     // SIGHUP (étape 3) : même rechargement que le panel — l'attente
     // surveille le fd Wayland et le tube du signal.
     let hup_tube = yaor_config::hup::install();
+    // Flush AVANT la première attente : commit initial + bind
+    // foreign-toplevel dorment dans le tampon local du socket —
+    // `hup::wait` polle un socket silencieux sinon (le configure du
+    // compositor n'arrive jamais, le dock reste noir). Le flush du
+    // `blocking_dispatch` n'est atteint qu'APRÈS cette attente.
+    let _ = conn.flush();
     while !dock.exit {
         if let Some(tube) = hup_tube {
             let wl_fd = conn.backend().poll_fd().as_raw_fd();
@@ -1052,6 +1067,13 @@ fn main() -> std::process::ExitCode {
         if event_queue.blocking_dispatch(&mut dock).is_err() {
             break;
         }
+        // Flush de fin d'itération : les commits des handlers
+        // (redessins, set_size après ajout/retrait de fenêtre) partent
+        // aussitôt — sinon ils dorment dans le tampon local jusqu'à un
+        // événement fortuit (leçon t-yaor-dock : la barre ne
+        // grandissait qu'au passage du pointeur, qui réveillait le
+        // socket).
+        let _ = conn.flush();
     }
     eprintln!("{PROG}: [{:.3}] arrêt", uptime());
     std::process::ExitCode::SUCCESS
