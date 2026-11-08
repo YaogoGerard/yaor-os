@@ -1800,6 +1800,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "yaor-protocol"
+version = "0.2.0"
+dependencies = [
+ "wayland-backend",
+ "wayland-client",
+ "wayland-scanner",
+ "wayland-server",
+]
+
+[[package]]
 name = "yaor-slot"
 version = "0.2.0"
 dependencies = [
