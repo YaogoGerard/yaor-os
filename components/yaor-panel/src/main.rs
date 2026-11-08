@@ -53,6 +53,12 @@ use wayland_protocols_wlr::foreign_toplevel::v1::client::{
     zwlr_foreign_toplevel_handle_v1::{Event as ToplevelEvent, ZwlrForeignToplevelHandleV1},
     zwlr_foreign_toplevel_manager_v1::{Event as ManagerEvent, ZwlrForeignToplevelManagerV1},
 };
+// Protocole privé yaor_workspace_v1 (étape 3) : indicateurs 1-5 de la
+// barre — l'espace actif vient du compositor (event `current`), le clic
+// sur un chiffre bascule (request `switch`).
+use yaor_protocol::workspace::client::yaor_workspace_v1::{
+    Event as WorkspaceEvent, YaorWorkspaceV1,
+};
 // Primitives de rendu partagées avec yaor-dock (étape 2) : canvas Argb8888,
 // formes anti-aliasées, police bitmap 5x7 et thème « ambre sur noir ». Le
 // panel ne définit plus ni palette ni glyphes — un seul fournisseur pour
@@ -136,6 +142,13 @@ fn th() -> Theme {
 /// Position du bouton menu : le logo 24x24 occupe x=2..26, le bouton
 /// le suit (QA : clic au centre (60,12)).
 const BTN_X: u32 = 30;
+
+/// Indicateurs d'espaces de travail (étape 3) : pilule à droite du
+/// bouton menu (x=100..178). Cinq chiffres, pas de 14 px (police 5x7),
+/// 4 px de marge interne — cf. draw_bar et pointer_frame (clic).
+const WS_X: u32 = BTN_X + BTN_W + 10;
+const WS_COUNT: usize = 5;
+const WS_PITCH: u32 = 14;
 
 /// Emblème 24x24 en Argb8888 (B,G,R,A), chargé une seule fois au
 /// démarrage (1e.logo). Vide tant que [`init_logo`] n'a pas tourné :
@@ -333,6 +346,14 @@ struct Panel {
     /// Global zwlr_foreign_toplevel_manager_v1 (liste des fenêtres +
     /// activation/restauration — jalon 1b.c).
     foreign_manager: Option<ZwlrForeignToplevelManagerV1>,
+    /// Global yaor_workspace_v1 (étape 3) : bascule au clic des
+    /// indicateurs — absent (compositor ancien) : indicateurs visuels
+    /// seulement.
+    workspace: Option<YaorWorkspaceV1>,
+    /// Espace de travail actif (base 0, publié par le compositor).
+    workspace_current: usize,
+    /// Indicateurs d'espaces affichés ? (profil tiling seul — étape 3).
+    workspace_visible: bool,
     /// Fenêtres publiées par le compositor (ordre d'affichage).
     entries: Vec<TaskbarEntry>,
     /// Seat (l'activation d'une fenêtre exige la ressource wl_seat).
@@ -388,6 +409,31 @@ impl Panel {
             let label = "YAOR";
             let tx = BTN_X as i32 + (BTN_W as i32 - text_width(label)) / 2;
             draw_text(&mut canvas, cw, ch, label, tx, 8, th().panel_bg);
+            // Indicateurs d'espaces de travail (étape 3 — profil tiling,
+            // maquette « 1-5 en barre ») : pilule discrète à droite du
+            // bouton menu, chiffre actif ambre + soulignement.
+            if self.workspace_visible {
+                let px = WS_X as i32;
+                let pw = (WS_COUNT as i32) * WS_PITCH as i32 + 8;
+                fill_rrect(&mut canvas, cw, ch, px, 3, pw, 18, 4, th().button_bg);
+                for i in 0..WS_COUNT {
+                    let active = i == self.workspace_current;
+                    let digit = format!("{}", i + 1);
+                    let dx = px + 4 + (i as i32) * WS_PITCH as i32;
+                    draw_text(
+                        &mut canvas,
+                        cw,
+                        ch,
+                        &digit,
+                        dx,
+                        8,
+                        if active { th().accent } else { th().text_gray },
+                    );
+                    if active {
+                        fill_rect(&mut canvas, cw, ch, dx - 1, 17, 6, 2, th().accent);
+                    }
+                }
+            }
             // Version du produit à droite (ADR-022).
             let vers = format!("YAOR {VERSION}");
             draw_text(&mut canvas, cw, ch, &vers, cw - text_width(&vers) - 6, 8, th().text_fg);
@@ -679,6 +725,17 @@ impl Panel {
             eprintln!(
                 "{PROG}: [{:.3}] rechargement : profil {profile}, taskbar inchangée",
                 uptime()
+            );
+        }
+        // Indicateurs d'espaces (étape 3) : profil tiling seul — la
+        // visibilité suit le profil au même titre que la taskbar.
+        let ws_visible = cfg.profile.name == Some(yaor_config::Profile::Tiling);
+        if ws_visible != self.workspace_visible {
+            self.workspace_visible = ws_visible;
+            eprintln!(
+                "{PROG}: [{:.3}] espaces : indicateurs {} (profil {profile})",
+                uptime(),
+                if ws_visible { "affichés" } else { "masqués" }
             );
         }
         self.draw_bar(qh);
@@ -1024,6 +1081,25 @@ impl PointerHandler for Panel {
                         } else {
                             self.open_menu(qh);
                         }
+                    } else if button == 0x110
+                        && self.workspace_visible
+                        && x >= WS_X as f64
+                        && x < (WS_X + 8 + (WS_COUNT as u32 * WS_PITCH)) as f64
+                        && y >= 3.0
+                        && y < 21.0
+                    {
+                        // Clic indicateur d'espace (étape 3) : digit sous
+                        // le pointeur → request `switch` au compositor.
+                        // Hors bornes côté compositor : no-op garanti.
+                        let idx = ((x as u32 - WS_X - 4) / WS_PITCH) as usize;
+                        eprintln!(
+                            "{PROG}: [{:.3}] espaces : clic indicateur {}",
+                            uptime(),
+                            idx + 1
+                        );
+                        if let Some(ws) = self.workspace.as_ref() {
+                            ws.switch(idx as u32);
+                        }
                     }
                 }
             } else if event.surface == *self.taskbar.as_ref().unwrap().wl_surface() {
@@ -1145,6 +1221,35 @@ impl Dispatch<ZwlrForeignToplevelManagerV1, ()> for Panel {
     }
 }
 
+impl Dispatch<YaorWorkspaceV1, ()> for Panel {
+    fn event(
+        state: &mut Self,
+        _proxy: &YaorWorkspaceV1,
+        event: WorkspaceEvent,
+        _: &(),
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+    ) {
+        // `current` : publié au bind puis à chaque bascule — l'indicateur
+        // suit (jeton journal + redessin de la barre). Autres événements
+        // (aucun en v1) : ignorés.
+        if let WorkspaceEvent::Current { index } = event {
+            let idx = index as usize;
+            if state.workspace_current != idx {
+                state.workspace_current = idx;
+                if state.workspace_visible {
+                    eprintln!(
+                        "{PROG}: [{:.3}] espaces : actif {} (indicateur)",
+                        uptime(),
+                        idx + 1
+                    );
+                    state.draw_bar(qh);
+                }
+            }
+        }
+    }
+}
+
 impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for Panel {
     fn event(
         state: &mut Self,
@@ -1259,6 +1364,8 @@ fn main() -> std::process::ExitCode {
     // suite du rendu lit la palette et le bitmap en mémoire.
     let cfg = init_assets();
     let taskbar_shown = taskbar_visible(cfg.profile.name);
+    // Indicateurs d'espaces (étape 3) : profil tiling seul.
+    let workspace_shown = cfg.profile.name == Some(yaor_config::Profile::Tiling);
     // Profil élu (étape 3) : journalisé avant la connexion, donc visible
     // même sans compositor (contrôle de configuration hors session).
     eprintln!(
@@ -1341,6 +1448,9 @@ fn main() -> std::process::ExitCode {
         taskbar_visible: taskbar_shown,
         empty_region,
         foreign_manager: None,
+        workspace: None,
+        workspace_current: 0,
+        workspace_visible: workspace_shown,
         entries: Vec::new(),
         seat_object: None,
         pool,
@@ -1361,6 +1471,14 @@ fn main() -> std::process::ExitCode {
     {
         Ok(manager) => panel.foreign_manager = Some(manager),
         Err(e) => eprintln!("{PROG}: foreign-toplevel indisponible : {e:?}"),
+    }
+
+    // Espaces de travail (étape 3) : le compositor publie l'espace
+    // actif au bind puis à chaque bascule. Absent (compositor ancien) :
+    // indicateurs visuels seulement, non bloquant.
+    match panel.registry_state.bind_one::<YaorWorkspaceV1, Panel, ()>(&qh, 1..=1, ()) {
+        Ok(ws) => panel.workspace = Some(ws),
+        Err(e) => eprintln!("{PROG}: yaor-workspace indisponible : {e:?}"),
     }
 
     // SIGHUP (étape 3) : le client recharge `desktop.toml` comme le
