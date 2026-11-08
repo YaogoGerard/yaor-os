@@ -66,6 +66,7 @@ ADR dédié.
 | 45 | Version de produit/d'image | **fichier `VERSION` (source unique) → `IMAGE_VERSION` ; apparie racine et noyau** — voir ADR-022 |
 | 46 | Limine dans le média | **Limine copié depuis l'hôte dans l'image live (outil de build, ADR-010/011)** — voir ADR-023 |
 | 47 | Base graphique v0.3 | **mesa + libdrm, libwayland, libinput + libevdev, pipewire + wireplumber ; validation par le compositor d'exemple Smithay** — voir ADR-024 |
+| 48 | Durcissement session graphique | **session non privilégiée (logind) en cible v0.7 ; root confiné au banc QA live** — voir ADR-025 |
 
 ## Conséquences
 
