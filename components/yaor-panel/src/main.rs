@@ -1368,6 +1368,12 @@ fn main() -> std::process::ExitCode {
     // (pas de minuterie ni de scrutation) ; sans tube, la boucle reste
     // strictement bloquante comme en v0.5.
     let hup_tube = yaor_config::hup::install();
+    // Flush AVANT la première attente : commit initial + bind
+    // foreign-toplevel dorment dans le tampon local du socket —
+    // `hup::wait` polle un socket silencieux sinon (le configure du
+    // compositor n'arrive jamais, la barre reste noire). Le flush du
+    // `blocking_dispatch` n'est atteint qu'APRÈS cette attente.
+    let _ = conn.flush();
     while !panel.exit {
         if let Some(tube) = hup_tube {
             let wl_fd = conn.backend().poll_fd().as_raw_fd();
@@ -1379,6 +1385,11 @@ fn main() -> std::process::ExitCode {
         if event_queue.blocking_dispatch(&mut panel).is_err() {
             break;
         }
+        // Flush de fin d'itération : les commits des handlers (barre,
+        // taskbar, set_size au changement de liste) partent aussitôt —
+        // sinon ils dorment dans le tampon local jusqu'à un événement
+        // fortuit (leçon t-yaor-dock, partagée avec yaor-dock).
+        let _ = conn.flush();
     }
     eprintln!("{PROG}: [{:.3}] arrêt", uptime());
     std::process::ExitCode::SUCCESS
