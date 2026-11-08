@@ -117,6 +117,13 @@ pub fn process_input_event<I: InputBackend>(
             let pos: Point<f64, smithay::utils::Logical> =
                 event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
 
+            // L'état du pointeur du compositor suit la position ABS
+            // (le handler RELATIF le fait déjà) : sinon les clics
+            // posés sur la position Smithay divergent de
+            // pointer_location — leçon QA t-yaor-espaces (pilote
+            // usb-tablet absolu).
+            data.pointer_location = pos;
+
             let serial = SERIAL_COUNTER.next_serial();
 
             let pointer = data.seat.get_pointer().unwrap();
