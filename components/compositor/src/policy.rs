@@ -51,6 +51,11 @@ pub struct LayoutState {
     /// Sorties du Space (unmap) — invisibles et intouchables, la
     /// taskbar (étape 1b.c) ou Mod+m les restaurent.
     pub minimized: Vec<(WindowElement, i32, i32)>,
+    /// Dernier mode de disposition vu par `recompute` : la permutation
+    /// (rechargement de configuration) déclenche les migrations —
+    /// libération des tuilées en flottant, adoption des flottantes en
+    /// maître+pile. `None` avant le premier passage.
+    pub last_mode: Option<crate::config::LayoutMode>,
 }
 
 /// Décalage en cascade d'une nouvelle fenêtre (v0.4).
@@ -341,6 +346,11 @@ pub(crate) fn restore_minimized(state: &mut Yaor, idx: usize) {
 /// rechargement), disposition maître+pile **par sortie**.
 pub fn recompute(state: &mut Yaor) {
     let mode = crate::config::layout_mode();
+    // Permutation de mode (rechargement de configuration) : détectée
+    // ICI, avant les branchements, pour que `last_mode` progresse dans
+    // TOUS les modes (aller-retour tiling -> flottant -> tiling compris).
+    let switched = state.layout.last_mode != Some(mode);
+    state.layout.last_mode = Some(mode);
     if mode == LayoutMode::Cascade {
         // v0.4 exact : no-op strict (aucune régression permise).
         // Purge des décorations si le mode vient du flottant
@@ -376,6 +386,19 @@ pub fn recompute(state: &mut Yaor) {
     state.layout.tiled.retain(IsAlive::alive);
     state.layout.floating.retain(IsAlive::alive);
     state.space.elements().for_each(|w| w.set_ssd(false));
+
+    // À l'entrée en maître+pile (rechargement) : les flottantes
+    // rejoignent le tiling — symétrique du branchement flottant
+    // ci-dessus (qui libère les tuilées sur place). Les sorties de
+    // tiling interactives (grab, v0.6 1b) ne sont pas touchées : elles
+    // vivent SANS permutation, `switched` reste faux.
+    if mode == LayoutMode::MasterStack && switched && !state.layout.floating.is_empty() {
+        tracing::info!(
+            "profil maître+pile : {} fenêtre(s) flottante(s) adoptée(s) au tiling",
+            state.layout.floating.len()
+        );
+        state.layout.tiled.append(&mut state.layout.floating);
+    }
 
     // adoption : toute fenêtre non recensée rejoint le tiling (mode
     // permuté après coup au rechargement de configuration)
