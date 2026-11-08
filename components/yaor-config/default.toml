@@ -43,6 +43,13 @@ ratio_grow = "Mod+g"
 ratio_shrink = "Mod+Shift+g"
 quit = "Mod+Shift+E"
 
+# Espaces de travail (v0.6 étape 3 — profil tiling, maquette « 1-5 en
+# barre ») : bascule Mod+N, envoi de la fenêtre focusée Mod+Shift+N.
+# Sans objet hors maître+pile ; une liste plus courte laisse les
+# espaces restants sans raccourci.
+workspace = ["Mod+1", "Mod+2", "Mod+3", "Mod+4", "Mod+5"]
+workspace_send = ["Mod+Shift+1", "Mod+Shift+2", "Mod+Shift+3", "Mod+Shift+4", "Mod+Shift+5"]
+
 # Fond d'écran réel (1e.fond) : image fournie, couvre tout l'écran.
 # Chemin vide = dégradé procédural (identité « ambre sur noir »).
 [wallpaper]

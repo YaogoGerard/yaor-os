@@ -89,6 +89,15 @@ pub struct KeysConfig {
     /// Minimiser/restaurer la fenêtre focusée (jalon v0.6 étape 1b :
     /// bureau flottant — la taskbar le restaure ; ici, raccourci).
     pub minimize: String,
+    /// Bascule vers l'espace de travail N (0-4 — maquette « 1-5 en
+    /// barre », étape 3) : indice 0 = « Mod+1 ». Une entrée absente
+    /// (liste plus courte) laisse l'espace sans raccourci. Sans objet
+    /// hors maître+pile (actions no-op — v0.4/v0.5 inchangés).
+    pub workspace: Vec<String>,
+    /// Envoie la fenêtre focusée à l'espace N (0-4) et bascule avec
+    /// elle (convention sway). Même convention d'indices que
+    /// `workspace`.
+    pub workspace_send: Vec<String>,
 }
 
 impl Default for KeysConfig {
@@ -104,6 +113,14 @@ impl Default for KeysConfig {
             ratio_shrink: "Mod+Shift+g".to_string(),
             quit: "Mod+Shift+E".to_string(),
             minimize: "Mod+m".to_string(),
+            workspace: ["Mod+1", "Mod+2", "Mod+3", "Mod+4", "Mod+5"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            workspace_send: ["Mod+Shift+1", "Mod+Shift+2", "Mod+Shift+3", "Mod+Shift+4", "Mod+Shift+5"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         }
     }
 }
@@ -473,6 +490,22 @@ mod tests {
         assert_eq!(cfg.layout.ratio, 0.5);
         assert_eq!(cfg.layout.gaps, 0);
         assert_eq!(cfg.keys.close, "Mod+Q");
+    }
+
+    #[test]
+    fn espaces_defauts_et_rebind() {
+        // Défauts : cinq espaces (maquette 1-5), bascule Mod+N,
+        // envoi Mod+Shift+N (étape 3).
+        let cfg = DesktopConfig::parse_str("").unwrap();
+        assert_eq!(cfg.keys.workspace.len(), 5);
+        assert_eq!(cfg.keys.workspace[1], "Mod+2");
+        assert_eq!(cfg.keys.workspace_send[0], "Mod+Shift+1");
+        // Rebind partiel : liste plus courte = espaces restants sans
+        // raccourci ; l'autre tableau garde ses défauts (fichier
+        // partiel, convention du crate).
+        let cfg = DesktopConfig::parse_str("[keys]\nworkspace = [\"Mod+F1\"]\n").unwrap();
+        assert_eq!(cfg.keys.workspace, vec!["Mod+F1".to_string()]);
+        assert_eq!(cfg.keys.workspace_send[0], "Mod+Shift+1");
     }
 
     #[test]
