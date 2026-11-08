@@ -70,8 +70,10 @@ Rendu : [`design/Tiling.png`](design/Tiling.png).
 - **Espaces de travail** (`yaor-ctl workspace N`).
 
 État : layout maître+pile **livré** (v0.5, `t-yaor-tiling` 26/26 +
-6/6) ; espaces de travail et changement de profil à chaud : jalon
-v0.6 **étape 3**.
+6/6) ; **espaces de travail livrés** (v0.6 : 1-5 en barre, cliquables,
+`yaor-ctl workspace N`, `t-yaor-espaces` 36/36 + 5/5) ; changement de
+profil à chaud **livré et prouvé** (v0.6 : `t-yaor-profil` 24/24 + 3,
+fusion des espaces prouvée par `t-yaor-espaces`).
 
 ## Changement de profil
 

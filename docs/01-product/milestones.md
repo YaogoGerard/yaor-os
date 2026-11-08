@@ -774,13 +774,50 @@ Tests : `yaor-config` 14 (profils élu/absent/inconnu, préséance sur
 `yaor-panel` 3 (visibilité de la taskbar), `compositor` 5 (disposition
 effective) — **70/70** au total, `cargo test --workspace` vert.
 
-**Reste à faire** : les **espaces de travail** du profil tiling
-(maquette : 1-5 en barre) — étape suivante ; le lancement des surfaces
-par le profil (aujourd'hui le harnais QA démarre panel et dock, qui se
-masquent selon le profil) ; la QA QEMU du changement à chaud
-(TEST-UI-004 : bascule, taskbar/dock, disposition, absence de zone
-réservée) — non exécutable dans l'environnement de rédaction (étapes 04
-et 06 en root), donc **aucune preuve à l'écran** pour cette étape.
+**Reste à faire** : le lancement des surfaces par le profil (aujourd'hui
+le harnais QA démarre panel et dock, qui se masquent selon le profil).
+
+### Espaces de travail (8 novembre 2026)
+
+Les **espaces de travail du profil tiling** (maquette : 1-5 en barre)
+sont livrés et prouvés à l'écran — la QA QEMU du changement à chaud
+(TEST-UI-004) est au passage **réalisée** : le harnais t-yaor-espaces
+bascule le profil par SIGHUP dans la même session (tiling → classic)
+et vérifie la fusion des espaces (aucune fenêtre perdue).
+
+- **Compositor** : cinq espaces pour le maître+pile ; le code v0.5
+  reste intact (`tiled` EST l'espace courant, les autres vivent dans
+  des slots « fenêtre + dernière position de tuile », même modèle que
+  les minimisées). Mod+1..5 bascule, Mod+Shift+1..5 envoie la fenêtre
+  focusée puis bascule (convention sway) ; au départ du maître+pile,
+  les slots fusionnent. Protocole privé `yaor_workspace_v1` (crate
+  `yaor-protocol`, codegen wayland-scanner vendu — ADR-018) : event
+  `current`, requests `switch`/`send_focused`, mêmes gardes que les
+  raccourcis. Raccourcis rebindables `[keys] workspace*` (défauts
+  Mod+N / Mod+Shift+N).
+- **Panel** : indicateurs 1-5 cliquables dans la barre (maquette :
+  pilule discrète, actif ambre + soulignement), profil tiling seul ;
+  l'espace actif arrive par `current`, le clic émet `switch`.
+- **`yaor-ctl`** : `workspace` (consultation), `workspace N`
+  (bascule), `send N` (envoi du focus) — client wayland minimal via
+  le même protocole.
+
+Leçons QA (t-yaor-espaces 36/36 + 5/5, banc usb-tablet absolu) :
+`window_output_of` avait un repli inatteignable (le `?` direct) — les
+fenêtres « arrivant » d'un autre espace n'étaient jamais re-mappées ;
+le focus se pose APRÈS le re-map ; jetons de diagnostic sur les no-op
+(un drop PS/2 et un no-op ne doivent pas être indiscernables) ; le
+handler ABS du pointeur met `pointer_location` à jour ; le banc QEMU
+du harnais embarque qemu-xhci + usb-tablet (injection ABSOLUE — l'axe
+Y rel de la souris PS/2 de repli est mort) et le clic indicateur
+s'auto-corrige en boucle fermée sur les positions journalisées.
+
+Non-régression complète (ISO 22:38) : tiling 26/26 + 6, profil
+24/24 + 3, float 36/36, taskbar 17/17 + 3, menu 16/16 + 3, dock
+16/16 + 3.
+
+**Reste à faire** : le lancement des surfaces par le profil (aujourd'hui
+le harnais QA démarre panel et dock, qui se masquent selon le profil).
 
 ### Clôture de v0.4 (28 octobre 2026)
 
