@@ -18,6 +18,7 @@ mod shell;
 mod ssd;
 mod state;
 mod toplevels;
+mod workspaces;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const PROG: &str = "yaor-compositor";

@@ -113,6 +113,9 @@ pub struct Yaor {
     /// liste les fenêtres et leur envoie activate/minimize/close
     /// (jalon v0.6 étape 1b.c).
     pub foreign_toplevel: crate::toplevels::ForeignToplevelState,
+    /// Protocole privé yaor_workspace_v1 : indicateurs du panel et
+    /// yaor-ctl (espaces de travail du tiling — v0.6 étape 3).
+    pub workspace_state: crate::workspaces::WorkspaceState,
 
     pub seat: Seat<Self>,
 
@@ -177,6 +180,7 @@ impl Yaor {
         let xwayland_shell_state = XWaylandShellState::new::<Yaor>(&dh);
         let primary_selection_state = PrimarySelectionState::new::<Yaor>(&dh);
         let foreign_toplevel = crate::toplevels::ForeignToplevelState::new(&dh);
+        let workspace_state = crate::workspaces::WorkspaceState::new(&dh);
         let popups = PopupManager::default();
 
         let seat_name = backend_data.session.seat().clone();
@@ -208,6 +212,7 @@ impl Yaor {
             xwayland_shell_state,
             primary_selection_state,
             foreign_toplevel,
+            workspace_state,
             seat,
             backend_data: Some(backend_data),
             xwm: None,

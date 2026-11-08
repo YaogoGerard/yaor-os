@@ -84,6 +84,12 @@ features = ["server"]
 [dependencies.yaor-config]
 path = "../yaor-config"
 
+# Protocoles privés du bureau (étape 3) : yaor_workspace_v1 (espaces de
+# travail du tiling — indicateurs panel + yaor-ctl). Code serveur.
+[dependencies.yaor-protocol]
+path = "../yaor-protocol"
+features = ["server"]
+
 # Journal de session (même convention qu'anvil) : RUST_LOG pour le filtre,
 # sortie compacte par défaut vers stderr (redirigée par la session).
 [dependencies.tracing-subscriber]

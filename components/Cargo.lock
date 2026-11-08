@@ -1757,6 +1757,7 @@ dependencies = [
  "x11rb",
  "yaor-assets",
  "yaor-config",
+ "yaor-protocol",
 ]
 
 [[package]]
@@ -1766,6 +1767,14 @@ dependencies = [
  "libc",
  "serde",
  "toml",
+]
+
+[[package]]
+name = "yaor-ctl"
+version = "0.2.0"
+dependencies = [
+ "wayland-client",
+ "yaor-protocol",
 ]
 
 [[package]]
@@ -1796,6 +1805,7 @@ dependencies = [
  "wayland-protocols-wlr",
  "yaor-assets",
  "yaor-config",
+ "yaor-protocol",
  "yaor-ui",
 ]
 

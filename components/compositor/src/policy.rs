@@ -40,7 +40,11 @@ use crate::{element::WindowElement, state::Yaor};
 /// Listes de fenêtrage : tiling (ordre = maître d'abord), flottantes
 /// (géométrie libre), minimisées (sorties du rendu, restaurables —
 /// jalon v0.6 étape 1b, bureau flottant du profil classique).
-#[derive(Default)]
+///
+/// Default manuel : les slots d'espaces de travail doivent exister
+/// dès l'origine (WORKSPACE_COUNT vecteurs vides) — un Default dérivé
+/// laisserait `workspaces` vide et la première bascule indexerait
+/// hors bornes.
 pub struct LayoutState {
     /// Fenêtres engagées dans la disposition automatique : l'index 0
     /// est le maître, les suivantes la pile.
@@ -56,7 +60,35 @@ pub struct LayoutState {
     /// libération des tuilées en flottant, adoption des flottantes en
     /// maître+pile. `None` avant le premier passage.
     pub last_mode: Option<crate::config::LayoutMode>,
+    /// Espaces de travail HORS espace courant (v0.6 étape 3 — profil
+    /// tiling, maquette « 1-5 en barre ») : fenêtres tuilées de l'espace
+    /// N avec leur dernière position de tuile, SORTIES du Space (unmap —
+    /// même modèle que `minimized`). L'espace courant vit dans `tiled` :
+    /// tout le code v0.5 continue d'opérer sur l'espace affiché. Les
+    /// slots sont fusionnés au départ du maître+pile (changement de
+    /// profil — aucune fenêtre perdue).
+    pub workspaces: Vec<Vec<(WindowElement, i32, i32)>>,
+    /// Indice de l'espace courant (base 0 — affiché 1-5).
+    pub current_workspace: usize,
 }
+
+impl Default for LayoutState {
+    fn default() -> Self {
+        Self {
+            tiled: Vec::new(),
+            floating: Vec::new(),
+            minimized: Vec::new(),
+            last_mode: None,
+            workspaces: vec![Vec::new(); WORKSPACE_COUNT],
+            current_workspace: 0,
+        }
+    }
+}
+
+/// Nombre d'espaces de travail (maquette profil tiling : « 1-5 en
+/// barre »). Fixe : les indicateurs du panel et les raccourcis
+/// Mod+1..5 sont taillés pour cinq.
+pub const WORKSPACE_COUNT: usize = 5;
 
 /// Décalage en cascade d'une nouvelle fenêtre (v0.4).
 ///
@@ -336,6 +368,139 @@ pub(crate) fn restore_minimized(state: &mut Yaor, idx: usize) {
 }
 
 // ---------------------------------------------------------------------------
+// Espaces de travail (v0.6 étape 3 — profil tiling, maquette 1-5)
+// ---------------------------------------------------------------------------
+
+/// Bascule vers l'espace `idx` (base 0). Les tuilées de l'espace quitté
+/// sortent du Space (unmap, positions mémorisées — modèle `minimized`),
+/// celles de l'espace entrant reviennent et sont re-tuilées par
+/// `recompute` (tile_group re-mappe les non-mappées). Focus : maître de
+/// l'espace entrant, sinon libéré. Hors bornes ou espace déjà courant :
+/// no-op. Flottantes et minimisées : inchangées (hors espaces).
+pub fn switch_workspace(state: &mut Yaor, idx: usize) {
+    if idx >= WORKSPACE_COUNT || idx == state.layout.current_workspace {
+        tracing::info!(
+            "espaces : bascule ignorée (espace courant {} ou hors bornes)",
+            state.layout.current_workspace + 1
+        );
+        return;
+    }
+    let from_ws = state.layout.current_workspace;
+    // Sauvegarde de l'espace quitté (positions de tuile pour le retour).
+    let mut leaving: Vec<(WindowElement, i32, i32)> = Vec::new();
+    let old = std::mem::take(&mut state.layout.tiled);
+    for w in old {
+        let loc = state
+            .space
+            .element_geometry(&w)
+            .map(|g| (g.loc.x, g.loc.y))
+            .unwrap_or((0, 0));
+        state.space.unmap_elem(&w);
+        leaving.push((w, loc.0, loc.1));
+    }
+    state.layout.workspaces[from_ws] = leaving;
+
+    // Reprise de l'espace cible : dé-mémorisé vers `tiled` (recompute
+    // re-map et re-tuile).
+    let from = std::mem::take(&mut state.layout.workspaces[idx]);
+    state.layout.current_workspace = idx;
+    state.layout.tiled = from.into_iter().map(|(w, _, _)| w).collect();
+
+    tracing::info!(
+        "espaces : bascule {} -> {} ({} fenêtre(s) à l'arrivée)",
+        from_ws + 1,
+        idx + 1,
+        state.layout.tiled.len()
+    );
+    recompute(state);
+    // focus APRÈS recompute : les fenêtres entrantes viennent d'être
+    // (re)mappées — le modèle éprouvé de restore_minimized (map puis
+    // focus). Poser le focus AVANT le re-map le perdait : les requêtes
+    // d'envoi partaient en « aucune fenêtre focusée » (leçon QA run 3 :
+    // quatre essais Mod+Shift+2 muets, focus non retrouvé par
+    // focused_window qui ne parcourt que les fenêtres mappées).
+    if !state.layout.tiled.is_empty() {
+        focus_tiled(state, 0);
+    } else {
+        let serial = smithay::utils::SERIAL_COUNTER.next_serial();
+        state
+            .seat
+            .get_keyboard()
+            .unwrap()
+            .set_focus(state, None::<crate::focus::FocusTarget>, serial);
+        crate::element::update_focused_decoration(state, None);
+    }
+    // publications : fenêtres mappées changées (taskbar) + espace
+    // courant (indicateurs panel / yaor-ctl).
+    crate::toplevels::publish_all(state);
+    crate::workspaces::publish_current(state);
+}
+
+/// Envoie la fenêtre focusée à l'espace `idx` puis bascule avec elle
+/// (convention sway). Seules les tuilées participent aux espaces — une
+/// fenêtre flottante ou minimisée focusée : no-op. Hors bornes ou
+/// espace courant : no-op.
+pub fn send_focused_to_workspace(state: &mut Yaor, idx: usize) {
+    if idx >= WORKSPACE_COUNT || idx == state.layout.current_workspace {
+        tracing::info!("espaces : envoi ignoré (espace courant ou hors bornes)");
+        return;
+    }
+    let Some(window) = focused_window(state) else {
+        tracing::info!("espaces : envoi ignoré (aucune fenêtre focusée)");
+        return;
+    };
+    if !state.layout.tiled.iter().any(|t| same_window(t, &window)) {
+        tracing::info!("espaces : envoi ignoré (fenêtre focusée hors tiling)");
+        return;
+    }
+    let loc = state
+        .space
+        .element_geometry(&window)
+        .map(|g| (g.loc.x, g.loc.y))
+        .unwrap_or((0, 0));
+    state.space.unmap_elem(&window);
+    state.layout.tiled.retain(|w| !same_window(w, &window));
+    state.layout.workspaces[idx].push((window, loc.0, loc.1));
+    tracing::info!("espaces : envoi de la fenêtre focusée à l'espace {} + bascule", idx + 1);
+    recompute(state);
+    // focus : maître restant, sinon libéré (avant la bascule qui
+    // refocus le maître de l'espace entrant — la fenêtre envoyée).
+    if !state.layout.tiled.is_empty() {
+        focus_tiled(state, 0);
+    } else {
+        let serial = smithay::utils::SERIAL_COUNTER.next_serial();
+        state
+            .seat
+            .get_keyboard()
+            .unwrap()
+            .set_focus(state, None::<crate::focus::FocusTarget>, serial);
+        crate::element::update_focused_decoration(state, None);
+    }
+    crate::toplevels::publish_all(state);
+    switch_workspace(state, idx);
+}
+
+/// Fusionne tous les espaces dans l'espace courant (départ du
+/// maître+pile — changement de profil) : re-map à la dernière position
+/// de tuile mémorisée, retour dans `tiled`. Le mode cible (cascade ou
+/// flottant) tranche ensuite leur sort (sur place, no-op…). Aucune
+/// fenêtre perdue ; les slots redeviennent vides.
+fn merge_workspaces(state: &mut Yaor) {
+    let mut merged = 0usize;
+    for slot in state.layout.workspaces.drain(..) {
+        for (w, x, y) in slot {
+            state.space.map_element(w.clone(), (x, y), true);
+            state.layout.tiled.push(w);
+            merged += 1;
+        }
+    }
+    state.layout.workspaces = vec![Vec::new(); WORKSPACE_COUNT];
+    if merged > 0 {
+        tracing::info!("profil : {merged} fenêtre(s) d'autres espaces revenue(s)");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Re-tile
 // ---------------------------------------------------------------------------
 
@@ -355,6 +520,12 @@ pub fn recompute(state: &mut Yaor) {
         // v0.4 exact : no-op strict (aucune régression permise).
         // Purge des décorations si le mode vient du flottant
         // (rechargement) : set_ssd(false) est un no-op sinon.
+        // Permutation DEPUIS le maître+pile : fusion des espaces de
+        // travail (aucune fenêtre ne reste cachée — re-map à la
+        // dernière position de tuile mémorisée).
+        if switched {
+            merge_workspaces(state);
+        }
         state.space.elements().for_each(|w| w.set_ssd(false));
         return;
     }
@@ -369,6 +540,13 @@ pub fn recompute(state: &mut Yaor) {
         state.layout.tiled.retain(IsAlive::alive);
         state.layout.floating.retain(IsAlive::alive);
         state.layout.minimized.retain(|(w, _, _)| w.alive());
+        // Permutation depuis le tiling : les fenêtres des autres
+        // espaces reviennent AVANT la libération (elles sont re-mappées
+        // à leur position mémorisée, puis libérées sur place comme les
+        // autres tuilées).
+        if switched {
+            merge_workspaces(state);
+        }
         let freed = state.layout.tiled.drain(..).collect::<Vec<_>>();
         if !freed.is_empty() {
             tracing::info!(
@@ -385,6 +563,11 @@ pub fn recompute(state: &mut Yaor) {
     state.space.refresh();
     state.layout.tiled.retain(IsAlive::alive);
     state.layout.floating.retain(IsAlive::alive);
+    // les slots d'espaces peuvent contenir des fenêtres mortes (client
+    // fermé pendant qu'il vivait hors espace courant).
+    for slot in &mut state.layout.workspaces {
+        slot.retain(|(w, _, _)| w.alive());
+    }
     state.space.elements().for_each(|w| w.set_ssd(false));
 
     // À l'entrée en maître+pile (rechargement) : les flottantes
@@ -449,7 +632,15 @@ fn window_output_of(
     window: &WindowElement,
     outputs: &[(Output, Rectangle<i32, Logical>)],
 ) -> Option<Output> {
-    let geo = state.space.element_geometry(window)?;
+    // Fenêtre hors Space (fenêtre entrante d'un autre espace de
+    // travail, pas encore remappée par tile_group) : première sortie —
+    // le `?` direct rendait ce repli INATTEIGNABLE (leçon QA
+    // t-yaor-espaces run 3/4 : fenêtres « arrivées » jamais re-mappées,
+    // invisibles et introuvables pour le focus).
+    let geo = match state.space.element_geometry(window) {
+        Some(geo) => geo,
+        None => return outputs.first().map(|(o, _)| o.clone()),
+    };
     let center = (geo.loc.x + geo.size.w / 2, geo.loc.y + geo.size.h / 2);
     outputs
         .iter()
@@ -560,6 +751,12 @@ pub enum Action {
     Quit,
     /// Minimiser/restaurer la fenêtre focusée (v0.6 étape 1b).
     Minimize,
+    /// Bascule vers l'espace de travail N (v0.6 étape 3 — tiling ;
+    /// base 0, affiché N+1).
+    Workspace(usize),
+    /// Envoie la fenêtre focusée à l'espace N puis bascule avec elle
+    /// (convention sway — v0.6 étape 3, tiling).
+    WorkspaceSend(usize),
 }
 
 /// Identifie l'action déclenchée par la touche pressée (raccourcis
@@ -569,7 +766,7 @@ pub enum Action {
 /// lettre, comme sway), sinon sym modifié (en repli).
 pub fn find_action(mods: &ModifiersState, raw: Keysym, modified: Keysym) -> Option<Action> {
     let cfg = crate::config::get();
-    let candidates: [(&str, Action); 10] = [
+    let mut candidates: Vec<(&str, Action)> = vec![
         (&cfg.keys.focus_next, Action::FocusNext),
         (&cfg.keys.focus_prev, Action::FocusPrev),
         (&cfg.keys.swap_next, Action::SwapNext),
@@ -581,6 +778,15 @@ pub fn find_action(mods: &ModifiersState, raw: Keysym, modified: Keysym) -> Opti
         (&cfg.keys.quit, Action::Quit),
         (&cfg.keys.minimize, Action::Minimize),
     ];
+    // Espaces de travail (étape 3) : bascule Mod+N, envoi Mod+Shift+N.
+    // Indice hors bornes (config plus longue que WORKSPACE_COUNT) :
+    // l'action est un no-op côté run_action.
+    for (i, spec) in cfg.keys.workspace.iter().enumerate() {
+        candidates.push((spec, Action::Workspace(i)));
+    }
+    for (i, spec) in cfg.keys.workspace_send.iter().enumerate() {
+        candidates.push((spec, Action::WorkspaceSend(i)));
+    }
     for (spec, action) in candidates {
         let Some((m, k)) = parse_shortcut(spec) else {
             continue;
@@ -654,6 +860,8 @@ pub fn run_action(state: &mut Yaor, action: Action) {
             | Action::SwapMaster
             | Action::RatioGrow
             | Action::RatioShrink
+            | Action::Workspace(_)
+            | Action::WorkspaceSend(_)
     );
     if mode != LayoutMode::MasterStack && tiling_only {
         // actions de tiling : sans objet hors maître+pile (v0.4
@@ -686,6 +894,8 @@ pub fn run_action(state: &mut Yaor, action: Action) {
             }
         }
         Action::Minimize => minimize_toggle(state),
+        Action::Workspace(idx) => switch_workspace(state, idx),
+        Action::WorkspaceSend(idx) => send_focused_to_workspace(state, idx),
         Action::FocusNext => {
             if state.layout.tiled.is_empty() {
                 return;
