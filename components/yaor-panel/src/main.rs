@@ -155,7 +155,6 @@ const DLG_SUBTITLES: [&str; 3] = [
 /// Apps de démo du menu : supprimées en 1d.menu — les 8 tuiles du
 /// design sont visuelles (décision produit), le lancement sera câblé
 /// pour les apps YAOR internes dans une étape ultérieure.
-
 /// Thème courant, rechargé au SIGHUP (étape 3) : palette canonique tant
 /// que [`init_assets`] n'a pas tourné.
 static THEME: std::sync::RwLock<Theme> = std::sync::RwLock::new(Theme::CANONIQUE);
@@ -400,11 +399,12 @@ fn cpu_percent() -> u32 {
         Some((pt, pi, last)) if cur.0 > pt => {
             let dt = cur.0 - pt;
             let di = cur.1.saturating_sub(pi);
-            if dt > 0 {
-                (((dt - di) * 100) / dt) as u32
-            } else {
-                last
-            }
+            // checked_div : jamais de division par zéro (dt > 0 garanti
+            // par le garde, mais la math reste évidente) — u32 ensuite.
+            ((dt - di) * 100)
+                .checked_div(dt)
+                .map(|v| v as u32)
+                .unwrap_or(last)
         }
         Some((_, _, last)) => last,
         None => {
@@ -448,7 +448,7 @@ fn ram_percent() -> u32 {
 /// classique et tiling ; le profil macOS-like la remplace par le dock
 /// (étape 3). Profil absent = comportement historique (taskbar).
 fn taskbar_visible(profile: Option<yaor_config::Profile>) -> bool {
-    profile.map_or(true, |p| p.wants_taskbar())
+    profile.is_none_or(|p| p.wants_taskbar())
 }
 
 /// Libellé d'un bouton de taskbar : minuscules (police réelle), borné à
@@ -564,7 +564,7 @@ impl Panel {
         }
         self.ensure_pool(w as i32, h as i32);
         let stride = w as i32 * 4;
-        let (buffer, mut canvas) = self
+        let (buffer, canvas) = self
             .pool
             .create_buffer(w as i32, h as i32, stride, wl_shm::Format::Argb8888)
             .expect("création du buffer de barre");
@@ -575,24 +575,24 @@ impl Panel {
                 canvas.fill(0);
                 eprintln!("{PROG}: [{:.3}] barre : masquée (profil classique)", uptime());
             } else {
-                fill_rect(&mut canvas, cw, ch, 0, 0, cw, ch, th().panel_bg);
+                fill_rect(canvas, cw, ch, 0, 0, cw, ch, th().panel_bg);
                 // Emblème à gauche (toutes les variantes).
-                draw_logo(&mut canvas, cw, ch, 4, 0);
+                draw_logo(canvas, cw, ch, 4, 0);
                 match self.profile {
                     Some(yaor_config::Profile::Macos) => {
-                        Self::draw_menubar(&mut canvas, cw, ch);
+                        Self::draw_menubar(canvas, cw, ch);
                     }
                     Some(yaor_config::Profile::Tiling) => {
-                        Self::draw_tilingbar(&mut canvas, cw, ch, self.workspace_current, &self.entries);
+                        Self::draw_tilingbar(canvas, cw, ch, self.workspace_current, &self.entries);
                     }
                     _ => {
                         // Barre historique (profil non élu) : bouton menu
                         // + indicateurs d'espaces + version.
-                        fill_rect(&mut canvas, cw, ch, BTN_X as i32, 4, BTN_W as i32, 16, th().accent);
+                        fill_rect(canvas, cw, ch, BTN_X as i32, 4, BTN_W as i32, 16, th().accent);
                         let label = "YAOR";
                         let tw = text::text_width(label, 10, Weight::Bold);
                         text::draw_text(
-                            &mut canvas,
+                            canvas,
                             cw,
                             ch,
                             label,
@@ -605,13 +605,13 @@ impl Panel {
                         if self.workspace_visible {
                             let px = WS_X as i32;
                             let pw = (WS_COUNT as i32) * WS_PITCH as i32 + 8;
-                            fill_rrect(&mut canvas, cw, ch, px, 3, pw, 18, 4, th().button_bg);
+                            fill_rrect(canvas, cw, ch, px, 3, pw, 18, 4, th().button_bg);
                             for i in 0..WS_COUNT {
                                 let active = i == self.workspace_current;
                                 let digit = format!("{}", i + 1);
                                 let dx = px + 4 + (i as i32) * WS_PITCH as i32;
                                 text::draw_text(
-                                    &mut canvas,
+                                    canvas,
                                     cw,
                                     ch,
                                     &digit,
@@ -622,14 +622,14 @@ impl Panel {
                                     if active { th().accent } else { th().text_gray },
                                 );
                                 if active {
-                                    fill_rect(&mut canvas, cw, ch, dx - 1, 17, 6, 2, th().accent);
+                                    fill_rect(canvas, cw, ch, dx - 1, 17, 6, 2, th().accent);
                                 }
                             }
                         }
                         let vers = format!("YAOR {VERSION}");
                         let tw = text::text_width(&vers, 10, Weight::Regular);
                         text::draw_text(
-                            &mut canvas,
+                            canvas,
                             cw,
                             ch,
                             &vers,
@@ -737,24 +737,24 @@ impl Panel {
         let h = MENU_H;
         self.ensure_pool(w as i32, h as i32);
         let stride = w as i32 * 4;
-        let (buffer, mut canvas) = self
+        let (buffer, canvas) = self
             .pool
             .create_buffer(w as i32, h as i32, stride, wl_shm::Format::Argb8888)
             .expect("création du buffer de menu");
         {
             let (cw, ch) = (w as i32, h as i32);
-            fill_rect(&mut canvas, cw, ch, 0, 0, cw, ch, th().panel_bg);
+            fill_rect(canvas, cw, ch, 0, 0, cw, ch, th().panel_bg);
 
             // En-tête : wordmark « YAOR » gras + « OS » espacé, filets
             // latéraux (design Classique — pas de médaillon rond).
-            text::draw_text(&mut canvas, cw, ch, "YAOR", 20, 16, 26, Weight::Bold, th().text_fg);
+            text::draw_text(canvas, cw, ch, "YAOR", 20, 16, 26, Weight::Bold, th().text_fg);
             let os = "OS";
             let ow = text::text_width(os, 9, Weight::Bold) + 8; // interlettrage
             let ox = 22 + (text::text_width("YAOR", 26, Weight::Bold) - ow) / 2;
-            text::draw_text(&mut canvas, cw, ch, os, ox, 48, 9, Weight::Bold, th().accent);
-            fill_rect(&mut canvas, cw, ch, 20, 54, ox - 32, 1, th().separator);
+            text::draw_text(canvas, cw, ch, os, ox, 48, 9, Weight::Bold, th().accent);
+            fill_rect(canvas, cw, ch, 20, 54, ox - 32, 1, th().separator);
             fill_rect(
-                &mut canvas,
+                canvas,
                 cw,
                 ch,
                 ox + ow + 10,
@@ -765,9 +765,9 @@ impl Panel {
             );
 
             // Champ de recherche : pilule sombre, placeholder grisé.
-            fill_rrect(&mut canvas, cw, ch, 20, 72, MENU_W as i32 - 40, 30, 15, th().button_bg);
+            fill_rrect(canvas, cw, ch, 20, 72, MENU_W as i32 - 40, 30, 15, th().button_bg);
             text::draw_text(
-                &mut canvas,
+                canvas,
                 cw,
                 ch,
                 "Rechercher une application…",
@@ -782,7 +782,7 @@ impl Panel {
             // libellés minuscules sous chaque tuile).
             let eping = "ÉPINGLÉES";
             text::draw_text_baseline_tracked(
-                &mut canvas,
+                canvas,
                 cw,
                 ch,
                 eping,
@@ -804,7 +804,7 @@ impl Panel {
                     _ => (th().text_fg, th().button_bg),
                 };
                 fill_rrect(
-                    &mut canvas,
+                    canvas,
                     cw,
                     ch,
                     tx,
@@ -817,7 +817,7 @@ impl Panel {
                 if *style == 2 {
                     // Contour ambre : fond sombre encarté de 2 px.
                     fill_rrect(
-                        &mut canvas,
+                        canvas,
                         cw,
                         ch,
                         tx + 2,
@@ -831,7 +831,7 @@ impl Panel {
                 // Monogramme centré (police réelle, gras 20 px).
                 let gw = text::text_width(sym, 20, Weight::Bold);
                 text::draw_text(
-                    &mut canvas,
+                    canvas,
                     cw,
                     ch,
                     sym,
@@ -844,7 +844,7 @@ impl Panel {
                 // Libellé centré sous la tuile.
                 let lw = text::text_width(label, 10, Weight::Regular);
                 text::draw_text(
-                    &mut canvas,
+                    canvas,
                     cw,
                     ch,
                     label,
@@ -859,10 +859,10 @@ impl Panel {
             // Séparateur + rangée utilisateur : avatar + nom, bouton
             // power (anneau + barre verticale).
             let uy = MENU_H as i32 - 50;
-            fill_rect(&mut canvas, cw, ch, 20, uy, MENU_W as i32 - 40, 1, th().separator);
-            fill_circle(&mut canvas, cw, ch, 33, uy + 25, 13, th().accent);
+            fill_rect(canvas, cw, ch, 20, uy, MENU_W as i32 - 40, 1, th().separator);
+            fill_circle(canvas, cw, ch, 33, uy + 25, 13, th().accent);
             text::draw_text(
-                &mut canvas,
+                canvas,
                 cw,
                 ch,
                 "Utilisateur",
@@ -873,7 +873,7 @@ impl Panel {
                 th().text_fg,
             );
             fill_rrect(
-                &mut canvas,
+                canvas,
                 cw,
                 ch,
                 MENU_W as i32 - 54,
@@ -885,8 +885,8 @@ impl Panel {
             );
             let pcx = MENU_W as i32 - 37;
             let pcy = uy + 25;
-            fill_ring(&mut canvas, cw, ch, pcx, pcy, 7, 2, th().accent);
-            fill_rect(&mut canvas, cw, ch, pcx, pcy - 11, 1, 9, th().accent);
+            fill_ring(canvas, cw, ch, pcx, pcy, 7, 2, th().accent);
+            fill_rect(canvas, cw, ch, pcx, pcy - 11, 1, 9, th().accent);
         }
         layer
             .wl_surface()
@@ -911,7 +911,7 @@ impl Panel {
         }
         self.ensure_pool(w as i32, h as i32);
         let stride = w as i32 * 4;
-        let (buffer, mut canvas) = self
+        let (buffer, canvas) = self
             .pool
             .create_buffer(w as i32, h as i32, stride, wl_shm::Format::Argb8888)
             .expect("création du buffer de taskbar");
@@ -933,14 +933,14 @@ impl Panel {
         }
         {
             let (cw, ch) = (w as i32, h as i32);
-            fill_rect(&mut canvas, cw, ch, 0, 0, cw, ch, th().panel_bg);
+            fill_rect(canvas, cw, ch, 0, 0, cw, ch, th().panel_bg);
 
             // Pilule emblème : fond sombre + flamme ambre (OUVRE le
             // volet menu en profil classique) + filet séparateur.
-            let ey0 = ((TASKBAR_H as i32 - TB_BTN_H as i32) / 2) as i32;
-            fill_pill(&mut canvas, cw, ch, 4, ey0, TB_EMBLEM_W, TB_BTN_H as i32, th().button_bg);
+            let ey0 = (TASKBAR_H as i32 - TB_BTN_H as i32) / 2;
+            fill_pill(canvas, cw, ch, 4, ey0, TB_EMBLEM_W, TB_BTN_H as i32, th().button_bg);
             fill_flame(
-                &mut canvas,
+                canvas,
                 cw,
                 ch,
                 4 + TB_EMBLEM_W / 2,
@@ -949,11 +949,11 @@ impl Panel {
                 10,
                 th().accent,
             );
-            fill_rect(&mut canvas, cw, ch, TB_X0 - 7, ey0 + 2, 1, TB_BTN_H as i32 - 4, th().separator);
+            fill_rect(canvas, cw, ch, TB_X0 - 7, ey0 + 2, 1, TB_BTN_H as i32 - 4, th().separator);
 
             for (idx, entry) in self.entries.iter().enumerate() {
                 let x0 = TB_X0 + idx as i32 * TB_BTN_STEP as i32;
-                let y0 = ((TASKBAR_H as i32 - TB_BTN_H as i32) / 2) as i32;
+                let y0 = (TASKBAR_H as i32 - TB_BTN_H as i32) / 2;
                 let border = if entry.activated {
                     th().accent
                 } else {
@@ -961,9 +961,9 @@ impl Panel {
                 };
                 // Pilule : liseré 1 px (ambre si focusée) + fond intérieur,
                 // coins arrondis AA (1d.tb).
-                fill_pill(&mut canvas, cw, ch, x0, y0, TB_BTN_W as i32, TB_BTN_H as i32, border);
+                fill_pill(canvas, cw, ch, x0, y0, TB_BTN_W as i32, TB_BTN_H as i32, border);
                 fill_pill(
-                    &mut canvas,
+                    canvas,
                     cw,
                     ch,
                     x0 + 1,
@@ -977,7 +977,7 @@ impl Panel {
                 let tw = text::text_width(&label, 11, Weight::Regular);
                 let tx = x0 + (TB_BTN_W as i32 - tw) / 2;
                 let ty = y0 + (TB_BTN_H as i32 - 11) / 2;
-                text::draw_text(&mut canvas, cw, ch, &label, tx, ty, 11, Weight::Regular, th().text_fg);
+                text::draw_text(canvas, cw, ch, &label, tx, ty, 11, Weight::Regular, th().text_fg);
             }
 
             // Ligne d'état à droite (design Classique) : « FR · 82 % »
@@ -987,7 +987,7 @@ impl Panel {
             let status = format!("{} · {}", layout_text(), battery_text());
             let sw = text::text_width(&status, 10, Weight::Regular);
             text::draw_text(
-                &mut canvas,
+                canvas,
                 cw,
                 ch,
                 &status,
@@ -998,9 +998,9 @@ impl Panel {
                 th().text_gray,
             );
             let tw = text::text_width(&time, 11, Weight::Bold);
-            text::draw_text(&mut canvas, cw, ch, &time, cw - tw - 6, 2, 11, Weight::Bold, th().text_fg);
+            text::draw_text(canvas, cw, ch, &time, cw - tw - 6, 2, 11, Weight::Bold, th().text_fg);
             let dw = text::text_width(&date, 8, Weight::Regular);
-            text::draw_text(&mut canvas, cw, ch, &date, cw - dw - 6, 18, 8, Weight::Regular, th().text_gray);
+            text::draw_text(canvas, cw, ch, &date, cw - dw - 6, 18, 8, Weight::Regular, th().text_gray);
         }
         taskbar
             .wl_surface()
@@ -1058,11 +1058,31 @@ impl Panel {
     fn reload_config(&mut self, qh: &QueueHandle<Self>) {
         let (cfg, src) = yaor_config::DesktopConfig::load();
         init_theme(&cfg, src.as_deref());
-        let visible = taskbar_visible(cfg.profile.name);
         let profile = match cfg.profile.name {
             Some(p) => p.as_str(),
             None => "aucun",
         };
+        // Profil élu (rendu de la barre par variante) : mis à jour avant
+        // la visibilité — c'est LUI qui décide du variant dessiné par
+        // draw_bar et du profil présélectionné dans le dialog. Sans
+        // cette ligne, un « profile set » à chaud laisse la barre dans
+        // l'ancienne variante (leçon QA du dialog v0.6).
+        if self.profile != cfg.profile.name {
+            self.profile = cfg.profile.name;
+        }
+        // Barre haute (étape macOS-like) : absente du profil classique
+        // (design Classique.png — la pilule emblème de la taskbar ouvre
+        // le volet) ; présente dans les autres profils.
+        let bar = cfg.profile.name != Some(yaor_config::Profile::Classic);
+        if bar != self.bar_visible {
+            self.bar_visible = bar;
+            eprintln!(
+                "{PROG}: [{:.3}] barre : {} (profil {profile})",
+                uptime(),
+                if bar { "affichée" } else { "masquée" }
+            );
+        }
+        let visible = taskbar_visible(cfg.profile.name);
         if visible != self.taskbar_visible {
             self.taskbar_visible = visible;
             eprintln!(
@@ -1158,9 +1178,12 @@ impl Panel {
         let layer = self
             .layer_shell
             .create_layer_surface(qh, surface, Layer::Overlay, Some("yaor-panel-dialog"), None);
-        // Centrage : ancré aux 4 bords, taille fixe — le layer map le
-        // place au centre de la zone utile.
-        layer.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
+        // Centrage : PAS d'ancrage d'arête du tout — la LayerMap du
+        // compositor (Smithay desktop/wayland/layer.rs) centre une
+        // surface non ancrée et respecte la taille fixe ; ancrée aux
+        // quatre bords, elle ÉCRASE la taille demandée (la surface
+        // s'étale sur toute la sortie — leçon QA du dialog v0.6).
+        layer.set_anchor(Anchor::empty());
         layer.set_size(DLG_W, DLG_H);
         layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         layer.commit();
@@ -1175,26 +1198,26 @@ impl Panel {
         let (w, h) = (DLG_W as i32, DLG_H as i32);
         self.ensure_pool(DLG_W as i32, DLG_H as i32);
         let stride = w * 4;
-        let (buffer, mut canvas) = self
+        let (buffer, canvas) = self
             .pool
             .create_buffer(w, h, stride, wl_shm::Format::Argb8888)
             .expect("création du buffer du dialog");
         {
-            fill_rect(&mut canvas, w, h, 0, 0, w, h, th().panel_bg);
+            fill_rect(canvas, w, h, 0, 0, w, h, th().panel_bg);
             // Cadre du dialog (liseré ambre).
-            fill_rrect(&mut canvas, w, h, 0, 0, DLG_W as i32, DLG_H as i32, 14, th().accent);
-            fill_rrect(&mut canvas, w, h, 1, 1, DLG_W as i32 - 2, DLG_H as i32 - 2, 13, th().panel_bg);
+            fill_rrect(canvas, w, h, 0, 0, DLG_W as i32, DLG_H as i32, 14, th().accent);
+            fill_rrect(canvas, w, h, 1, 1, DLG_W as i32 - 2, DLG_H as i32 - 2, 13, th().panel_bg);
             // Entête : pastilles feux tricolores + titre centré.
-            fill_circle(&mut canvas, w, h, 26, 18, 5, th().accent);
-            fill_circle(&mut canvas, w, h, 46, 18, 5, th().accent_dark);
-            fill_circle(&mut canvas, w, h, 66, 18, 5, th().button_bg);
+            fill_circle(canvas, w, h, 26, 18, 5, th().accent);
+            fill_circle(canvas, w, h, 46, 18, 5, th().accent_dark);
+            fill_circle(canvas, w, h, 66, 18, 5, th().button_bg);
             let title = "Profils de bureau";
             let tw = text::text_width(title, 12, Weight::Regular);
-            text::draw_text(&mut canvas, w, h, title, (w - tw) / 2, 12, 12, Weight::Regular, th().text_fg);
+            text::draw_text(canvas, w, h, title, (w - tw) / 2, 12, 12, Weight::Regular, th().text_fg);
             // Corps : grand titre + sous-titre.
-            text::draw_text(&mut canvas, w, h, "Profil de bureau", 24, 52, 17, Weight::Bold, th().text_fg);
+            text::draw_text(canvas, w, h, "Profil de bureau", 24, 52, 17, Weight::Bold, th().text_fg);
             text::draw_text(
-                &mut canvas,
+                canvas,
                 w,
                 h,
                 "Choisissez l'organisation des fenêtres. Le cœur du bureau reste identique.",
@@ -1211,20 +1234,20 @@ impl Panel {
                 let selected = i == self.dialog_sel;
                 let active = self.profile == yaor_config::Profile::from_index(i);
                 let border = if selected { th().accent } else { th().rest_border() };
-                fill_rrect(&mut canvas, w, h, x, y, DLG_CARD_W, DLG_CARD_H, 12, border);
-                fill_rrect(&mut canvas, w, h, x + 1, y + 1, DLG_CARD_W - 2, DLG_CARD_H - 2, 11, th().panel_bg);
+                fill_rrect(canvas, w, h, x, y, DLG_CARD_W, DLG_CARD_H, 12, border);
+                fill_rrect(canvas, w, h, x + 1, y + 1, DLG_CARD_W - 2, DLG_CARD_H - 2, 11, th().panel_bg);
                 // Vignette : silhouette de chaque profil (fenêtres).
                 let vx = x + 12;
                 let vy = y + 12;
                 let vw = DLG_CARD_W - 24;
                 let vh = 130;
-                fill_rrect(&mut canvas, w, h, vx, vy, vw, vh, 8, th().button_bg);
+                fill_rrect(canvas, w, h, vx, vy, vw, vh, 8, th().button_bg);
                 match i {
                     0 => {
                         // Classique : deux fenêtres flottantes.
-                        fill_rrect(&mut canvas, w, h, vx + 14, vy + 16, 70, 44, 4, th().text_gray);
+                        fill_rrect(canvas, w, h, vx + 14, vy + 16, 70, 44, 4, th().text_gray);
                         fill_rrect(
-                            &mut canvas,
+                            canvas,
                             w,
                             h,
                             vx + 58,
@@ -1238,7 +1261,7 @@ impl Panel {
                     1 => {
                         // macOS-like : fenêtre + dock.
                         fill_rrect(
-                            &mut canvas,
+                            canvas,
                             w,
                             h,
                             vx + 20,
@@ -1248,12 +1271,12 @@ impl Panel {
                             4,
                             if active { th().accent } else { th().text_fg },
                         );
-                        fill_rrect(&mut canvas, w, h, vx + 46, vy + vh - 26, 40, 12, 6, th().text_gray);
+                        fill_rrect(canvas, w, h, vx + 46, vy + vh - 26, 40, 12, 6, th().text_gray);
                     }
                     _ => {
                         // Tiling : maître + pile.
                         fill_rrect(
-                            &mut canvas,
+                            canvas,
                             w,
                             h,
                             vx + 12,
@@ -1263,15 +1286,15 @@ impl Panel {
                             4,
                             if active { th().accent } else { th().text_fg },
                         );
-                        fill_rrect(&mut canvas, w, h, vx + 80, vy + 12, 40, 42, 4, th().text_gray);
-                        fill_rrect(&mut canvas, w, h, vx + 80, vy + 60, 40, 42, 4, th().text_gray);
+                        fill_rrect(canvas, w, h, vx + 80, vy + 12, 40, 42, 4, th().text_gray);
+                        fill_rrect(canvas, w, h, vx + 80, vy + 60, 40, 42, 4, th().text_gray);
                     }
                 }
                 // Badge Actif (pilule ambre en haut à droite).
                 if active {
                     let bw = text::text_width("Actif", 9, Weight::Bold) + 12;
                     fill_pill(
-                        &mut canvas,
+                        canvas,
                         w,
                         h,
                         x + DLG_CARD_W - bw - 10,
@@ -1281,7 +1304,7 @@ impl Panel {
                         th().accent,
                     );
                     text::draw_text(
-                        &mut canvas,
+                        canvas,
                         w,
                         h,
                         "Actif",
@@ -1293,17 +1316,17 @@ impl Panel {
                     );
                 }
                 // Nom + sous-titre.
-                text::draw_text(&mut canvas, w, h, name, x + 12, y + 154, 13, Weight::Bold, th().text_fg);
-                text::draw_text(&mut canvas, w, h, sub, x + 12, y + 176, 10, Weight::Regular, th().text_gray);
+                text::draw_text(canvas, w, h, name, x + 12, y + 154, 13, Weight::Bold, th().text_fg);
+                text::draw_text(canvas, w, h, sub, x + 12, y + 176, 10, Weight::Regular, th().text_gray);
             }
             // Boutons bas-droite : Annuler (sombre) / Appliquer (ambre).
             let by = DLG_H as i32 - 56;
             let bw_a = text::text_width("Annuler", 11, Weight::Regular) + 32;
             let bw_p = text::text_width("Appliquer", 11, Weight::Bold) + 32;
             let ax = DLG_W as i32 - 24 - bw_p - 12 - bw_a;
-            fill_rrect(&mut canvas, w, h, ax, by, bw_a, 36, 8, th().button_bg);
+            fill_rrect(canvas, w, h, ax, by, bw_a, 36, 8, th().button_bg);
             text::draw_text(
-                &mut canvas,
+                canvas,
                 w,
                 h,
                 "Annuler",
@@ -1314,9 +1337,9 @@ impl Panel {
                 th().text_fg,
             );
             let px0 = DLG_W as i32 - 24 - bw_p;
-            fill_rrect(&mut canvas, w, h, px0, by, bw_p, 36, 8, th().accent);
+            fill_rrect(canvas, w, h, px0, by, bw_p, 36, 8, th().accent);
             text::draw_text(
-                &mut canvas,
+                canvas,
                 w,
                 h,
                 "Appliquer",
@@ -1657,8 +1680,7 @@ impl PointerHandler for Panel {
                                 let cx = DLG_CARD_X + i as i32 * DLG_CARD_STEP;
                                 if xi >= cx
                                     && xi < cx + DLG_CARD_W
-                                    && yi >= DLG_CARD_Y
-                                    && yi < DLG_CARD_Y + DLG_CARD_H
+                                    && (DLG_CARD_Y..DLG_CARD_Y + DLG_CARD_H).contains(&yi)
                                 {
                                     self.dialog_sel = i;
                                     eprintln!(
@@ -1709,8 +1731,7 @@ impl PointerHandler for Panel {
                             // Bouton menu historique (profil non élu).
                             if x >= BTN_X as f64
                                 && x < (BTN_X + BTN_W) as f64
-                                && y >= 4.0
-                                && y < 20.0
+                                && (4.0..20.0).contains(&y)
                             {
                                 if self.menu.is_some() {
                                     self.close_menu();
@@ -1725,8 +1746,7 @@ impl PointerHandler for Panel {
                     if self.workspace_visible
                         && x >= WS_X as f64
                         && x < (WS_X + 8 + (WS_COUNT as u32 * WS_PITCH)) as f64
-                        && y >= 3.0
-                        && y < 21.0
+                        && (3.0..21.0).contains(&y)
                     {
                         let idx = ((x as u32 - WS_X - 4) / WS_PITCH) as usize;
                         eprintln!(
@@ -1916,7 +1936,7 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for Panel {
         let decode = |bytes: &Vec<u8>| -> (bool, bool) {
             let mut min = false;
             let mut act = false;
-            for chunk in bytes.chunks_exact(8) {
+            for chunk in bytes.as_chunks::<8>().0 {
                 let s = u32::from_ne_bytes(chunk[0..4].try_into().unwrap());
                 match s {
                     MINIMIZED => min = true,
