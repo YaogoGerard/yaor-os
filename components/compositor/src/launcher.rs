@@ -107,8 +107,7 @@ impl Launcher {
             (Some(Profile::Macos), Some(Profile::Macos)) => {}
             (Some(Profile::Macos), _) => {
                 if let Some(child) = self.dock.as_mut() {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    terminate_child(child);
                     tracing::info!("launcher : dock arrêté (profil {label})");
                 }
                 self.dock = None;
@@ -131,18 +130,24 @@ impl Launcher {
     /// morte).
     pub fn shutdown(&mut self) {
         if let Some(child) = self.panel.as_mut() {
-            let _ = child.kill();
-            let _ = child.wait();
+            terminate_child(child);
             tracing::info!("launcher : panel arrêté (démontage)");
         }
         self.panel = None;
         if let Some(child) = self.dock.as_mut() {
-            let _ = child.kill();
-            let _ = child.wait();
+            terminate_child(child);
             tracing::info!("launcher : dock arrêté (démontage)");
         }
         self.dock = None;
     }
+}
+
+fn terminate_child(child: &mut Child) {
+    // Arrêt gracieux par SIGTERM (permet le retrait des surfaces et le flush).
+    unsafe {
+        libc::kill(child.id() as libc::c_int, libc::SIGTERM);
+    }
+    let _ = child.wait();
 }
 
 fn spawn_client(program: &str, socket_name: &Option<OsString>) -> Option<Child> {
