@@ -14,9 +14,14 @@
 
 pub mod font;
 pub mod raster;
+pub mod text;
 pub mod theme;
 
 pub use font::{draw_text, draw_text_scaled, glyph, text_width, GLYPHS};
+pub use text::{
+    draw_text as draw_text_true, draw_text_baseline, text_ascent as text_ascent_true,
+    text_height as text_height_true, text_width as text_width_true, Weight as TextWeight,
+};
 pub use raster::{
     blend, blit, fill_circle, fill_pill, fill_rect, fill_rrect, fill_rrect_premul, fill_ring,
     pill_cov, put, rrect_cov,
