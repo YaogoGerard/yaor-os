@@ -1962,6 +1962,55 @@ phase_yaor_components() {
         install -m 0644 /build/components/yaor-assets/assets/logo.png /usr/share/yaor/logo.png && \
         install -m 0644 /build/components/yaor-assets/assets/fond_ecran.png /usr/share/yaor/fond_ecran.png && \
         test -s /usr/share/yaor/logo.png && echo 'assets du bureau posés'"
+    # Session graphique au démarrage (post-v0.6 « Caméléon ») : une unité
+    # systemd lance le compositor après l'autologin (multi-user, logind
+    # a créé /run/user/0) — gate par fichier : /etc/yaor/desktop-autostart
+    # présent → boot direct sur le bureau (ISO desktop) ; absent → le
+    # comportement historique conserve la console (ISO standard : une
+    # instance fantôme casserait les bancs QA, deux compositors ne
+    # peuvent pas prendre le maître DRM).
+    log "pose de la session graphique (unité yaor-session + passe-partout)"
+    run chroot_run "cat > /usr/bin/yaor-session <<'EOS'
+#!/usr/bin/env bash
+# yaor-session — lanceur de la session graphique (unité yaor-session).
+# Le compositor tourne tel quel ; en QEMU (pas de GPU hôte) le rendu
+# logiciel est requis — détecté par la présence du module virtio_gpu,
+# sans toucher à un ordinateur réel (la variable est absente).
+if [ -d /sys/module/virtio_gpu ]; then
+    export YAOR_SOFTWARE_OK=1
+fi
+# /run/user/0 vient de l'autologin (login -f → pam_systemd) : il peut
+# n'être pas encore créé au moment où l'unité démarre — attente courte.
+runtime_dir=/run/user/0
+i=0
+while [ ! -d "\$runtime_dir" ] && [ "\$i" -lt 40 ]; do
+    i=\$((\$i+1))
+    sleep 0.5
+done
+export XDG_RUNTIME_DIR="\$runtime_dir"
+exec /usr/bin/yaor-compositor --tty-udev
+EOS
+chmod 0755 /usr/bin/yaor-session"
+    run chroot_run "cat > /etc/systemd/system/yaor-session.service <<'EOS'
+[Unit]
+Description=YAOR session graphique (compositor + surfaces du profil)
+# Après l'autologin (logind a enregistré la session et créé
+# /run/user/0) ; le bureau remplace fbcon à l'arrivée du maître DRM,
+# la console tty1 reste dessous comme repli en sortie de session.
+After=systemd-logind.service multi-user.target
+ConditionPathExists=/etc/yaor/desktop-autostart
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/yaor-session
+Restart=no
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOS
+systemctl enable yaor-session.service && echo 'session graphique posée'"
 }
 
 # --- Exécution --------------------------------------------------------------

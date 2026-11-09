@@ -101,21 +101,64 @@ rm -f "$EROFS_IMG"
 # les xattrs, inutiles ici et sources d'échecs sur les arbres de build.
 mkfs.erofs -zzstd,level=19 -x -1 "$EROFS_IMG" "$ROOTFS_CLEAN"
 
-section "Préparation de l'arborescence ISO"
+# Limine v8+ : syntaxe « option: valeur », entrées introduites par « / ».
+section "Génération des ISO (xorriso, hybride BIOS+UEFI)"
 ISOWORK="$BUILD_DIR/iso"
 rm -rf "$ISOWORK"
 mkdir -p "$ISOWORK"/{boot/limine,live,EFI/BOOT}
 
 cp "$VMLINUZ" "$ISOWORK/boot/vmlinuz"
 cp "$INITRD"   "$ISOWORK/boot/initrd"
-cp "$EROFS_IMG" "$ISOWORK/live/rootfs.erofs"
 
 cp "$LIMINE_DIR/limine-bios.sys"    "$ISOWORK/boot/limine/"
 cp "$LIMINE_DIR/limine-bios-cd.bin" "$ISOWORK/boot/limine/"
 cp "$LIMINE_DIR/limine-uefi-cd.bin" "$ISOWORK/boot/limine/"
 cp "$LIMINE_DIR/BOOTX64.EFI"        "$ISOWORK/EFI/BOOT/"
 
-# Limine v8+ : syntaxe « option: valeur », entrées introduites par « / ».
+build_iso() {
+    # $1 = nom ISO, $2 = libellé volume, $3 = chemin EROFS racine.
+    # L'arborescence ISOWORK est réutilisée : seul le rootfs variant
+    # change (le bureau embarque la porte yaor-session ON).
+    local iso_name="$1" vol_label="$2" erofs_path="$3"
+    local iso_out="$OUT_DIR/$iso_name"
+    mkdir -p "$OUT_DIR"
+    rm -f "$iso_out"
+    cp -f "$erofs_path" "$ISOWORK/live/rootfs.erofs"
+    xorriso -as mkisofs -R -r -J \
+        -b boot/limine/limine-bios-cd.bin \
+        -no-emul-boot -boot-load-size 4 -boot-info-table \
+        -hfsplus -apm-block-size 2048 \
+        --efi-boot boot/limine/limine-uefi-cd.bin \
+        -efi-boot-part --efi-boot-image --protective-msdos-label \
+        -A "$vol_label" -V "$vol_label" \
+        -o "$iso_out" "$ISOWORK"
+    log "installation des étages Limine BIOS"
+    limine bios-install "$iso_out"
+    ( cd "$OUT_DIR" && sha256sum "$iso_name" > "$iso_name.sha256" )
+    log "empreinte : $iso_out.sha256"
+    if [[ -n "${YAOR_GPG_KEY:-}" ]]; then
+        need_cmd gpg
+        gpg --batch --yes --armor --detach-sign --local-user "$YAOR_GPG_KEY" \
+            --output "$iso_out.asc" "$iso_out"
+        log "signature : $iso_out.asc"
+    else
+        log "signature ignorée : YAOR_GPG_KEY non défini (image de développement)"
+    fi
+    log "ISO générée : $iso_out"
+}
+
+# Variante desktop (post-v0.6) : la porte /etc/yaor/desktop-autostart
+# met le boot direct sur le bureau (l'unité yaor-session s'exécute au
+# multi-user). Deux racines, deux images : la volée standard reste
+# inchangée pour les bancs QA (instance unique du compositor).
+build_erofs() {
+    # $1 = chemin de l'image EROFS à produire (propriété root exigée,
+    # comme l'étape 04).
+    mkfs.erofs -zzstd,level=19 -x -1 "$1" "$ROOTFS_CLEAN"
+}
+
+# Configuration du chargeur Limine (ADR-011), partagée par les deux
+# ISO : la conf pointe sur boot/vmlinuz + initrd déjà copiés.
 cat > "$ISOWORK/boot/limine/limine.conf" <<'LIM'
 timeout: 3
 
@@ -132,36 +175,19 @@ timeout: 3
     cmdline: console=tty0 console=ttyS0 systemd.log_level=debug loglevel=7
 LIM
 
-section "Génération de l'ISO (xorriso, hybride BIOS+UEFI)"
-mkdir -p "$OUT_DIR"
-rm -f "$ISO_OUT"
-xorriso -as mkisofs -R -r -J \
-    -b boot/limine/limine-bios-cd.bin \
-    -no-emul-boot -boot-load-size 4 -boot-info-table \
-    -hfsplus -apm-block-size 2048 \
-    --efi-boot boot/limine/limine-uefi-cd.bin \
-    -efi-boot-part --efi-boot-image --protective-msdos-label \
-    -A "YAOR Live" -V "YAOR-LIVE" \
-    -o "$ISO_OUT" "$ISOWORK"
+section "Génération de l'ISO standard (console, bancs QA)"
+# L'EROFS standard vient d'être produite (au-dessus, section « Création
+# de l'image EROFS ») ; seule la variante desktop en refait une.
+build_iso "$ISO_NAME" "YAOR-LIVE" "$EROFS_IMG"
 
-log "installation des étages Limine BIOS"
-limine bios-install "$ISO_OUT"
-
-section "Empreinte et signature (ADR-007)"
-# L'empreinte est toujours produite : elle identifie l'image distribuée.
-( cd "$OUT_DIR" && sha256sum "$ISO_NAME" > "$ISO_NAME.sha256" )
-log "empreinte : $ISO_OUT.sha256"
-# La signature détachée n'est produite que si une clé est fournie : les
-# constructions de développement s'en passent, une image de release DOIT être
-# signée. YAOR_GPG_KEY désigne la clé par son identifiant GPG (e-mail ou ID).
-if [[ -n "${YAOR_GPG_KEY:-}" ]]; then
-    need_cmd gpg
-    gpg --batch --yes --armor --detach-sign --local-user "$YAOR_GPG_KEY" \
-        --output "$ISO_OUT.asc" "$ISO_OUT"
-    log "signature : $ISO_OUT.asc"
-else
-    log "signature ignorée : YAOR_GPG_KEY non défini (image de développement)"
-fi
+DESKTOP_NAME="yaor-desktop-x86_64-$(yaor_version).iso"
+section "Génération de l'ISO desktop (boot direct, bureau)"
+mkdir -p "$ROOTFS_CLEAN/etc/yaor"
+touch "$ROOTFS_CLEAN/etc/yaor/desktop-autostart"
+DESKTOP_EROFS="$OUT_DIR/rootfs-desktop.erofs"
+rm -f "$DESKTOP_EROFS"
+build_erofs "$DESKTOP_EROFS"
+build_iso "$DESKTOP_NAME" "YAOR-DESKTOP" "$DESKTOP_EROFS"
+rm -f "$DESKTOP_EROFS"
 
 stamp_done "ch9.iso"
-log "ISO générée : $ISO_OUT"
