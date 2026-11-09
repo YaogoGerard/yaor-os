@@ -145,6 +145,16 @@ pub enum Profile {
 }
 
 impl Profile {
+    /// Conversion depuis un index 0..3 (0: classic, 1: macos, 2: tiling).
+    pub fn from_index(idx: usize) -> Option<Self> {
+        match idx {
+            0 => Some(Profile::Classic),
+            1 => Some(Profile::Macos),
+            2 => Some(Profile::Tiling),
+            _ => None,
+        }
+    }
+
     /// Nom de sérialisation (`[profile] name`), journalisable.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -579,6 +589,10 @@ mod tests {
         assert_eq!(classic.layout_mode(), LayoutMode::Floating);
         assert!(Profile::Classic.wants_taskbar());
         assert!(!Profile::Classic.wants_dock());
+        assert_eq!(Profile::from_index(0), Some(Profile::Classic));
+        assert_eq!(Profile::from_index(1), Some(Profile::Macos));
+        assert_eq!(Profile::from_index(2), Some(Profile::Tiling));
+        assert_eq!(Profile::from_index(3), None);
 
         let macos = DesktopConfig::parse_str("[profile]\nname = \"macos\"\n").unwrap();
         assert_eq!(macos.profile.name, Some(Profile::Macos));
