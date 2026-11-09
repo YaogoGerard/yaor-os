@@ -10,6 +10,7 @@ mod element;
 mod focus;
 mod grabs;
 mod input;
+mod launcher;
 mod x11;
 mod policy;
 mod render;

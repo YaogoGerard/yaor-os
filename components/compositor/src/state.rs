@@ -75,6 +75,9 @@ pub struct Yaor {
     #[allow(dead_code)]
     pub start_time: std::time::Instant,
     pub socket_name: Option<OsString>,
+    /// Lanceur du shell (jalon v0.6) : panel et dock (profil macOS-like)
+    /// enfants du compositor, réconciliés au SIGHUP.
+    pub launcher: crate::launcher::Launcher,
     pub display_handle: DisplayHandle,
     pub handle: LoopHandle<'static, Yaor>,
     /// Signal de boucle, pour les arrêts demandés par un raccourci.
@@ -193,6 +196,7 @@ impl Yaor {
         Yaor {
             start_time: std::time::Instant::now(),
             socket_name,
+            launcher: Default::default(),
             display_handle: dh,
             handle,
             loop_signal,

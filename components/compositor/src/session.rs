@@ -609,6 +609,13 @@ pub fn run_udev() {
     // (modèle anvil udev.rs : après les sortie « up »).
     state.start_xwayland();
 
+    // Surfaces du shell par le profil (jalon v0.6) : panel (les trois
+    // profils) et dock (macOS-like), enfants du compositor — sortie
+    // primaire déjà configurée, les surfaces layer-shell trouvent une
+    // cible. Porte QA : YAOR_SHELL_AUTOSTART=0 (harnais = instances
+    // manuelles).
+    state.launcher.start(&state.socket_name);
+
     // Boucle principale (anvil : dispatch 16 ms puis refresh + flush).
     // `STOP_REQUESTED` permet un arrêt propre sur SIGTERM/SIGINT.
     while state.running.load(Ordering::SeqCst) && !STOP_REQUESTED.load(Ordering::SeqCst) {
@@ -621,8 +628,20 @@ pub fn run_udev() {
             // SIGHUP constaté (v0.5) : rechargement de desktop.toml et
             // re-tile immédiat — sans quitter la session (TEST-DESK-001).
             if crate::config::RELOAD_REQUESTED.swap(false, Ordering::SeqCst) {
+                let avant = crate::config::get().profile.name;
                 crate::config::reload();
                 crate::policy::recompute(&mut state);
+                // Le SIGHUP du compositor ne traverse pas les enfants :
+                // transmis à la main AUX ENFANTS EXISTANTS, AVANT la
+                // réconciliation (leçon t-yaor-launcher run 3 : un SIGHUP
+                // tombant sur un dock fraîchement spawné peut l'atteindre
+                // avant l'installation de son handler → dock tué, jamais
+                // rendu ; le nouveau client, lui, lit déjà la config
+                // fraîche — pas besoin de SIGHUP).
+                state.launcher.sighup_children();
+                // Surfaces du shell (jalon v0.6) : réconciliées avec le
+                // nouveau profil — dock lancé/terminé au passage.
+                state.launcher.reconcile(&state.socket_name, avant);
             }
             // Re-tile périodique (v0.5 maître+pile : fenêtres nouvelles
             // ou mortes ; en cascade : no-op — v0.4 inchangé).
@@ -656,6 +675,10 @@ pub fn run_udev() {
     info!("démontage : sorties DRM libérées");
     drop(udev);
     info!("démontage : données udev libérées");
+    // Clients du shell (jalon v0.6 launcher) d'abord : ils voient leur
+    // siège s'éteindre plutôt qu'une socket morte — puis la socket est
+    // retirée avec l'état.
+    state.launcher.shutdown();
     let socket_name = state.socket_name.take();
     drop(state);
     info!("démontage : état Wayland libéré");
