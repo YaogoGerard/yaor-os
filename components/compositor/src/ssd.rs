@@ -188,14 +188,23 @@ pub struct HeaderBar {
     pub close_hover: bool,
     /// Buffer mémoire unique (fond arrondi + pastilles + glyphes).
     pub buffer: MemoryRenderBuffer,
-    /// Clé du dernier rendu : (version du thème, largeur, focus,
-    /// 3 survols).
-    cache: Option<(u64, u32, bool, bool, bool, bool)>,
+    /// Clé du dernier rendu : (version du thème, largeur, titre,
+    /// focus, 3 survols).
+    cache: Option<(u64, u32, Box<str>, bool, bool, bool, bool)>,
 }
 
 /// Barre de titre : construction du buffer (silhouette arrondie en
-/// haut — anneau bordure + fond — puis pastilles et glyphes).
-fn header_buffer(width: u32, focused: bool, min_hover: bool, max_hover: bool, close_hover: bool) -> MemoryRenderBuffer {
+/// haut — anneau bordure + fond — puis pastilles feu tricolore À
+/// GAUCHE, titre centré). Grammaire macOS : fermer/minimiser/agrandir
+/// de gauche à droite, le hit-test suit sonne l'ordre (v0.6 étape 4).
+fn header_buffer(
+    width: u32,
+    title: &str,
+    focused: bool,
+    min_hover: bool,
+    max_hover: bool,
+    close_hover: bool,
+) -> MemoryRenderBuffer {
     let w = width as i32;
     let h = HEADER_H;
     let mut px = vec![0u8; (4 * (w * h)) as usize];
@@ -227,19 +236,25 @@ fn header_buffer(width: u32, focused: bool, min_hover: bool, max_hover: bool, cl
         }
     }
 
-    // 3) pastilles : cercles 14 px centrés dans les zones 32 px
-    //    (minimiser, agrandir, fermer — de gauche à droite).
+    // 3) pastilles « feu tricolore » macOS : RONDES, À GAUCHE, dans
+    //    l'ordre fermer (ambre = accent), minimiser (jaune =
+    //    accent éclairci), agrandir (gris = bouton). Glyphes affichés
+    //    SEULEMENT au survol (comportement macOS) : × − ▢.
     let cy = h / 2;
     let centers = [
-        (w - (3 * BUTTON_W as i32 - BUTTON_W as i32 / 2), cy, min_hover),
-        (w - (2 * BUTTON_W as i32 - BUTTON_W as i32 / 2), cy, max_hover),
-        (w - BUTTON_W as i32 / 2, cy, close_hover),
+        (3 * BUTTON_W as i32 / 2, cy, close_hover),   // fermer (la 1re)
+        (3 * BUTTON_W as i32 + BUTTON_W as i32 / 2, cy, min_hover), // minimiser
+        (5 * BUTTON_W as i32 + BUTTON_W as i32 / 2, cy, max_hover), // agrandir
     ];
-    for (cx, cy, hover) in centers {
-        let color = if hover {
-            lighten(p.button_bg, 0.28)
+    let couleurs = [p.accent, lighten(p.accent, 0.30), p.button_bg];
+    for (i, &(cx, cy, hover)) in centers.iter().enumerate() {
+        let base = couleurs[i];
+        let color = if hover && base != p.button_bg {
+            lighten(base, 0.18)
+        } else if hover {
+            lighten(base, 0.28)
         } else {
-            p.button_bg
+            base
         };
         let r = PASTILLE_D as f64 / 2.0;
         for dy in -r as i32..=r as i32 {
@@ -249,32 +264,54 @@ fn header_buffer(width: u32, focused: bool, min_hover: bool, max_hover: bool, cl
                 over_px(&mut px, w, h, cx + dx, cy + dy, color, cov);
             }
         }
-        // 4) glyphe (7x7) : – ▢ × — couleur du texte du thème.
-        let glyph = p.text_fg;
-        match (cx, hover) {
-            (cx, _) if cx == centers[0].0 => {
-                // minimiser : barre horizontale
-                for gx in -3..=3 {
-                    over_px(&mut px, w, h, cx + gx, cy, glyph, 1.0);
+        // Glyphe (7x7), seulement au survol, en sombre sur la pastille.
+        if hover {
+            let glyph = p.panel_bg;
+            match i {
+                0 => {
+                    // fermer : croix en diagonales
+                    for g in -3..=3 {
+                        over_px(&mut px, w, h, cx + g, cy + g, glyph, 1.0);
+                        over_px(&mut px, w, h, cx + g, cy - g, glyph, 1.0);
+                    }
+                }
+                1 => {
+                    // minimiser : barre horizontale
+                    for gx in -3..=3 {
+                        over_px(&mut px, w, h, cx + gx, cy, glyph, 1.0);
+                    }
+                }
+                _ => {
+                    // agrandir : carré 7x7 en trait 1 px
+                    for g in -3..=3 {
+                        over_px(&mut px, w, h, cx + g, cy - 3, glyph, 1.0);
+                        over_px(&mut px, w, h, cx + g, cy + 3, glyph, 1.0);
+                        over_px(&mut px, w, h, cx - 3, cy + g, glyph, 1.0);
+                        over_px(&mut px, w, h, cx + 3, cy + g, glyph, 1.0);
+                    }
                 }
             }
-            (cx, _) if cx == centers[1].0 => {
-                // agrandir : carré 7x7 en trait 1 px
-                for g in -3..=3 {
-                    over_px(&mut px, w, h, cx + g, cy - 3, glyph, 1.0);
-                    over_px(&mut px, w, h, cx + g, cy + 3, glyph, 1.0);
-                    over_px(&mut px, w, h, cx - 3, cy + g, glyph, 1.0);
-                    over_px(&mut px, w, h, cx + 3, cy + g, glyph, 1.0);
-                }
-            }
-            (cx, _) if cx == centers[2].0 => {
-                // fermer : croix en diagonales
-                for g in -3..=3 {
-                    over_px(&mut px, w, h, cx + g, cy + g, glyph, 1.0);
-                    over_px(&mut px, w, h, cx + g, cy - g, glyph, 1.0);
-                }
-            }
-            _ => {}
+        }
+    }
+
+    // 4) titre centré (police réelle yaor-ui, minuscule, design
+    //    macOS-like) : clair au focus, gris éteint sinon.
+    if !title.is_empty() {
+        let tw = yaor_ui::text::text_width(title, 11, yaor_ui::text::Weight::Regular);
+        let tx = (w - tw) / 2;
+        if tw <= w - 2 * (6 * BUTTON_W as i32 + 8) && tx > 0 {
+            let color = if focused { p.text_fg } else { p.text_gray };
+            yaor_ui::text::draw_text(
+                &mut px,
+                w,
+                h,
+                title,
+                tx,
+                (h - yaor_ui::text::text_height(11)) / 2 + 1,
+                11,
+                yaor_ui::text::Weight::Regular,
+                color,
+            );
         }
     }
 
@@ -349,23 +386,21 @@ impl HeaderBar {
         self.pointer_loc = None;
     }
 
-    /// Clic dans la barre de titre : hit-test PUR (boutons à droite,
-    /// sinon grab de déplacement). L'action retournée est exécutée
-    /// HORS de l'emprunt de la DecorationState — les handlers
-    /// (minimisation, maximisation, géométrie de l'espace) relisent
+    /// Clic dans la barre de titre : hit-test PUR (feu tricolore À
+    /// GAUCHE — fermer, minimiser, agrandir dans cet ordre depuis
+    /// x=0 —, sinon grab de déplacement) ; exécutée HORS de l'emprunt
+    /// de la DecorationState — les handlers (minimisation,
+    /// maximisation, géométrie de l'espace) relisent
     /// `decoration_state()` et paniqueraient « RefCell already
     /// borrowed » sinon.
     pub fn clicked_action(&self) -> Option<SsdClick> {
-        let width = self.width;
-        match self.pointer_loc.as_ref() {
-            // fermer (la plus à droite)
-            Some(loc) if loc.x >= (width - BUTTON_W) as f64 => Some(SsdClick::Close),
+        match self.pointer_loc.as_ref().map(|l| l.x) {
+            // fermer (la plus à gauche, v0.6 étape 4)
+            Some(x) if x < BUTTON_W as f64 => Some(SsdClick::Close),
+            // minimiser
+            Some(x) if x < 2.0 * BUTTON_W as f64 => Some(SsdClick::Minimize),
             // agrandir
-            Some(loc) if loc.x >= (width - 2 * BUTTON_W) as f64 => {
-                Some(SsdClick::ToggleMaximize)
-            }
-            // minimiser (la plus à gauche des trois)
-            Some(loc) if loc.x >= (width - 3 * BUTTON_W) as f64 => Some(SsdClick::Minimize),
+            Some(x) if x < 3.0 * BUTTON_W as f64 => Some(SsdClick::ToggleMaximize),
             // ailleurs dans la barre : déplacer la fenêtre
             Some(_) => Some(SsdClick::Move),
             None => None,
@@ -374,7 +409,7 @@ impl HeaderBar {
 
     /// Met à jour le buffer mémoire seulement si géométrie, focus ou
     /// survols ont changé (sinon le buffer est réutilisé tel quel).
-    pub fn redraw(&mut self, width: u32, focused: bool) {
+    pub fn redraw(&mut self, width: u32, title: &str, focused: bool) {
         if width == 0 {
             self.width = 0;
             return;
@@ -387,29 +422,32 @@ impl HeaderBar {
                 .unwrap_or(false)
         };
 
-        // zones (x logiques, depuis la droite) : close [w-32,w),
-        // maximize [w-64,w-32), minimize [w-96,w-64).
-        let min_hover = hover(&self.pointer_loc, width - 3 * BUTTON_W, width - 2 * BUTTON_W);
-        let max_hover = hover(&self.pointer_loc, width - 2 * BUTTON_W, width - BUTTON_W);
-        let close_hover = hover(&self.pointer_loc, width - BUTTON_W, width);
+        // zones (x logiques, DEPUIS LA GAUCHE — v0.6 étape 4) :
+        // close [0,32), minimize [32,64), maximize [64,96).
+        let close_hover = hover(&self.pointer_loc, 0, BUTTON_W);
+        let min_hover = hover(&self.pointer_loc, BUTTON_W, 2 * BUTTON_W);
+        let max_hover = hover(&self.pointer_loc, 2 * BUTTON_W, 3 * BUTTON_W);
 
         // recalcul des survols AVANT la comparaison de cache : le
         // pointeur a pu bouger depuis le dernier rendu.
-        // La version du thème fait partie de la clé : un SIGHUP qui
-        // change `[theme]` force la reconstruction du buffer.
+        // La version du thème ET le titre font partie de la clé : un
+        // SIGHUP qui change `[theme]` ou un titre qui change forcent la
+        // reconstruction du buffer.
         let key = (
             crate::config::theme_epoch(),
             width,
+            Box::from(title),
             focused,
             min_hover,
             max_hover,
             close_hover,
         );
-        if self.cache == Some(key) {
+        if self.cache.as_ref() == Some(&key) {
             return;
         }
 
-        self.buffer = header_buffer(width, focused, min_hover, max_hover, close_hover);
+        self.buffer =
+            header_buffer(width, title, focused, min_hover, max_hover, close_hover);
         self.cache = Some(key);
         self.minimize_hover = min_hover;
         self.maximize_hover = max_hover;

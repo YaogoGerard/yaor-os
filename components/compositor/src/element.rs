@@ -369,12 +369,14 @@ where
                     .collect();
             }
 
-            // 1) barre de titre (coins hauts arrondis + pastilles) et
-            //    bordure — 1d.ssd : le header sait le focus, redraw
-            //    avec la clé (largeur, focus, survols).
+            // 1) barre de titre (coins hauts arrondis + pastilles feu
+            //    tricolore À GAUCHE + titre centré) et bordure —
+            //    1d.ssd : le header sait le focus, redraw avec la clé
+            //    (largeur, titre, focus, survols).
             let mut state = self.decoration_state();
             let focused = state.is_focused;
-            state.header_bar.redraw(width as u32, focused);
+            let title = crate::toplevels::identity(self).0;
+            state.header_bar.redraw(width as u32, &title, focused);
             state.border.redraw(width, surface_h, focused);
 
             let h_total = HEADER_H + surface_h;

@@ -123,7 +123,7 @@ fn activated_window(state: &Yaor) -> Option<WindowElement> {
 }
 
 /// Titre/app_id publiés (Wayland : attributs xdg ; X11 : WM_NAME/WM_CLASS).
-fn identity(window: &WindowElement) -> (String, String) {
+pub(crate) fn identity(window: &WindowElement) -> (String, String) {
     if let Some(toplevel) = window.toplevel() {
         let surface = toplevel.wl_surface();
         smithay::wayland::compositor::with_states(&surface, |states| {

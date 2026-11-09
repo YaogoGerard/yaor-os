@@ -10,6 +10,7 @@
 // no-op côté compositor (mêmes gardes que les raccourcis clavier).
 // Journal : préfixe « yaor-ctl: » (jetons QA courts, grep-ables).
 
+use std::path::PathBuf;
 use wayland_client::{
     protocol::wl_registry, Connection, Dispatch, Proxy, QueueHandle,
 };
@@ -64,14 +65,160 @@ impl Dispatch<YaorWorkspaceV1, ()> for Ctl {
 
 fn usage() -> ! {
     eprintln!(
-        "{PROG}: usage — yaor-ctl workspace | yaor-ctl workspace N | yaor-ctl send N  (N = 1..5)"
+        "{PROG}: usage — yaor-ctl workspace | yaor-ctl workspace N | yaor-ctl send N | \
+         yaor-ctl profile set classic|macos|tiling"
     );
     std::process::exit(2);
+}
+
+// ---------------------------------------------------------------------------
+// Sous-commande `profile set` (v0.6 Caméléon) : le dialog « Profils de
+// bureau » du panel écrit `[profile]` via cette commande. Écriture du
+// desktop.toml SONDE par sonde (pas de writer toml : la réécriture
+// complète écraserait les commentaires utilisateur) puis SIGHUP au
+// compositor — qui recharge sa configuration et relaie le SIGHUP à ses
+// enfants launcher (panel, dock) ; les clients lancés hors launcher
+// lisent le fichier à leur propre réveil.
+// ---------------------------------------------------------------------------
+
+/// Envoie SIGHUP à chaque processus dont /proc/<pid>/comm vaut
+/// « yaor-compositor » et renvoie le nombre de réveils réussis
+/// (aucun ps dans l'ISO — /proc scan, leçon QA probe-dialog).
+fn hup_compositor() -> usize {
+    let mut n = 0;
+    let Ok(dir) = std::fs::read_dir("/proc") else {
+        return 0;
+    };
+    for entry in dir.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if !name.bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let Ok(comm) = std::fs::read_to_string(path.join("comm")) else {
+            continue;
+        };
+        if comm.trim_end() != "yaor-compositor" {
+            continue;
+        }
+        let pid = name.parse::<i32>().unwrap_or(0);
+        if pid > 0 {
+            // SAFETY : kill(2) rc0/no-async — l'appelant est mono-tâche.
+            if unsafe { libc::kill(pid, libc::SIGHUP) } == 0 {
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
+/// Remplace (ou insère) `name = "<nouveau>"` dans la section
+/// `[profile]` du desktop.toml, section créée en fin de fichier si
+/// absente. Renvoie le texte écrit.
+fn profile_section_name(text: &str, new: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut in_profile = false;
+    let mut profile_seen = false;
+    let mut pending = false; // [profile] ouvert, name pas encore posé
+    let mut name_done = false;
+    for line in text.lines() {
+        if line.starts_with('[') {
+            if pending && !name_done {
+                // fin de la section sans name : insérer avant la suivante
+                out.push(format!("name = \"{new}\""));
+                name_done = true;
+            }
+            in_profile = line == "[profile]";
+            if in_profile {
+                profile_seen = true;
+                pending = true;
+            } else {
+                pending = false;
+            }
+        } else if in_profile && line.starts_with("name") && !name_done {
+            out.push(format!("name = \"{new}\""));
+            name_done = true;
+            continue;
+        }
+        out.push(line.to_string());
+    }
+    if !name_done {
+        if !profile_seen {
+            out.push("[profile]".to_string());
+        }
+        out.push(format!("name = \"{new}\""));
+    }
+    let mut content = out.join("\n");
+    content.push('\n');
+    content
+}
+
+/// `yaor-ctl profile set <nom>` : premier candidat de configuration
+/// existant (sinon le premier candidat, créé), écriture, puis SIGHUP
+/// aux compositors connus. Ne parle PAS au wayland : fonctionne même
+/// si le compositor est hors service (le bureau rattrapera à son
+/// prochain démarrage). Sortie 0 si la configuration est relue
+/// correctement, sinon 1.
+fn profile_set(new: &str) -> ! {
+    if !matches!(new, "classic" | "macos" | "tiling") {
+        eprintln!("{PROG}: profil inconnu : {new} (classic | macos | tiling)");
+        std::process::exit(2);
+    }
+    let candidats = yaor_config::candidate_paths();
+    let path = candidats
+        .iter()
+        .find(|p| p.exists())
+        .or_else(|| candidats.first())
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from("/root/.config/yaor/desktop.toml"));
+    let ancien = std::fs::read_to_string(&path).unwrap_or_default();
+    let content = profile_section_name(&ancien, new);
+    if let Err(e) = std::fs::write(&path, &content) {
+        eprintln!("{PROG}: écriture {} impossible : {e}", path.display());
+        std::process::exit(1);
+    }
+    // Auto-contrôle : un desktop.toml casse-cul (indentation perdue,
+    // guillemet manquant) ne doit jamais être publié — re-parse avant
+    // de pousser le SIGHUP, sinon la relise viderait les défauts.
+    match yaor_config::DesktopConfig::parse_str(&content) {
+        Err(e) => {
+            eprintln!("{PROG}: configuration invalide après écriture : {e}");
+            std::fs::write(&path, &ancien).ok();
+            std::process::exit(1);
+        }
+        Ok(cfg) => {
+            // Le jeton QA attend le profil réel dans desktop.toml — pas
+            // l'argument (garde contre une écriture partielle).
+            let relu = cfg.profile.name.map(|p| p.as_str()).unwrap_or("aucun");
+            if relu != new {
+                eprintln!("{PROG}: profil relu « {relu} » ≠ demandé");
+                std::fs::write(&path, &ancien).ok();
+                std::process::exit(1);
+            }
+        }
+    }
+    let hups = hup_compositor();
+    eprintln!(
+        "{PROG}: profil : {new} pose ({}, hup {hups})",
+        path.display()
+    );
+    std::process::exit(0);
 }
 
 fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {
+        usage();
+    }
+    // Sous-commande `profile set` (v0.6 Caméléon) : écriture du
+    // desktop.toml + SIGHUP au compositor (sans wayland — utilise
+    // yaor-config pour la même résolution de chemin que le bureau).
+    if args[0] == "profile" {
+        if args.len() == 3 && args[1] == "set" {
+            profile_set(&args[2]);
+        }
         usage();
     }
     // Index d'espace demandé (base 0) : None = simple consultation.

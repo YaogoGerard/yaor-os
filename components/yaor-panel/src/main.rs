@@ -1529,6 +1529,18 @@ impl LayerShellHandler for Panel {
             self.tb_width = if configure.new_size.0 == 0 { 1280 } else { configure.new_size.0 };
             eprintln!("{PROG}: [{:.3}] taskbar configuree {}x{}", uptime(), self.tb_width, configure.new_size.1);
             self.draw_taskbar();
+        } else if Some(layer.wl_surface())
+            == self.dialog.as_ref().map(|d| d.wl_surface())
+        {
+            // Dialog « Profils de bureau » : taille demandée (720x470)
+            // honorée par la LayerMap — le premier configure déclenche le
+            // rendu (les clics dans les cartes redessinent ensuite, cf.
+            // PointerHandler ; sans cette branche, le configure du dialog
+            // est jeté et la surface reste jamais mappée → invisible à
+            // l'écran bien que son input soit routé — QA t-yaor-dialog).
+            if let Some(dlg) = self.dialog.clone() {
+                self.draw_dialog(&dlg);
+            }
         } else if self.menu.is_some() {
             // Volet menu : taille demandée honorée → premier rendu.
             let (mw, mh) = (configure.new_size.0, configure.new_size.1);

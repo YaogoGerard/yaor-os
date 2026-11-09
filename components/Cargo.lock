@@ -1758,6 +1758,7 @@ dependencies = [
  "yaor-assets",
  "yaor-config",
  "yaor-protocol",
+ "yaor-ui",
 ]
 
 [[package]]
@@ -1773,7 +1774,9 @@ dependencies = [
 name = "yaor-ctl"
 version = "0.2.0"
 dependencies = [
+ "libc",
  "wayland-client",
+ "yaor-config",
  "yaor-protocol",
 ]
 

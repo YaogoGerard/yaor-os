@@ -24,5 +24,15 @@ license.workspace = true
 [dependencies.wayland-client]
 version = "0.31"
 
+# SIGHUP au compositor (kill/pid en /proc) — même crate que yaor-config.
+[dependencies.libc]
+version = "0.2"
+
+# Résolution du chemin de desktop.toml (candidate_paths, mêmes
+# candidats que le compositor et le panel — une seule source de vérité
+# sur l'emplacement de la configuration).
+[dependencies.yaor-config]
+path = "../yaor-config"
+
 [dependencies.yaor-protocol]
 path = "../yaor-protocol"
