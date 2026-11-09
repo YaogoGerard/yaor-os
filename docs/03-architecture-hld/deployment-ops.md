@@ -489,6 +489,31 @@ compilation ; on les traite explicitement pour garder le lot minimal :
   `--disable-login`) : `getty`/`serial-getty` lancent directement `bash -l`
   (console locale `tty1` et console série `ttyS0`, utile en QEMU `-nographic`).
 
+## Médias d'amorçage : standard (QA) et desktop (bureau au boot)
+
+Chaque génération produit **deux ISO** (étape 06) :
+
+- **`yaor-live-x86_64-<ver>.iso`** — console au boot (autologin root,
+  `multi-user.target`) : c'est le média des bancs QA, qui démarrent
+  eux-mêmes leur instance unique du compositor (deux compositors ne
+  peuvent pas prendre le maître DRM) ;
+- **`yaor-desktop-x86_64-<ver>.iso`** — le bureau au boot : l'unité
+  `yaor-session.service` (activée) démarre `/usr/bin/yaor-session`
+  après l'autologin, qui lance le compositor avec `XDG_RUNTIME_DIR=/run/user/0`
+  — le compositor déploie ensuite lui-même ses surfaces (launcher
+  v0.6 : panel, dock). La porte est un fichier :
+  `/etc/yaor/desktop-autostart` présent dans cette variante seulement.
+
+L'unité est présente dans **les deux** variantes et consulte la porte
+au démarrage (`ConditionPathExists`) : standard = condition fausse,
+aucune session graphique (bancs QA inchangés). En QEMU, le
+passe-partout pose `YAOR_SOFTWARE_OK=1` quand le module `virtio_gpu`
+est chargé (pas d'aspect sur une machine réelle). Sortie du bureau :
+Mod+Shift+E rend la console tty1 (repli dessous), le service se
+termine. La racine live n'atteint toujours pas `graphical.target`
+(l'unité est `WantedBy=multi-user.target`) ; cette variante est le
+premier pas vers une session graphique durcie (ADR-025).
+
 ## Répartition des répertoires de construction
 
 ```text
