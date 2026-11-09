@@ -1,7 +1,7 @@
 # Desktop Modes
 
 **Statut :** en cours (jalon v0.6 « Caméléon ») — *mise à jour :
-29 octobre 2026*
+9 novembre 2026*
 
 Le bureau YAOR offre trois profils d'organisation des fenêtres
 (REQ-SW-008/009/010). Les trois modes utilisent le même **Desktop
@@ -42,6 +42,7 @@ périmètre du jalon v0.6.
 | 1b.a | Fenêtres flottantes + minimiser/restaurer (`Mod+m`) | **Livrée** (`t-yaor-float` 25/25 ×2) |
 | 1b.b | Décorations serveur (barre de titre, boutons) | **Livrée** (`t-yaor-float` 36/36 — SSD focus ambre / repos gris) |
 | 1b.c | Taskbar basse (liste de fenêtres, restauration au clic) | **Livrée** (`t-yaor-taskbar` 17/17 — protocole standard `wlr-foreign-toplevel-management` v1) |
+| — | **Lancement des surfaces par le profil** (`launcher.rs` : panel à l'ouverture, dock en macOS-like, SIGHUP transmis aux enfants puis réconciliation) | **Livrée** (`t-yaor-launcher` 24/24 + 6/6) |
 
 ## macOS-like — REQ-SW-009, TEST-UI-002
 
@@ -81,3 +82,14 @@ Les trois modes partagent le Desktop Core : changer de profil
 applique une autre configuration de layout et de shell **sans
 changer la logique** (voir [`user-flows.md`](user-flows.md)).
 Un profil ne modifie jamais la présentation d'un autre ni le cœur.
+
+**Qui lance les surfaces ?** Le compositor (`launcher.rs`, v0.6) :
+le panel est lancé à l'ouverture de session (voulu des trois
+profils), le dock au passage en macOS-like et terminé en sortant —
+enfants du compositor. Au SIGHUP le signal est transmis aux enfants
+existants d'abord (chaque client relit `desktop.toml` et se
+masque/se remasque), puis le launcher réconcilie (dock lancé ou
+terminé). Porte QA : `YAOR_SHELL_AUTOSTART=0` coupe le lancement
+automatique (défaut ON à l'image). Preuve : `t-yaor-launcher`
+24/24 + 6/6 — les trois profils dans une même session (rendus
+`~/yaor-qa/renders/demo-{classique,macos,tiling}.png`).

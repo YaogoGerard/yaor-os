@@ -774,8 +774,9 @@ Tests : `yaor-config` 14 (profils élu/absent/inconnu, préséance sur
 `yaor-panel` 3 (visibilité de la taskbar), `compositor` 5 (disposition
 effective) — **70/70** au total, `cargo test --workspace` vert.
 
-**Reste à faire** : le lancement des surfaces par le profil (aujourd'hui
-le harnais QA démarre panel et dock, qui se masquent selon le profil).
+Reste à faire à cette date : le lancement des surfaces par le profil
+(aujourd'hui le harnais QA démarre panel et dock) — **livré depuis**,
+voir la section du 9 novembre.
 
 ### Espaces de travail (8 novembre 2026)
 
@@ -816,8 +817,52 @@ Non-régression complète (ISO 22:38) : tiling 26/26 + 6, profil
 24/24 + 3, float 36/36, taskbar 17/17 + 3, menu 16/16 + 3, dock
 16/16 + 3.
 
-**Reste à faire** : le lancement des surfaces par le profil (aujourd'hui
-le harnais QA démarre panel et dock, qui se masquent selon le profil).
+**Lancement des surfaces par le profil** : livré le 9 novembre
+(section suivante).
+
+### Lancement des surfaces par le profil (9 novembre 2026)
+
+Le **compositor lance lui-même les clients du shell** selon le profil
+élu (`desktop.toml` `[profile] name`) — dernier point du jalon :
+- **Module `launcher.rs`** : le panel (voulu des trois profils) est
+  lancé à l'ouverture de session, la sortie primaire déjà configurée
+  (les surfaces layer-shell trouvent une cible) ; le dock est lancé
+  au passage en profil macOS-like et **terminé** en sortant (profil
+  précédent capturé avant le rechargement). Les enfants héritent du
+  stdio (jetons `yaor-panel:` / `yaor-dock:` dans le journal du
+  compositor) et reçoivent `WAYLAND_DISPLAY` / `XDG_RUNTIME_DIR`
+  depuis la socket du compositor ; SIGTERM au démontage, avant le
+  retrait de la socket.
+- **SIGHUP** : ordre prouvé par QA — le signal est **transmis aux
+  enfants existants d'abord** (panel et dock relisent `desktop.toml`
+  et se masquent/se remasquent), **puis** la réconciliation lance ou
+  termine le dock. Un SIGHUP tombant sur un dock fraîchement spawné
+  peut l'atteindre avant l'installation de son handler (dock tué,
+  jamais rendu — leçon run 3).
+- **Porte QA** : `YAOR_SHELL_AUTOSTART=0` coupe tout (défaut ON pour
+  l'image réelle) ; les 33 harnais/sondes existants sont patchés pour
+  garder leurs instances manuelles (deux barres layer-shell
+  superposées fausseraient les mesures de pixels).
+
+QA QEMU `t-yaor-launcher` **24/24 + 6/6** (ISO 01:29, banc
+qemu-xhci + usb-tablet) : le harnais ne démarre AUCUN client à la
+main (c'est la preuve) ; un panel unique au rendu (`/proc/*/comm`,
+pas de `pgrep` dans l'image) ; jetons launcher (panel lancé / dock
+lancé / dock arrêté / panel arrêté au démontage / SIGHUP transmis) ;
+pixels par profil **dans la même session** — taskbar sombre froide
+en classique (4828 px au coin), **absente en macOS-like (0 px,
+dock centré au rendu)**, de retour en tiling avec les digits
+d'espaces actifs (23 px) ; sortie Mod+Shift+E propre (socket
+retirée, maître DRM rendu, device fermé). Rendus :
+`~/yaor-qa/renders/demo-{classique,macos,tiling}.png`.
+Non-régression : `t-yaor-espaces` **36/36 + 5/5**.
+
+Leçons du banc : une ligne printf longue arrive **corrompue** dans
+l'invité (un « n » parasite → TOML illisible → repli usine) —
+écriture en lignes courtes séparées + `cat` de vérification avant
+usage ; `pgrep` absent (pas de procps) — lecture des `comm` sous
+`/proc` ; le raccourci de sortie pressait Mod+E **sans Shift** (le
+canal PS/2 n'y est pour rien : séquence corrigée, retry ×4).
 
 ### Clôture de v0.4 (28 octobre 2026)
 
