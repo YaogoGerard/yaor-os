@@ -377,23 +377,76 @@ impl Dock {
                 let Some(entry) = self.entries.get(i - 1) else {
                     continue;
                 };
-                // Glyphe de la fenêtre : initiale de l'app_id, colorée
-                // ambre si la fenêtre a le focus.
-                let sc = self.geom.glyph_scale();
+
+                // Séparateur vertical (design macOS-like) : entre la
+                // zone lanceur et les fenêtres — une ligne grise 1 px,
+                // centrée dans l'espace entre les deux tuiles.
+                if i == 1 {
+                    let sx = tx - self.geom.gap as i32 / 2;
+                    let sh = tile / 2;
+                    let sy = ty + (tile - sh) / 2;
+                    for yy in sy..sy + sh {
+                        yaor_ui::put(&mut canvas, w, h, sx, yy, self.theme.separator);
+                    }
+                }
+
+                // Tuile fenêtre : PLEINE, couleur d'état (design
+                // macOS-like) — focus = ambre, ouverte = ocre
+                // (accent_dark), minimisée = gris bouton. Le glyphe
+                // passe en sombre sur la pilule.
+                let fill = if active {
+                    self.theme.accent
+                } else if entry.minimized {
+                    self.theme.button_bg
+                } else {
+                    self.theme.accent_dark
+                };
+                if hovered {
+                    // survol : liseré ambre discret autour de la pilule
+                    fill_rrect(
+                        &mut canvas,
+                        w,
+                        h,
+                        tx - 2,
+                        ty - 2,
+                        tile + 4,
+                        tile + 4,
+                        Geometry::TILE_RADIUS + 2,
+                        dim(self.theme.accent, 0.55),
+                    );
+                }
+                fill_rrect(
+                    &mut canvas,
+                    w,
+                    h,
+                    tx,
+                    ty,
+                    tile,
+                    tile,
+                    Geometry::TILE_RADIUS,
+                    fill,
+                );
+
+                // Glyphe : initiale de l'app_id (police réelle), sombre
+                // sur la pilule colorée.
                 let ch = initial(&entry.app_id, &entry.title);
-                draw_text_scaled(
+                let tsize = (tile / 3).clamp(12, 24) as u32;
+                let tw = yaor_ui::text::text_width(&ch.to_string(), tsize, yaor_ui::text::Weight::Bold);
+                let th = yaor_ui::text::text_height(tsize);
+                yaor_ui::text::draw_text(
                     &mut canvas,
                     w,
                     h,
                     &ch.to_string(),
-                    tx + (tile - 5 * sc) / 2,
-                    ty + (tile - 7 * sc) / 2,
-                    if active {
-                        self.theme.accent
+                    tx + (tile - tw) / 2,
+                    ty + (tile - th) / 2 + 1,
+                    tsize,
+                    yaor_ui::text::Weight::Bold,
+                    if entry.minimized && !active {
+                        self.theme.text_gray
                     } else {
-                        self.theme.text_fg
+                        self.theme.panel_bg
                     },
-                    sc,
                 );
                 // Point d'état : ambre = focus, gris = ouverte, absent si
                 // minimisée (la tuile est alors plus sombre).
