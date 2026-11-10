@@ -1942,11 +1942,11 @@ phase_yaor_components() {
     cargover="$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$COMPONENTS_DIR/Cargo.toml")"
     [[ "$cargover" == "$prodver" ]] \
         || die "version des composants ($cargover) ≠ VERSION ($prodver) — ADR-022"
-    log "compilation des composants internes YAOR (yaor-install, yaor-slot, yaor-compositor, yaor-panel, yaor-dock, yaor-ctl, yaor-config) version $prodver"
+    log "compilation des composants internes YAOR (yaor-install, yaor-slot, yaor-compositor, yaor-panel, yaor-dock, yaor-ctl, yaor-config, yaor-term, yaor-files) version $prodver"
     run chroot_rust "cd /build/components && CARGO_TARGET_DIR=/build/work/yaor-target cargo build --release --locked"
-    log "installation de yaor-install, yaor-slot, yaor-compositor, yaor-panel, yaor-dock et yaor-ctl dans /usr/bin"
-    run chroot_run "install -m 0755 /build/work/yaor-target/release/yaor-install /build/work/yaor-target/release/yaor-slot /build/work/yaor-target/release/yaor-compositor /build/work/yaor-target/release/yaor-panel /build/work/yaor-target/release/yaor-dock /build/work/yaor-target/release/yaor-ctl /usr/bin/"
-    run chroot_run "yaor-slot --help >/dev/null && yaor-install --help >/dev/null && yaor-compositor --help >/dev/null && yaor-panel --version >/dev/null && yaor-dock --version >/dev/null && test -x /usr/bin/yaor-ctl && echo 'composants YAOR opérationnels'"
+    log "installation de yaor-install, yaor-slot, yaor-compositor, yaor-panel, yaor-dock, yaor-ctl, yaor-term et yaor-files dans /usr/bin"
+    run chroot_run "install -m 0755 /build/work/yaor-target/release/yaor-install /build/work/yaor-target/release/yaor-slot /build/work/yaor-target/release/yaor-compositor /build/work/yaor-target/release/yaor-panel /build/work/yaor-target/release/yaor-dock /build/work/yaor-target/release/yaor-ctl /build/work/yaor-target/release/yaor-term /build/work/yaor-target/release/yaor-files /usr/bin/"
+    run chroot_run "yaor-slot --help >/dev/null && yaor-install --help >/dev/null && yaor-compositor --help >/dev/null && yaor-panel --version >/dev/null && yaor-dock --version >/dev/null && yaor-term --version >/dev/null && yaor-files --version >/dev/null && test -x /usr/bin/yaor-ctl && echo 'composants YAOR opérationnels'"
     # Configuration du bureau par défaut (v0.5, REQ-SW-006/015) : la
     # valeur d'usine vit dans l'image (/etc/yaor/desktop.toml) — l'écran
     # de cascade historique reste le comportement par défaut du produit ;

@@ -1793,6 +1793,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "yaor-files"
+version = "0.2.0"
+dependencies = [
+ "libc",
+ "smithay-client-toolkit",
+ "wayland-client",
+ "yaor-config",
+ "yaor-ui",
+]
+
+[[package]]
 name = "yaor-install"
 version = "0.2.0"
 dependencies = [
@@ -1827,6 +1838,18 @@ name = "yaor-slot"
 version = "0.2.0"
 dependencies = [
  "yaor-common",
+]
+
+[[package]]
+name = "yaor-term"
+version = "0.2.0"
+dependencies = [
+ "libc",
+ "smithay-client-toolkit",
+ "wayland-client",
+ "wayland-protocols",
+ "yaor-config",
+ "yaor-ui",
 ]
 
 [[package]]

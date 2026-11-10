@@ -1,0 +1,47 @@
+# yaor-term — terminal du bureau YAOR (v0.6 étape 7).
+#
+# Membre du workspace des composants internes (components/), bâti avec la
+# toolchain Rust de l'hôte dans le chroot (ADR-019). Client xdg-shell
+# régulier (fenêtre flottante, décorée par le SSD du compositor) rendu
+# wl_shm — même socle que yaor-panel (sctk) mais toplevel, pas layer-shell.
+#
+# v0.6 minimal assumé : grille de lignes texte (police réelle yaor-ui),
+# PTY vers /bin/bash (forkpty libc vendue via yaor-config), séquences
+# CSI/OSC CONSOMMÉES (rendu ligne à ligne, pas un émulateur VT complet).
+#
+# Journal : stderr préfixé « yaor-term: » (jetons QA courts).
+[package]
+name = "yaor-term"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Client toolkit épinglé : version vendue dans l'arbre Smithay 0.7.0 —
+# compositor/shm/seat (clavier décodé xkbcommon CÔTÉ sctk, pas de
+# dépendance directe) — « un besoin = un fournisseur ».
+[dependencies.smithay-client-toolkit]
+version = "0.19.2"
+
+[dependencies.wayland-client]
+version = "0.31"
+
+# xdg-shell (xdg_wm_base/xdg_surface/xdg_toplevel) — code client généré
+# de la crate vendue (le compositor utilise la face serveur de la même
+# version : une seule source de vérité du protocole).
+[dependencies.wayland-protocols]
+version = "0.32"
+features = ["client"]
+
+# forkpty/execvp/environnement du shell enfant.
+[dependencies.libc]
+version = "0.2"
+
+# Configuration du bureau (thème + palette) — même source que le bureau.
+[dependencies.yaor-config]
+path = "../yaor-config"
+
+# Police réelle + primitives de rendu (étape 1) : Noto Sans Standard/Bold
+# embarquée, un seul rastérisateur TrueType pour tout le bureau.
+[dependencies.yaor-ui]
+path = "../yaor-ui"
