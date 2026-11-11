@@ -66,7 +66,8 @@ impl Dispatch<YaorWorkspaceV1, ()> for Ctl {
 fn usage() -> ! {
     eprintln!(
         "{PROG}: usage — yaor-ctl workspace | yaor-ctl workspace N | yaor-ctl send N | \
-         yaor-ctl profile set classic|macos|tiling"
+         yaor-ctl profile set classic|macos|tiling | \
+         yaor-ctl theme list | get [clé] | set <préset> | tune clé=valeur..."
     );
     std::process::exit(2);
 }
@@ -81,37 +82,11 @@ fn usage() -> ! {
 // lisent le fichier à leur propre réveil.
 // ---------------------------------------------------------------------------
 
-/// Envoie SIGHUP à chaque processus dont /proc/<pid>/comm vaut
-/// « yaor-compositor » et renvoie le nombre de réveils réussis
-/// (aucun ps dans l'ISO — /proc scan, leçon QA probe-dialog).
+/// Envoie SIGHUP au compositor (v0.7 : fonction partagée avec l'app
+/// Réglages, `yaor_config::hup::notify_compositor`) et renvoie le nombre
+/// de réveils réussis.
 fn hup_compositor() -> usize {
-    let mut n = 0;
-    let Ok(dir) = std::fs::read_dir("/proc") else {
-        return 0;
-    };
-    for entry in dir.flatten() {
-        let path = entry.path();
-        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if !name.bytes().all(|b| b.is_ascii_digit()) {
-            continue;
-        }
-        let Ok(comm) = std::fs::read_to_string(path.join("comm")) else {
-            continue;
-        };
-        if comm.trim_end() != "yaor-compositor" {
-            continue;
-        }
-        let pid = name.parse::<i32>().unwrap_or(0);
-        if pid > 0 {
-            // SAFETY : kill(2) rc0/no-async — l'appelant est mono-tâche.
-            if unsafe { libc::kill(pid, libc::SIGHUP) } == 0 {
-                n += 1;
-            }
-        }
-    }
-    n
+    yaor_config::hup::notify_compositor()
 }
 
 /// Remplace (ou insère) `name = "<nouveau>"` dans la section
@@ -207,6 +182,111 @@ fn profile_set(new: &str) -> ! {
     std::process::exit(0);
 }
 
+// ---------------------------------------------------------------------------
+// Sous-commande `theme` (v0.7 « Verre ») : présets et réglages du matériau.
+// Même chemin d'écriture et même SIGHUP que `profile set` ; l'app Réglages
+// appelle les mêmes fonctions de yaor-config (aucune logique propre).
+//
+//   yaor-ctl theme list                 présets (* = actif)
+//   yaor-ctl theme get [clé]            valeurs du [theme] courant
+//   yaor-ctl theme set glass-glacier    applique un préset complet
+//   yaor-ctl theme tune glass_blur=30 accent=#5AB8FF
+//
+// Codes de sortie : 0 ok, 1 erreur d'écriture/relecture, 2 usage ou valeur
+// refusée (jamais de repli silencieux : une couleur invalide est une erreur).
+// ---------------------------------------------------------------------------
+
+/// Écrit le nouveau desktop.toml (calculé par `f` depuis l'ancien), le
+/// re-parse avant de réveiller le bureau, restaure l'ancien en cas d'échec.
+fn theme_write(f: impl FnOnce(&str) -> Result<String, String>) -> ! {
+    let path = yaor_config::edit::target_path();
+    let ancien = std::fs::read_to_string(&path).unwrap_or_default();
+    let nouveau = match f(&ancien) {
+        Ok(n) => n,
+        Err(e) => {
+            eprintln!("{PROG}: thème refusé : {e}");
+            std::process::exit(2);
+        }
+    };
+    let cfg = match yaor_config::DesktopConfig::parse_str(&nouveau) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{PROG}: configuration invalide, rien écrit : {e}");
+            std::process::exit(1);
+        }
+    };
+    if let Err(e) = yaor_config::edit::write_atomic(&path, &nouveau) {
+        eprintln!("{PROG}: écriture {} impossible : {e}", path.display());
+        std::process::exit(1);
+    }
+    let hups = hup_compositor();
+    eprintln!(
+        "{PROG}: thème : {} pose ({}, style {}, hup {hups})",
+        cfg.theme.name,
+        path.display(),
+        cfg.theme.style
+    );
+    std::process::exit(0);
+}
+
+fn theme_cmd(args: &[String]) -> ! {
+    use yaor_config::presets;
+    let theme = yaor_config::DesktopConfig::load().0.theme;
+    match args.first().map(String::as_str) {
+        Some("list") if args.len() == 1 => {
+            for n in presets::NAMES {
+                let mark = if *n == theme.name { "*" } else { " " };
+                println!("{mark} {n}\t{}", presets::label(n));
+            }
+            std::process::exit(0);
+        }
+        Some("get") if args.len() <= 2 => {
+            match args.get(1) {
+                None => {
+                    println!("name = {}", theme.name);
+                    for k in presets::TUNABLE {
+                        println!("{k} = {}", presets::get_key(&theme, k).unwrap_or_default());
+                    }
+                }
+                Some(k) => match presets::get_key(&theme, k) {
+                    Some(v) => println!("{v}"),
+                    None => {
+                        eprintln!("{PROG}: clé inconnue : {k}");
+                        std::process::exit(2);
+                    }
+                },
+            }
+            std::process::exit(0);
+        }
+        Some("set") if args.len() == 2 => {
+            let nom = args[1].clone();
+            theme_write(move |t| {
+                presets::apply_to_text(t, &nom).ok_or_else(|| {
+                    format!("préset inconnu : {nom} ({})", presets::NAMES.join(" | "))
+                })
+            })
+        }
+        Some("tune") if args.len() >= 2 => {
+            let mut pairs: Vec<(String, String)> = Vec::new();
+            for a in &args[1..] {
+                match a.split_once('=') {
+                    Some((k, v)) => pairs.push((k.trim().to_string(), v.trim().to_string())),
+                    None => {
+                        eprintln!("{PROG}: attendu clé=valeur, reçu : {a}");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            theme_write(move |t| {
+                let refs: Vec<(&str, &str)> =
+                    pairs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+                presets::tune_text(t, &refs)
+            })
+        }
+        _ => usage(),
+    }
+}
+
 fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {
@@ -220,6 +300,9 @@ fn main() -> std::process::ExitCode {
             profile_set(&args[2]);
         }
         usage();
+    }
+    if args[0] == "theme" {
+        theme_cmd(&args[1..]);
     }
     // Index d'espace demandé (base 0) : None = simple consultation.
     let (request, index): (Option<&str>, Option<u32>) = match args[0].as_str() {
