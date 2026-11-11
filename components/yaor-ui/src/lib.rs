@@ -13,6 +13,7 @@
 //! widget) sans recompiler le compositor (ADR-018, décision v0.6).
 
 pub mod font;
+pub mod glass;
 pub mod raster;
 pub mod text;
 pub mod theme;
@@ -26,4 +27,5 @@ pub use raster::{
     blend, blit, fill_circle, fill_pill, fill_rect, fill_rrect, fill_rrect_premul, fill_ring,
     pill_cov, put, rrect_cov,
 };
+pub use glass::{Backdrop, GlassKit, GlassParams, GlassState, Rect, WallLoader};
 pub use theme::{dim, Theme};
