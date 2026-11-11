@@ -21,6 +21,23 @@ pub struct ImageRgba {
     pub data: Vec<u8>,
 }
 
+/// Fond d'écran plein écran `w`×`h` en **Argb8888 opaque**, prêt à être
+/// flouté par `yaor_ui::glass` (v0.7). `cover` : cadrage « cover »
+/// (sinon « fit », marges noires). `None` si le chemin est vide ou
+/// l'image illisible — l'appelant retombe alors sur le fond procédural.
+pub fn wallpaper_argb(path: &str, cover_fit: bool, w: u32, h: u32) -> Option<Vec<u8>> {
+    if path.is_empty() {
+        return None;
+    }
+    let img = load_image(std::path::Path::new(path))?;
+    let fitted = if cover_fit { cover(&img, w, h) } else { contain(&img, w, h) };
+    let mut px = fitted.to_argb8888();
+    for p in px.chunks_exact_mut(4) {
+        p[3] = 0xFF;
+    }
+    Some(px)
+}
+
 impl ImageRgba {
     /// Pixel (x, y) → (r, g, b, a) ; (0, 0, 0, 0) hors bornes.
     pub fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
