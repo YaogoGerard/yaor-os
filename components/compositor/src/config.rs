@@ -92,6 +92,21 @@ pub fn palette() -> Palette {
     Palette::from_config(&guard.theme)
 }
 
+/// Vrai si le thème courant est en style verre (lecture sans copie).
+pub fn theme_glass() -> bool {
+    config_state().read().unwrap().theme.is_glass()
+}
+
+/// Durée des animations de fenêtre (ms) ; 0 = désactivées.
+pub fn anim_ms() -> u32 {
+    config_state().read().unwrap().theme.anim_ms.min(600)
+}
+
+/// Paramètres du matériau verre du thème courant (None = plat).
+pub fn glass_params() -> Option<yaor_ui::GlassParams> {
+    yaor_ui::GlassParams::from_config(&config_state().read().unwrap().theme)
+}
+
 /// Section `[wallpaper]` courante — seule copie nécessaire à chaque
 /// image (clé de cache du fond d'écran).
 pub fn wallpaper() -> WallpaperConfig {

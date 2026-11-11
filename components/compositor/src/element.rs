@@ -358,7 +358,22 @@ where
     ) -> Vec<C> {
         let window_bbox = SpaceElement::bbox(&self.0);
 
+        // Animation d'ouverture (v0.7) : fondu + léger glissement vers le
+        // haut (10 px), ease-out cubique, durée `[theme] anim_ms` (0 =
+        // aucune). L'horloge démarre au premier rendu de la fenêtre.
+        let (anim, slide_px) = {
+            let mut st = self.decoration_state();
+            let t0 = *st.opened_at.get_or_insert_with(std::time::Instant::now);
+            let k = crate::glass::open_progress(
+                t0.elapsed().as_millis() as u64,
+                crate::config::anim_ms(),
+            );
+            (k, (1.0 - k) * 10.0)
+        };
+        let alpha = alpha * anim;
+
         if self.decoration_state().is_ssd && !window_bbox.is_empty() {
+            location.y += (scale.y * slide_px as f64).round() as i32;
             let window_geo = SpaceElement::geometry(&self.0);
             let width = window_geo.size.w;
             let surface_h = window_bbox.size.h;
@@ -374,6 +389,12 @@ where
             //    1d.ssd : le header sait le focus, redraw avec la clé
             //    (largeur, titre, focus, survols).
             let mut state = self.decoration_state();
+            // Position écran de la barre (px logiques) : alignement du flou
+            // du thème verre sur le fond d'écran.
+            state.header_bar.origin = (
+                (location.x as f64 / scale.x).round() as i32,
+                (location.y as f64 / scale.y).round() as i32,
+            );
             let focused = state.is_focused;
             let title = crate::toplevels::identity(self).0;
             state.header_bar.redraw(width as u32, &title, focused);
@@ -414,7 +435,7 @@ where
                     renderer,
                     loc_f(border_loc(x, ring_y)),
                     buf,
-                    None,
+                    Some(alpha),
                     None,
                     None,
                     Kind::Unspecified,
@@ -460,7 +481,7 @@ where
                     renderer,
                     loc_f(border_loc(-crate::ssd::SHADOW_M, -crate::ssd::SHADOW_M)),
                     &shadow_buf,
-                    None,
+                    Some(alpha),
                     None,
                     None,
                     Kind::Unspecified,

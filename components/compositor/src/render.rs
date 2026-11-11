@@ -382,7 +382,7 @@ fn blend_argb8888(dst: &mut [u8], src: &[u8], w: i32, h: i32) {
 /// dégradé procédural : le bureau démarre toujours. Journalisé une
 /// fois par (taille, chemin, cadrage) — donc sur cache manquant ou
 /// après un SIGHUP, jamais à chaque image.
-fn wallpaper_pixels(w: i32, h: i32, cfg: &crate::config::WallpaperConfig) -> Vec<u8> {
+pub(crate) fn wallpaper_pixels(w: i32, h: i32, cfg: &crate::config::WallpaperConfig) -> Vec<u8> {
     let mut canvas = procedural_pixels(w, h);
     if cfg.path.is_empty() {
         tracing::info!("fond d'écran : dégradé procédural - wallpaper.path vide");
@@ -424,6 +424,8 @@ fn wallpaper_buffer(size: Size<i32, Buffer>) -> MemoryRenderBuffer {
     static CACHE: std::sync::Mutex<Vec<Entry>> = std::sync::Mutex::new(Vec::new());
 
     let wall = crate::config::wallpaper();
+    // v0.7 : le verre des barres de titre floute ce même fond.
+    crate::glass::note_output_size(size.w, size.h);
     let key = (size, wall.path.clone(), wall.fit);
     {
         let cache = CACHE.lock().unwrap();

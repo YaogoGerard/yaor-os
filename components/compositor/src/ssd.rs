@@ -67,6 +67,26 @@ pub const BORDER_W: i32 = 2;
 pub(crate) fn corner_r() -> i32 {
     crate::config::palette().corner_radius
 }
+/// Couleur de la bordure de fenêtre. Plat (v0.6) : liseré accent plein.
+/// Verre (v0.7) : bordure discrète et OPAQUE (accent assombri au focus,
+/// séparateur sinon) — l'alpha d'un SolidColorBuffer n'est pas prémultiplié
+/// de façon portable, donc le verre n'en utilise pas ici ; le vrai liseré
+/// lumineux est peint dans la barre de titre par `yaor_ui::glass`.
+pub(crate) fn frame_color(focused: bool) -> u32 {
+    let p = crate::config::palette();
+    if crate::config::theme_glass() {
+        if focused {
+            yaor_ui::dim(p.accent, 0.78)
+        } else {
+            p.separator
+        }
+    } else if focused {
+        p.accent
+    } else {
+        p.accent_dark
+    }
+}
+
 /// Marge de l'ombre douce autour de la fenêtre.
 pub(crate) const SHADOW_M: i32 = 16;
 /// Diamètre des pastilles de bouton.
@@ -126,6 +146,10 @@ pub struct DecorationState {
     /// Position avant maximisation (le repli la restitue).
     pub maximized_pre_loc: Option<smithay::utils::Point<i32, Logical>>,
     pub header_bar: HeaderBar,
+    /// Instant du PREMIER RENDU (animation d'ouverture, v0.7) : posé au
+    /// premier `render_elements`, pas à la création de l'état, pour que
+    /// l'animation commence quand la fenêtre devient visible.
+    pub opened_at: Option<std::time::Instant>,
     pub border: Border,
     /// Ombre douce (1d.ssd) : cache (largeur, hauteur totale, focus).
     pub shadow: Option<((u64, i32, i32, bool), MemoryRenderBuffer)>,
@@ -190,7 +214,10 @@ pub struct HeaderBar {
     pub buffer: MemoryRenderBuffer,
     /// Clé du dernier rendu : (version du thème, largeur, titre,
     /// focus, 3 survols).
-    cache: Option<(u64, u32, Box<str>, bool, bool, bool, bool)>,
+    cache: Option<(u64, u32, Box<str>, bool, bool, bool, bool, (i32, i32), bool)>,
+    /// Position écran (px logiques) du coin haut-gauche de la barre :
+    /// alignement du flou sur le fond d'écran (v0.7, thème verre).
+    pub origin: (i32, i32),
 }
 
 /// Barre de titre : construction du buffer (silhouette arrondie en
@@ -204,6 +231,8 @@ fn header_buffer(
     min_hover: bool,
     max_hover: bool,
     close_hover: bool,
+    origin: (i32, i32),
+    material: Option<&(std::sync::Arc<yaor_ui::Backdrop>, yaor_ui::GlassParams)>,
 ) -> MemoryRenderBuffer {
     let w = width as i32;
     let h = HEADER_H;
@@ -212,27 +241,45 @@ fn header_buffer(
     let p = crate::config::palette();
     let rayon = p.corner_radius;
 
-    // 1) anneau extérieur : silhouette arrondie en haut, couleur bordure.
-    let border = if focused { p.accent } else { p.accent_dark };
-    for y in 0..h {
-        for x in 0..w {
-            let a = rounded_top_alpha(x, y, w, h, rayon);
-            over_px(&mut px, w, h, x, y, border, a);
+    if let Some((backdrop, params)) = material {
+        // VERRE (v0.7) : fond d'écran flouté sous la barre + teinte + liseré
+        // spéculaire. Le rectangle déborde de `rayon` sous la barre : les
+        // coins bas arrondis tombent hors du buffer, seuls les coins hauts
+        // restent arrondis (la barre se raccorde au corps de la fenêtre).
+        yaor_ui::glass::paint(
+            &mut px,
+            w,
+            h,
+            yaor_ui::Rect { x: 0, y: 0, w, h: h + rayon },
+            rayon,
+            origin,
+            backdrop,
+            params,
+            true,
+        );
+    } else {
+        // 1) anneau extérieur : silhouette arrondie en haut, couleur bordure.
+        let border = if focused { p.accent } else { p.accent_dark };
+        for y in 0..h {
+            for x in 0..w {
+                let a = rounded_top_alpha(x, y, w, h, rayon);
+                over_px(&mut px, w, h, x, y, border, a);
+            }
         }
-    }
-    // 2) fond intérieur (encart 2 px, rayon réduit) — les 2 px du bas
-    //    restent bordure pleine : soulignement ambre de la barre
-    //    (anneau continu autour de la fenêtre, design Classique).
-    for y in BORDER_W..h - BORDER_W {
-        for x in BORDER_W..w - BORDER_W {
-            let a = rounded_top_alpha(
-                x - BORDER_W,
-                y - BORDER_W,
-                w - 2 * BORDER_W,
-                h - 2 * BORDER_W,
-                (rayon - BORDER_W).max(0),
-            );
-            over_px(&mut px, w, h, x, y, p.panel_bg, a);
+        // 2) fond intérieur (encart 2 px, rayon réduit) — les 2 px du bas
+        //    restent bordure pleine : soulignement ambre de la barre
+        //    (anneau continu autour de la fenêtre, design Classique).
+        for y in BORDER_W..h - BORDER_W {
+            for x in BORDER_W..w - BORDER_W {
+                let a = rounded_top_alpha(
+                    x - BORDER_W,
+                    y - BORDER_W,
+                    w - 2 * BORDER_W,
+                    h - 2 * BORDER_W,
+                    (rayon - BORDER_W).max(0),
+                );
+                over_px(&mut px, w, h, x, y, p.panel_bg, a);
+            }
         }
     }
 
@@ -347,7 +394,7 @@ fn corner_buffer(focused: bool, bottom_right: bool) -> MemoryRenderBuffer {
     let p = crate::config::palette();
     let r = p.corner_radius;
     let mut px = vec![0u8; (4 * (r * r)) as usize];
-    let border = if focused { p.accent } else { p.accent_dark };
+    let border = frame_color(focused);
     let (ccx, ccy) = if bottom_right { (0.0, 0.0) } else { (r as f64, 0.0) };
     for ly in 0..r {
         for lx in 0..r {
@@ -433,6 +480,11 @@ impl HeaderBar {
         // La version du thème ET le titre font partie de la clé : un
         // SIGHUP qui change `[theme]` ou un titre qui change forcent la
         // reconstruction du buffer.
+        // v0.7 : en verre, la position écran fait partie de la clé (le flou
+        // suit la fenêtre qu'on déplace) ; en plat elle est neutralisée pour
+        // ne PAS reconstruire le buffer à chaque image de drag.
+        let material = crate::glass::material();
+        let origin = if material.is_some() { self.origin } else { (0, 0) };
         let key = (
             crate::config::theme_epoch(),
             width,
@@ -441,13 +493,23 @@ impl HeaderBar {
             min_hover,
             max_hover,
             close_hover,
+            origin,
+            material.is_some(),
         );
         if self.cache.as_ref() == Some(&key) {
             return;
         }
 
-        self.buffer =
-            header_buffer(width, title, focused, min_hover, max_hover, close_hover);
+        self.buffer = header_buffer(
+            width,
+            title,
+            focused,
+            min_hover,
+            max_hover,
+            close_hover,
+            origin,
+            material.as_ref(),
+        );
         self.cache = Some(key);
         self.minimize_hover = min_hover;
         self.maximize_hover = max_hover;
@@ -467,7 +529,7 @@ where
         renderer: &mut R,
         location: Point<i32, smithay::utils::Physical>,
         _scale: smithay::utils::Scale<f64>,
-        _alpha: f32,
+        alpha: f32,
     ) -> Vec<C> {
         let loc_f = Point::<f64, smithay::utils::Physical>::from((
             location.x as f64,
@@ -477,7 +539,7 @@ where
             renderer,
             loc_f,
             &self.buffer,
-            None,
+            Some(alpha),
             None,
             None,
             Kind::Unspecified,
@@ -494,11 +556,7 @@ impl Border {
     /// reconstruits qu'au changement de focus.
     pub fn redraw(&mut self, width: i32, surface_h: i32, focused: bool) {
         let p = crate::config::palette();
-        let color = crate::config::Palette::rgba(if focused {
-            p.accent
-        } else {
-            p.accent_dark
-        });
+        let color = crate::config::Palette::rgba(frame_color(focused));
         // soulignement de la barre de titre (2 px sous le fond)
         self.top.update((width, BORDER_W), color);
         // gauche/droite descendent jusqu'au bas de la bordure basse
@@ -659,6 +717,7 @@ impl WindowElement {
                 is_focused: false,
                 maximized_pre_size: None,
                 maximized_pre_loc: None,
+                opened_at: None,
                 header_bar: HeaderBar {
                     pointer_loc: None,
                     width: 0,
@@ -675,6 +734,7 @@ impl WindowElement {
                         None,
                     ),
                     cache: None,
+                    origin: (0, 0),
                 },
                 border: Border {
                     top: SolidColorBuffer::default(),

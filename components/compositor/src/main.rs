@@ -7,6 +7,7 @@
 
 mod config;
 mod element;
+mod glass;
 mod focus;
 mod grabs;
 mod input;
