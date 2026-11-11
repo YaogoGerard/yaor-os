@@ -16,6 +16,9 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 
+pub mod edit;
+pub mod presets;
+
 /// Chemins candidats du fichier de configuration (par ordre de
 /// priorité). `default_base_dir` : $XDG_CONFIG_HOME sinon ~/.config.
 pub fn candidate_paths() -> Vec<PathBuf> {
@@ -304,6 +307,30 @@ pub struct ThemeConfig {
     pub corner_radius: u32,
     /// Intensité de l'ombre des fenêtres (0.0 = pas d'ombre, 1.0 = max).
     pub shadow: f64,
+
+    // --- v0.7 « Verre » : style de surface et matériau glass --------------
+    // Tous les champs ont un défaut : un `[theme]` v0.6 reste valable et
+    // `style = "flat"` redonne EXACTEMENT le rendu v0.6 (conformité PNG).
+    /// Nom du préset d'origine (informatif : « flat », « glass-ambre »…).
+    pub name: String,
+    /// « flat » (v0.6, opaque) | « glass » (translucide + flou).
+    pub style: String,
+    /// Rayon du flou d'arrière-plan, en pixels (0 = pas de flou).
+    pub glass_blur: u32,
+    /// Opacité de la teinte posée sur le flou (0.0 verre clair … 1.0 opaque).
+    pub glass_opacity: f64,
+    /// Saturation appliquée au fond flouté (1.0 = inchangée).
+    pub glass_saturation: f64,
+    /// Teinte du verre « #RRGGBB » ; vide = `panel_bg`.
+    pub glass_tint: String,
+    /// Liseré spéculaire de 1 px (« #RRGGBBAA »).
+    pub glass_border: String,
+    /// Intensité du reflet de bord haut (0.0 … 1.0).
+    pub glass_highlight: f64,
+    /// Grain anti-banding (0.0 … 1.0).
+    pub glass_grain: f64,
+    /// Durée des animations de fenêtre en ms (0 = désactivées).
+    pub anim_ms: u32,
 }
 
 impl Default for ThemeConfig {
@@ -318,7 +345,24 @@ impl Default for ThemeConfig {
             separator: "#2A2A33".to_string(),
             corner_radius: 10,
             shadow: 0.55,
+            name: "flat".to_string(),
+            style: "flat".to_string(),
+            glass_blur: 22,
+            glass_opacity: 0.55,
+            glass_saturation: 1.35,
+            glass_tint: String::new(),
+            glass_border: "#FFFFFF2E".to_string(),
+            glass_highlight: 0.5,
+            glass_grain: 0.03,
+            anim_ms: 150,
         }
+    }
+}
+
+impl ThemeConfig {
+    /// Vrai si le style demandé est le verre (toute autre valeur : flat).
+    pub fn is_glass(&self) -> bool {
+        self.style.trim().eq_ignore_ascii_case("glass")
     }
 }
 
@@ -413,6 +457,38 @@ pub mod hup {
                 libc::write(fd, &octet as *const u8 as *const libc::c_void, 1);
             }
         }
+    }
+
+    /// Envoie SIGHUP à chaque processus dont `/proc/<pid>/comm` vaut
+    /// « yaor-compositor » (pas de `ps` dans l'ISO) et renvoie le nombre de
+    /// réveils réussis. Le compositor relaie à ses clients (panel, dock).
+    /// Point unique pour `yaor-ctl` et l'app Réglages (v0.7).
+    pub fn notify_compositor() -> usize {
+        let mut n = 0;
+        let Ok(dir) = std::fs::read_dir("/proc") else {
+            return 0;
+        };
+        for entry in dir.flatten() {
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if !name.bytes().all(|b| b.is_ascii_digit()) {
+                continue;
+            }
+            let Ok(comm) = std::fs::read_to_string(path.join("comm")) else {
+                continue;
+            };
+            if comm.trim_end() != "yaor-compositor" {
+                continue;
+            }
+            let pid = name.parse::<i32>().unwrap_or(0);
+            // SAFETY : kill(2) simple, aucun état partagé.
+            if pid > 0 && unsafe { libc::kill(pid, libc::SIGHUP) } == 0 {
+                n += 1;
+            }
+        }
+        n
     }
 
     /// Installe le gestionnaire SIGHUP et renvoie le fd de lecture du
