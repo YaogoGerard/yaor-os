@@ -1,0 +1,19 @@
+[package]
+name = "yaor-assets"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Chargement d'assets image pour le bureau YAOR (fond d'écran, emblème)"
+
+[lib]
+name = "yaor_assets"
+path = "src/lib.rs"
+
+# Décodage PNG/JPEG — crate `image` vendue dans l'arbre Smithay 0.7.0
+# (ADR-018 : aucune résolution réseau ; features réduites au strict
+# besoin pour limiter la surface et la taille du binaire).
+[dependencies.image]
+version = "0.25"
+default-features = false
+features = ["png", "jpeg"]

@@ -1,0 +1,28 @@
+# yaor-settings — app « Réglages » du bureau YAOR (v0.7 « Verre »).
+#
+# Éditeur visuel du thème : présets, accent, matière (flou, opacité, rayon,
+# ombre, animations). Aucune logique propre : chaque geste appelle les mêmes
+# fonctions que `yaor-ctl theme` (yaor_config::presets / ::edit) puis envoie
+# SIGHUP au compositor. Rendu logiciel yaor-ui, client xdg-shell comme
+# yaor-files / yaor-term.
+[package]
+name = "yaor-settings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies.smithay-client-toolkit]
+version = "0.19.2"
+
+[dependencies.wayland-client]
+version = "0.31"
+
+[dependencies.libc]
+version = "0.2"
+
+[dependencies.yaor-config]
+path = "../yaor-config"
+
+[dependencies.yaor-ui]
+path = "../yaor-ui"

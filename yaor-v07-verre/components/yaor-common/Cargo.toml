@@ -1,0 +1,11 @@
+[package]
+name = "yaor-common"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Code partagé des composants internes YAOR (état A/B, limine.conf)"
+
+[lib]
+name = "yaor_common"
+path = "src/lib.rs"

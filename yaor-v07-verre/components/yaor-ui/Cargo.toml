@@ -1,0 +1,24 @@
+# yaor-ui — primitives de rendu des clients du bureau YAOR (jalon v0.6 «
+# Caméléon », étape 2).
+#
+# Extraites de yaor-panel pour être partagées avec yaor-dock plutôt que
+# dupliquées : canvas wl_shm Argb8888, formes anti-aliasées par fonction de
+# distance signée, police bitmap 5x7 incorporée et thème « ambre sur noir »
+# (`[theme]` de desktop.toml). Aucune dépendance graphique : que des
+# fonctions pures sur des tranches d'octets — donc testables sans session
+# Wayland ni compositor.
+#
+# Membre du workspace des composants internes (components/) ; seule
+# dépendance externe indirecte : `yaor-config` (lecture du thème).
+[package]
+name = "yaor-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Thème : `[theme]` de desktop.toml, même crate que le compositor et le
+# panel — aucune table de couleurs dupliquée (convention « un besoin = un
+# fournisseur »).
+[dependencies.yaor-config]
+path = "../yaor-config"

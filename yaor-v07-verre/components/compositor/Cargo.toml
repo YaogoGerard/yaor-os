@@ -1,0 +1,108 @@
+# yaor-compositor (ADR-005) : compositor graphique YAOR — jalon v0.4.
+#
+# Membre du workspace des composants internes (components/), bâti avec la
+# toolchain Rust de l'hôte dans le chroot (ADR-019). La crate dépend de
+# Smithay 0.7.0 — archive épinglée de l'étape 01, décompressée au build dans
+# /build/work/smithay-0.7.0 — et de ses dépendances vendues (ADR-018) : la
+# config components/.cargo/config.toml remplace crates.io par le dossier
+# vendored de l'arbre Smithay, donc aucune résolution réseau (ADR-018,
+# CARGO_NET_OFFLINE). Les liaisons des bibliothèques système (libEGL, gbm,
+# drm, libinput, libseat) se font dans le chroot, où ces bibliothèques sont
+# installées par les phases C précédentes (mesa, libinput, seatd).
+[package]
+name = "yaor-compositor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Smithay épinglé : l'arbre décompressé de l'étape 01 — la racine de cet
+# arbre EST la crate smithay (mêmes conventions que anvil, qui déclare
+# `path = ".."` vers la racine de son propre workspace). Un besoin = un
+# fournisseur : la version est figée par l'archive de l'étape 01.
+[dependencies.smithay]
+path = "/build/work/smithay-0.7.0"
+default-features = false
+# Cible seule : udev/KMS + XWayland comme anvil en QA (ADR-024, v0.4 étape 4).
+# Pas de winit/x11 backend. xwayland apporte le WM X11 (x11rb, vendu avec
+# l'arbre Smithay — x11rb_event_source raccorde la connexion X à calloop).
+# use_system_lib : liaisons des bibliothèques système installées (mesa…).
+features = [
+    "desktop",
+    "wayland_frontend",
+    "use_system_lib",
+    "backend_egl",
+    "backend_drm",
+    "backend_gbm",
+    "backend_udev",
+    "backend_session_libseat",
+    "backend_libinput",
+    "renderer_gl",
+    "renderer_pixman",
+    "renderer_multi",
+    "xwayland",
+    "x11rb_event_source",
+]
+
+# Énumération des sorties DRM (modes, connecteurs) — crate auxiliaire
+# de l'arbre Smithay (chemin, pas de registre). Elle tire libdisplay-info
+# (C, < 0.3.0) : dans le chroot, la version épinglée correspondante est
+# installée par les phases ; côté hôte (itération dev), un .pc de repli
+# masque simplement la contrainte de version (check seul, pas de lien).
+[dependencies.smithay-drm-extras]
+path = "/build/work/smithay-0.7.0/smithay-drm-extras"
+
+[dependencies.libc]
+version = "0.2.103"
+
+# Utilitaires partagés avec Smithay (versions vendues dans son arbre).
+# x11rb : liaison X11 pure Rust du WM interne (X11Wm) — vendue dans l'arbre
+# Smithay (0.13.x, même version que son Cargo.lock) ; consommée par le bus
+# XWM (sélections) du module x11.
+[dependencies.x11rb]
+version = "0.13"
+
+[dependencies.bitflags]
+version = "2.2.1"
+
+[dependencies.thiserror]
+version = "1.0"
+
+[dependencies.tracing]
+version = "0.1"
+
+# Protocole wlr-foreign-toplevel-management (jalon 1b.c — taskbar) :
+# code généré server (client pour le panel). Version vendue dans
+# l'arbre Smithay (ADR-018) — son Cargo.lock l'épingle à 0.3.12.
+[dependencies.wayland-protocols-wlr]
+version = "0.3.12"
+features = ["server"]
+
+# Configuration déclarative du bureau (v0.5, REQ-SW-015) : crate interne
+# du workspace (dir yaor-config). Ses dépendances externes (toml/serde)
+# résident dans le même arbre vendu Smithay (ADR-018).
+[dependencies.yaor-config]
+path = "../yaor-config"
+
+# Protocoles privés du bureau (étape 3) : yaor_workspace_v1 (espaces de
+# travail du tiling — indicateurs panel + yaor-ctl). Code serveur.
+[dependencies.yaor-protocol]
+path = "../yaor-protocol"
+features = ["server"]
+
+# Journal de session (même convention qu'anvil) : RUST_LOG pour le filtre,
+# sortie compacte par défaut vers stderr (redirigée par la session).
+[dependencies.tracing-subscriber]
+version = "0.3"
+features = ["env-filter"]
+
+# Assets du bureau (1e) : fond d'écran + emblème — PNG/JPEG décodés
+# par la crate `image` vendue dans l'arbre Smithay (ADR-018).
+[dependencies.yaor-assets]
+path = "../yaor-assets"
+
+# UI Engine (v0.6 Caméléon, étape 4) : rendu du TITRE dans la barre de
+# titre SSD — le rastérisateur TrueType maison (police incorporée,
+# aucun crate externe, même police que paneau et dock).
+[dependencies.yaor-ui]
+path = "../yaor-ui"

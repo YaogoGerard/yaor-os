@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  yaor_workspace — protocole privé du bureau YAOR (jalon v0.6 étape 3).
+
+  Canal bi-directionnel entre le compositor et les clients de session
+  (yaor-panel, yaor-ctl) au sujet des espaces de travail du profil
+  tiling (maquette « 1-5 en barre ») :
+
+  - compositor → client : `current` (espace actif, publié au bind puis
+    à chaque bascule) ;
+  - client → compositor : `switch` (bascule) et `send_focused` (envoi
+    de la fenêtre focusée puis bascule — convention sway).
+
+  Hors profil tiling le compositor ignore les requêtes (no-op, mêmes
+  garanties que les raccourcis clavier). Aucun filtrage par client :
+  surface de session de confiance (mêmes droits que foreign-toplevel).
+-->
+<protocol name="yaor_workspace">
+  <interface name="yaor_workspace_v1" version="1">
+    <description summary="espaces de travail du bureau YAOR"/>
+    <event name="current">
+      <description summary="annonce l'espace actif">
+        Envoyé immédiatement après le bind, puis à chaque changement
+        d'espace (y compris celui provoqué par ce client).
+      </description>
+      <arg name="index" type="uint" summary="indice d'espace, base 0 (affiché 1-5)"/>
+    </event>
+    <request name="switch">
+      <description summary="bascule vers l'espace demandé">
+        Hors bornes ou hors tiling : ignoré (aucun événement erroné).
+      </description>
+      <arg name="index" type="uint" summary="indice d'espace, base 0"/>
+    </request>
+    <request name="send_focused">
+      <description summary="envoie la fenêtre focusée à l'espace demandé">
+        La fenêtre focusée rejoint l'espace cible et le client bascule
+        avec elle (convention sway). Pas de fenêtre focusée tuilée :
+        ignoré.
+      </description>
+      <arg name="index" type="uint" summary="indice d'espace, base 0"/>
+    </request>
+  </interface>
+</protocol>

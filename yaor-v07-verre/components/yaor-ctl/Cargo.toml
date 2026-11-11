@@ -1,0 +1,38 @@
+# yaor-ctl — commande de contrôle du bureau YAOR (v0.6 étape 3).
+#
+# Membre du workspace des composants internes (components/). Client
+# wayland minimal (pas de toolkit ni de rendu) : parle le protocole
+# privé yaor_workspace_v1 (crate yaor-protocol du workspace, codegen
+# wayland-scanner vendu — ADR-018).
+#
+# Usage :
+#   yaor-ctl workspace        — affiche l'espace actif (1-5)
+#   yaor-ctl workspace N      — bascule vers l'espace N (1-5)
+#   yaor-ctl send N           — envoie la fenêtre focusée à l'espace N
+#
+# Hors profil tiling, le compositor ignore les requêtes (no-op) —
+# mêmes gardes que les raccourcis clavier.
+[package]
+name = "yaor-ctl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Types wayland directs (Connection, registre, dispatch) — version
+# épinglée par le Cargo.lock de l'arbre Smithay (ADR-018).
+[dependencies.wayland-client]
+version = "0.31"
+
+# SIGHUP au compositor (kill/pid en /proc) — même crate que yaor-config.
+[dependencies.libc]
+version = "0.2"
+
+# Résolution du chemin de desktop.toml (candidate_paths, mêmes
+# candidats que le compositor et le panel — une seule source de vérité
+# sur l'emplacement de la configuration).
+[dependencies.yaor-config]
+path = "../yaor-config"
+
+[dependencies.yaor-protocol]
+path = "../yaor-protocol"

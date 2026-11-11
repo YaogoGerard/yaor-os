@@ -1,0 +1,20 @@
+# Composants internes YAOR (ADR-002), bâtis avec la toolchain Rust de l'hôte
+# (ADR-019). Dépendances externes (compositor : Smithay ; yaor-config :
+# toml/serde) prises dans l'arbre vendu de Smithay 0.7.0 (ADR-018) : le
+# build est hors-ligne et reproductible (ADR-016).
+[workspace]
+resolver = "2"
+members = ["yaor-common", "yaor-slot", "yaor-install", "yaor-config", "yaor-assets", "yaor-ui", "yaor-protocol", "yaor-ctl", "compositor", "yaor-panel", "yaor-dock", "yaor-term", "yaor-files", "yaor-settings"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.99"
+license = "MIT"
+
+[profile.release]
+# Binaires compacts : l'image live doit rester légère (ADR-016).
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

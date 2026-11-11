@@ -1,0 +1,40 @@
+# yaor-protocol — protocoles privés du bureau YAOR (v0.6 étape 3).
+#
+# Membre du workspace des composants internes (components/). Le code
+# client/serveur est généré par wayland-scanner depuis les XML du
+# dossier yaor/ — scanner déjà vendu dans l'arbre Smithay 0.7.0 (il
+# build wayland-client/serveur eux-mêmes), donc ADR-018 respecté :
+# aucun registre nouveau, aucune résolution réseau.
+#
+# La feature « server » (compositor) est optionnelle : yaor-panel et
+# yaor-ctl ne tirent que le client — chroot build identique, moins de
+# code généré côté clients.
+[package]
+name = "yaor-protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = []
+# Code serveur (compositor uniquement) : module server + wayland-server.
+server = ["dep:wayland-server"]
+
+# Macros de codegen (generate_client_code! etc.) — version vendue dans
+# l'arbre Smithay (ADR-018).
+[dependencies.wayland-scanner]
+version = "0.31"
+
+# Le code généré référence ces crates : mêmes versions épinglées que
+# le reste du workspace (Cargo.lock de l'arbre Smithay).
+[dependencies.wayland-client]
+version = "0.31"
+
+# Référencé par le code d'interfaces généré (les deux côtés).
+[dependencies.wayland-backend]
+version = "0.3"
+
+[dependencies.wayland-server]
+version = "0.31"
+optional = true

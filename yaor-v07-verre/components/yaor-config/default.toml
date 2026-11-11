@@ -1,0 +1,113 @@
+# Configuration du bureau YAOR (desktop.toml) — valeurs de fabrication
+# (v0.5 « Desktop Core », /etc/yaor/desktop.toml).
+#
+# Champs admis : profile.name (« classic » | « macos » | « tiling »),
+# layout.mode (« cascade » | « master-stack » | « floating »),
+# layout.ratio, layout.gaps, keys.* (chaînes « Mod+… », Mod = Super),
+# wallpaper.path (image PNG/JPEG ; vide = dégradé procédural),
+# wallpaper.fit (« cover » | « fit »), logo.path (image PNG ; vide =
+# bitmap incorporé), theme.* (couleurs « #RRGGBB », corner_radius,
+# shadow), dock.height, dock.icon (dock du profil macOS-like).
+# Champs absents : valeur par défaut compilée — fichier partiel valable.
+#
+# Configurable par l'utilisateur dans ~/.config/yaor/desktop.toml
+# (prioritaire) ; SIGHUP au compositor recharge sans quitter la session
+# (TEST-DESK-001, REQ-SW-006/015).
+
+# Profil d'interface élu (v0.6 étape 3) — laissé commenté : section
+# absente, `[layout] mode` décide seul et aucune surface n'est masquée
+# (comportement livré depuis v0.4/v0.5, QA inchangées).
+#   classic : barre + menu + taskbar basse, fenêtres flottantes
+#   macos   : barre + dock centré (taskbar masquée), fenêtres flottantes
+#   tiling  : barre + taskbar, maître+pile (v0.5)
+# Le profil prime sur `[layout] mode`. Rechargé au SIGHUP par le
+# compositor ET par les clients du bureau (panel, dock).
+# [profile]
+# name = "classic"
+
+[layout]
+# « cascade » : comportement historique v0.4 (aucune régression sur les
+# QA établies). « master-stack » : tiling maître + pile.
+mode = "cascade"
+ratio = 0.5
+gaps = 0
+
+[keys]
+focus_next = "Mod+Right"
+focus_prev = "Mod+Left"
+swap_next = "Mod+Shift+Right"
+swap_prev = "Mod+Shift+Left"
+master_swap = "Mod+Tab"
+close = "Mod+Q"
+ratio_grow = "Mod+g"
+ratio_shrink = "Mod+Shift+g"
+quit = "Mod+Shift+E"
+
+# Espaces de travail (v0.6 étape 3 — profil tiling, maquette « 1-5 en
+# barre ») : bascule Mod+N, envoi de la fenêtre focusée Mod+Shift+N.
+# Sans objet hors maître+pile ; une liste plus courte laisse les
+# espaces restants sans raccourci.
+workspace = ["Mod+1", "Mod+2", "Mod+3", "Mod+4", "Mod+5"]
+workspace_send = ["Mod+Shift+1", "Mod+Shift+2", "Mod+Shift+3", "Mod+Shift+4", "Mod+Shift+5"]
+
+# Fond d'écran réel (1e.fond) : image fournie, couvre tout l'écran.
+# Chemin vide = dégradé procédural (identité « ambre sur noir »).
+[wallpaper]
+path = "/usr/share/yaor/fond_ecran.png"
+fit = "cover"
+
+# Emblème réel (1e.logo) : affiché dans la barre, la pilule taskbar
+# et l'entête du menu. Chemin vide = bitmap incorporé 24x24.
+[logo]
+path = "/usr/share/yaor/logo.png"
+
+# Thème « ambre sur noir » (1e.theme) — palette canonique du branding.
+# Couleurs « #RRGGBB » (ou « #RRGGBBAA ») routées par le compositor
+# (décorations, à chaud au SIGHUP) et par les clients du bureau
+# (panel, dock — à leur démarrage).
+# Une valeur invalide retombe sur la couleur canonique, pas sur du noir.
+# corner_radius : borné 2..24 ; shadow : 0.0 (aucune) à 1.0 (max).
+[theme]
+accent = "#E8862E"
+accent_dark = "#B96A1F"
+panel_bg = "#101014"
+button_bg = "#26262E"
+text_fg = "#F2E8DC"
+text_gray = "#8A8A92"
+separator = "#2A2A33"
+corner_radius = 10
+shadow = 0.55
+
+# --- v0.7 « Verre » (matière des surfaces) -----------------------------------
+# `style = "flat"` (défaut) : rendu v0.6 EXACT, conforme aux PNG du design.
+# `style = "glass"` : fond d'écran flouté + teinte + liseré spéculaire sur
+# barre, taskbar, menu, dialog, dock et barres de titre des fenêtres.
+# Le plus simple : un préset complet, par script ou par l'app Réglages —
+#   yaor-ctl theme list
+#   yaor-ctl theme set glass-glacier      # flat | glass-ambre | glass-glacier
+#                                         # | glass-amethyste | glass-emeraude
+#   yaor-ctl theme tune glass_blur=30 accent=#5AB8FF
+# Clés (toutes optionnelles ; bornes appliquées, valeurs invalides refusées
+# par la CLI, repli par couleur côté bureau) :
+#   name             nom du préset d'origine (« custom » après un réglage)
+#   style            "flat" | "glass"
+#   glass_blur       0..48   rayon du flou (px)
+#   glass_opacity    0.10..0.95  opacité de la teinte sur le flou
+#   glass_saturation 0.5..2.5    saturation du fond flouté
+#   glass_tint       "#RRGGBB"   teinte (vide = panel_bg)
+#   glass_border     "#RRGGBBAA" liseré spéculaire
+#   glass_highlight  0..1    reflet du bord haut
+#   glass_grain      0..1    grain anti-banding
+#   anim_ms          0..600  animation d'ouverture des fenêtres (0 = aucune)
+# style = "flat"
+# glass_blur = 22
+# glass_opacity = 0.55
+# anim_ms = 150
+
+# Dock du profil macOS-like (v0.6 étape 2, `yaor-dock`) : barre
+# flottante centrée en bas, sans zone exclusive (les fenêtres gardent
+# tout l'écran). height : bornée 40..200 ; icon : côté d'une tuile,
+# borné 24..height-16.
+[dock]
+height = 72
+icon = 56
