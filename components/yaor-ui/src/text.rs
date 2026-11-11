@@ -562,12 +562,19 @@ fn flatten(conts: &[Contour], scale: f64) -> Vec<Vec<Edge>> {
             let d0 = (cx - x0).hypot(cy - y0);
             let d1 = (x2 - cx).hypot(y2 - cy);
             let steps = (((d0 + d1) / 2.5).ceil().round() as usize).clamp(2, 24);
+            // Chaque segment part du point PRÉCÉDENT de la courbe (v0.7 :
+            // l'ancienne version repartait toujours de (x0, y0) — un
+            // éventail de traits parasites qui remplissait à moitié les
+            // contre-formes de O, o, B, 8, 0, @).
+            let (mut px, mut py) = (x0, y0);
             for k in 1..=steps {
                 let t = k as f64 / steps as f64;
                 let s = 1.0 - t;
                 let x = s * s * x0 + 2.0 * s * t * cx + t * t * x2;
                 let y = s * s * y0 + 2.0 * s * t * cy + t * t * y2;
-                edges.push([x0, y0, x, y]);
+                edges.push([px, py, x, y]);
+                px = x;
+                py = y;
             }
         };
         let dev_quad = |a: &(f64, f64), c: &(f64, f64), b: &(f64, f64),
@@ -650,7 +657,7 @@ fn rasterize(edges: &[Vec<Edge>], size: u32) -> GlyphBitmap {
         minx = minx.min(seg[0].min(seg[2]));
         maxx = maxx.max(seg[0].max(seg[2]));
         miny = miny.min(seg[1].min(seg[3]));
-        maxy = maxy.max(seg[1].min(seg[3]));
+        maxy = maxy.max(seg[1].max(seg[3]));
         total_edges += 1;
     }
     if total_edges == 0 {
@@ -976,6 +983,21 @@ mod tests {
         draw_text(&mut canvas, w, h, "F", 29, 1, 14, Weight::Bold, 0xFF_FF_FF_FF);
         let plein = lit_pixels(&canvas);
         assert!(plein > 10, "glyphe « F » dessiné ({} pixels)", plein);
+    }
+
+    #[test]
+    fn contre_formes_restent_vides() {
+        // Régression v0.7 : l'éventail de segments de `flatten` remplissait
+        // à moitié le trou de O, o, 0 (stries) — le centre doit rester nu.
+        for ch in ['O', 'o', '0'] {
+            let g = glyph(ch, 40, Weight::Regular).expect("glyphe");
+            let (cx, cy) = (g.w as usize / 2, g.h as usize / 2);
+            let v = g.cov[cy * g.w as usize + cx];
+            assert!(v < 16, "{ch} : centre rempli ({v})");
+            // et le trait existe bien : un pixel du bord gauche est allumé
+            let row = &g.cov[cy * g.w as usize..(cy + 1) * g.w as usize];
+            assert!(row.iter().any(|&c| c > 200), "{ch} : trait absent");
+        }
     }
 
     #[test]
