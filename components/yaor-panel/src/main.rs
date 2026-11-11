@@ -164,6 +164,43 @@ fn th() -> Theme {
     *THEME.read().expect("thème verrouillé")
 }
 
+// --- v0.7 « Verre » ----------------------------------------------------------
+// `style = "glass"` : les fonds du panel (barre, taskbar, volet menu, dialog)
+// sont peints par `yaor_ui::glass` — fond d'écran flouté + teinte + liseré —
+// à la position écran de chaque surface. `style = "flat"` : chemin v0.6 inchangé.
+
+/// État de verre du panel (kit + taille d'écran), reconstruit au SIGHUP et
+/// au changement de taille de sortie.
+static GLASS: yaor_ui::GlassState = yaor_ui::GlassState::new(yaor_assets::wallpaper_argb);
+
+/// Taille d'écran connue (repli 1920x1080 tant qu'aucune sortie n'a parlé).
+fn screen() -> (i32, i32) {
+    GLASS.screen()
+}
+
+/// Kit de verre courant (None = thème plat).
+fn glass_kit() -> Option<std::sync::Arc<yaor_ui::GlassKit>> {
+    GLASS.kit()
+}
+
+/// Rayon de coin du thème pour le verre (14 par défaut hors kit).
+fn th_radius() -> i32 {
+    glass_kit().map(|k| k.radius).unwrap_or(10)
+}
+
+/// Fond d'une surface du panel : verre prémultiplié (coins arrondis
+/// transparents) ou aplat `panel_bg` v0.6. `origin` = position écran du
+/// pixel (0,0) de la surface ; `radius` ne s'applique qu'au verre.
+fn paint_bg(canvas: &mut [u8], cw: i32, ch: i32, origin: (i32, i32), radius: i32) {
+    match glass_kit() {
+        Some(k) => {
+            canvas.fill(0);
+            k.paint(canvas, cw, ch, yaor_ui::Rect { x: 0, y: 0, w: cw, h: ch }, radius, origin, true);
+        }
+        None => fill_rect(canvas, cw, ch, 0, 0, cw, ch, th().panel_bg),
+    }
+}
+
 /// Position du bouton menu : le logo 24x24 occupe x=2..26, le bouton
 /// le suit (QA : clic au centre (60,12)).
 const BTN_X: u32 = 30;
@@ -197,6 +234,16 @@ fn init_assets() -> yaor_config::DesktopConfig {
 fn init_theme(cfg: &yaor_config::DesktopConfig, src: Option<&std::path::Path>) {
     let theme = Theme::from_config(&cfg.theme);
     *THEME.write().expect("thème verrouillé") = theme;
+    GLASS.configure(
+        &cfg.theme,
+        &cfg.wallpaper.path,
+        cfg.wallpaper.fit == yaor_config::ImageFit::Cover,
+    );
+    eprintln!(
+        "{PROG}: [{:.3}] verre : {}",
+        uptime(),
+        if glass_kit().is_some() { "actif" } else { "plat" }
+    );
     eprintln!(
         "{PROG}: [{:.3}] thème : accent #{:06X} panel #{:06X} source {}",
         uptime(),
@@ -575,7 +622,7 @@ impl Panel {
                 canvas.fill(0);
                 eprintln!("{PROG}: [{:.3}] barre : masquée (profil classique)", uptime());
             } else {
-                fill_rect(canvas, cw, ch, 0, 0, cw, ch, th().panel_bg);
+                paint_bg(canvas, cw, ch, (0, 0), 0);
                 // Emblème à gauche (toutes les variantes).
                 draw_logo(canvas, cw, ch, 4, 0);
                 match self.profile {
@@ -743,7 +790,9 @@ impl Panel {
             .expect("création du buffer de menu");
         {
             let (cw, ch) = (w as i32, h as i32);
-            fill_rect(canvas, cw, ch, 0, 0, cw, ch, th().panel_bg);
+            // Volet ancré bas-gauche : marge gauche 20, marge basse MENU_GAP.
+            let (_, sh) = screen();
+            paint_bg(canvas, cw, ch, (20, sh - MENU_GAP as i32 - ch), th_radius());
 
             // En-tête : wordmark « YAOR » gras + « OS » espacé, filets
             // latéraux (design Classique — pas de médaillon rond).
@@ -933,7 +982,8 @@ impl Panel {
         }
         {
             let (cw, ch) = (w as i32, h as i32);
-            fill_rect(canvas, cw, ch, 0, 0, cw, ch, th().panel_bg);
+            let (_, sh) = screen();
+            paint_bg(canvas, cw, ch, (0, sh - ch), 0);
 
             // Pilule emblème : fond sombre + flamme ambre (OUVRE le
             // volet menu en profil classique) + filet séparateur.
@@ -1055,6 +1105,27 @@ impl Panel {
     /// Rechargement au SIGHUP (étape 3) : le compositor applique le nouveau
     /// profil, le panel suit — thème ([theme]) et visibilité de la taskbar
     /// (profil macOS-like : masquée). Journal : jeton « taskbar : masquée ».
+    /// Taille de sortie (v0.7) : le verre aligne son flou sur le fond
+    /// d'écran à la position écran de chaque surface. Un changement de
+    /// taille reconstruit le kit et redessine barre et taskbar.
+    fn note_output(&mut self, qh: &QueueHandle<Self>, output: &wl_output::WlOutput) {
+        let Some(info) = self.output_state.info(output) else {
+            return;
+        };
+        let size = info.logical_size.or_else(|| {
+            info.modes
+                .iter()
+                .find(|m| m.current)
+                .map(|m| m.dimensions)
+        });
+        if let Some((w, h)) = size {
+            if GLASS.set_screen(w, h) && glass_kit().is_some() {
+                self.draw_bar(qh);
+                self.draw_taskbar();
+            }
+        }
+    }
+
     fn reload_config(&mut self, qh: &QueueHandle<Self>) {
         let (cfg, src) = yaor_config::DesktopConfig::load();
         init_theme(&cfg, src.as_deref());
@@ -1203,10 +1274,16 @@ impl Panel {
             .create_buffer(w, h, stride, wl_shm::Format::Argb8888)
             .expect("création du buffer du dialog");
         {
-            fill_rect(canvas, w, h, 0, 0, w, h, th().panel_bg);
-            // Cadre du dialog (liseré ambre).
-            fill_rrect(canvas, w, h, 0, 0, DLG_W as i32, DLG_H as i32, 14, th().accent);
-            fill_rrect(canvas, w, h, 1, 1, DLG_W as i32 - 2, DLG_H as i32 - 2, 13, th().panel_bg);
+            if glass_kit().is_some() {
+                // Verre : dialog centré (anchor vide) — origine écran.
+                let (sw, sh) = screen();
+                paint_bg(canvas, w, h, ((sw - w) / 2, (sh - h) / 2), th_radius() + 4);
+            } else {
+                fill_rect(canvas, w, h, 0, 0, w, h, th().panel_bg);
+                // Cadre du dialog (liseré ambre).
+                fill_rrect(canvas, w, h, 0, 0, DLG_W as i32, DLG_H as i32, 14, th().accent);
+                fill_rrect(canvas, w, h, 1, 1, DLG_W as i32 - 2, DLG_H as i32 - 2, 13, th().panel_bg);
+            }
             // Entête : pastilles feux tricolores + titre centré.
             fill_circle(canvas, w, h, 26, 18, 5, th().accent);
             fill_circle(canvas, w, h, 46, 18, 5, th().accent_dark);
@@ -1478,17 +1555,19 @@ impl OutputHandler for Panel {
     fn new_output(
         &mut self,
         _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _output: wl_output::WlOutput,
+        qh: &QueueHandle<Self>,
+        output: wl_output::WlOutput,
     ) {
+        self.note_output(qh, &output);
     }
 
     fn update_output(
         &mut self,
         _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _output: wl_output::WlOutput,
+        qh: &QueueHandle<Self>,
+        output: wl_output::WlOutput,
     ) {
+        self.note_output(qh, &output);
     }
 
     fn output_destroyed(
@@ -1819,6 +1898,9 @@ impl PointerHandler for Panel {
                                         match *label {
                                             "Fichiers" => self.launch("yaor-files"),
                                             "Terminal" => self.launch("yaor-term"),
+                                            // v0.7 : Réglages (thème, verre) — la tuile
+                                            // garde son style sombre (conformité PNG).
+                                            "Réglages" => self.launch("yaor-settings"),
                                             "Profils" => {
                                                 self.close_menu();
                                                 self.open_dialog(qh);
