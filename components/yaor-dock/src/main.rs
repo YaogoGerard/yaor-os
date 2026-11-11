@@ -56,6 +56,10 @@ use yaor_ui::{
 const PROG: &str = "yaor-dock";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// État de verre du dock (v0.7) : kit flouté + taille d'écran. `style =
+/// "flat"` : aucun kit, rendu v0.6 inchangé.
+static GLASS: yaor_ui::GlassState = yaor_ui::GlassState::new(yaor_assets::wallpaper_argb);
+
 /// Uptime invité (s) — horodatage corrélable avec le compositor et les
 /// sondes du harnais QA (même convention que le panel).
 fn uptime() -> f64 {
@@ -279,17 +283,34 @@ impl Dock {
             // Fond transparent : wl_shm ne garantit pas un buffer vierge
             // (slots réutilisés) — on efface avant de peindre la barre.
             canvas.fill(0);
-            fill_rrect_premul(
-                &mut canvas,
-                w,
-                h,
-                0,
-                0,
-                w,
-                h,
-                Geometry::BAR_RADIUS,
-                self.theme.panel_bg,
-            );
+            match GLASS.kit() {
+                Some(k) => {
+                    // Verre : la barre est centrée en bas — origine écran
+                    // du pixel (0,0) = ((L - w) / 2, H - h - marge).
+                    let (sw, sh) = GLASS.screen();
+                    let origin = ((sw - w) / 2, sh - h - self.geom.margin_bottom as i32);
+                    k.paint(
+                        &mut canvas,
+                        w,
+                        h,
+                        yaor_ui::Rect { x: 0, y: 0, w, h },
+                        Geometry::BAR_RADIUS.max(k.radius + 6),
+                        origin,
+                        true,
+                    );
+                }
+                None => fill_rrect_premul(
+                    &mut canvas,
+                    w,
+                    h,
+                    0,
+                    0,
+                    w,
+                    h,
+                    Geometry::BAR_RADIUS,
+                    self.theme.panel_bg,
+                ),
+            }
 
             let tile = self.geom.icon as i32;
             let ty = self.geom.tile_y();
@@ -522,9 +543,29 @@ impl Dock {
     /// Rechargement au SIGHUP (étape 3) : le compositor applique le nouveau
     /// profil, le dock suit — thème, géométrie `[dock]` et visibilité
     /// (profil macOS-like seul). Journal : jeton « dock : masqué ».
+    /// Taille de sortie (v0.7) : alignement du flou sur le fond d'écran.
+    fn note_output(&mut self, output: &wl_output::WlOutput) {
+        let Some(info) = self.output_state.info(output) else {
+            return;
+        };
+        let size = info
+            .logical_size
+            .or_else(|| info.modes.iter().find(|m| m.current).map(|m| m.dimensions));
+        if let Some((w, h)) = size {
+            if GLASS.set_screen(w, h) && GLASS.kit().is_some() && self.visible {
+                self.draw();
+            }
+        }
+    }
+
     fn reload_config(&mut self) {
         let (cfg, src) = yaor_config::DesktopConfig::load();
         self.theme = Theme::from_config(&cfg.theme);
+        GLASS.configure(
+            &cfg.theme,
+            &cfg.wallpaper.path,
+            cfg.wallpaper.fit == yaor_config::ImageFit::Cover,
+        );
         self.geom = Geometry::from_config(&cfg.dock);
         let visible = dock_visible(cfg.profile.name);
         eprintln!(
@@ -638,16 +679,18 @@ impl OutputHandler for Dock {
         &mut self,
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
-        _output: wl_output::WlOutput,
+        output: wl_output::WlOutput,
     ) {
+        self.note_output(&output);
     }
 
     fn update_output(
         &mut self,
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
-        _output: wl_output::WlOutput,
+        output: wl_output::WlOutput,
     ) {
+        self.note_output(&output);
     }
 
     fn output_destroyed(
@@ -941,6 +984,16 @@ fn load_assets(
     emblem_px: u32,
 ) -> (Theme, Option<Vec<u8>>) {
     let theme = Theme::from_config(&cfg.theme);
+    GLASS.configure(
+        &cfg.theme,
+        &cfg.wallpaper.path,
+        cfg.wallpaper.fit == yaor_config::ImageFit::Cover,
+    );
+    eprintln!(
+        "{PROG}: [{:.3}] verre : {}",
+        uptime(),
+        if GLASS.kit().is_some() { "actif" } else { "plat" }
+    );
     eprintln!(
         "{PROG}: [{:.3}] thème : accent #{:06X} panel #{:06X} source {}",
         uptime(),
