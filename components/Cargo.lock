@@ -1834,6 +1834,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "yaor-settings"
+version = "0.2.0"
+dependencies = [
+ "libc",
+ "smithay-client-toolkit",
+ "wayland-client",
+ "yaor-config",
+ "yaor-ui",
+]
+
+[[package]]
 name = "yaor-slot"
 version = "0.2.0"
 dependencies = [
